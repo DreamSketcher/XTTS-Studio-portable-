@@ -48,9 +48,14 @@ class TextNormalizer:
 
         text = text.replace("—", ". ")
 
+        # проценты: 87% → 87 процентов
+        text = re.sub(r"(\d+)\s*%", r"\1 процентов", text)
+
         text = re.sub(r"!{2,}", "!", text)
         text = re.sub(r"\?{2,}", "?", text)
         text = re.sub(r",{2,}", ",", text)
+
+        text = re.sub(r"([A-ZА-Я]{2,}),\s*([A-ZА-Я]{2,})", r"\1. \2", text)
 
         text = "\n".join(line.strip() for line in text.split("\n"))
         text = re.sub(r"\n{2,}", "\n", text)
@@ -86,12 +91,16 @@ class TextNormalizer:
             except Exception:
                 return num_str
 
+        # проценты: 87% → 87 процентов
+        text = re.sub(r"(\d+)\s*%", r"\1 процентов", text)
+
+        # дробные через точку → через запятую
+        text = re.sub(r"\b(\d+)\.(\d+)\b", r"\1,\2", text)
+
         # 3. Дробные числа через запятую: 3,14
-        #    Важно: стоит ДО целых, чтобы "3,14" не разбилось на "3" и "14"
         text = re.sub(r"\b\d+,\d+\b", replace_number, text)
 
-        # 4. Целые числа (включая с пробелами: "1 000 000")
-        #    Увеличен лимит до 30 символов для поддержки длинных чисел
+        # 4. Целые числа
         text = re.sub(r"\b\d[\d ]{0,30}\d\b|\b\d\b", replace_number, text)
 
         # =========================
