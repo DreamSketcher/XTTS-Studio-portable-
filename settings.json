@@ -1,0 +1,47 @@
+{
+  "language": "auto",
+  "quality": "Высокое качество",
+  "ref_path": "",
+  "quality_params": {
+    "Высокое качество": {
+      "temperature": 0.6,
+      "top_p": 0.3,
+      "top_k": 70,
+      "repetition_penalty": 16.0,
+      "prosody_intensity": 0.0,
+      "trim_ms": 120,
+      "speed": 1.0,
+      "trim_mode": "manual"
+    },
+    "Нарратив": {
+      "temperature": 0.45,
+      "top_p": 0.25,
+      "top_k": 35,
+      "repetition_penalty": 11.0,
+      "prosody_intensity": 0.1,
+      "trim_ms": 130,
+      "speed": 0.9,
+      "trim_mode": "auto"
+    },
+    "Динамика": {
+      "temperature": 1.0,
+      "top_p": 0.7,
+      "top_k": 100,
+      "repetition_penalty": 10.0,
+      "prosody_intensity": 0.1,
+      "trim_ms": 160,
+      "speed": 1.25,
+      "trim_mode": "auto"
+    },
+    "Экспрессия": {
+      "temperature": 0.9,
+      "top_p": 0.5,
+      "top_k": 90,
+      "repetition_penalty": 14.5,
+      "prosody_intensity": 0.1,
+      "trim_ms": 100,
+      "speed": 1.0,
+      "trim_mode": "auto"
+    }
+  }
+}
