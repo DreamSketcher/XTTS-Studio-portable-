@@ -76,6 +76,7 @@ XTTS Studio — полностью офлайн инструмент для си
 - `logs/` — логи работы
 - `models/` — модели XTTS
 - `python/` — portable runtime
+- `XTTS Studio.exe/` — точка входа
 
 ---
 
