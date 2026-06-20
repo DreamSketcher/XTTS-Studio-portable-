@@ -336,6 +336,9 @@ def normalize_text(text: str) -> str:
     text = re.sub(r"\?{2,}", "?", text)
     text = re.sub(r",{2,}", ",", text)
 
+    # запятая между аббревиатурами → точка
+    text = re.sub(r"([A-ZА-Я]{2,}),\s*([A-ZА-Я]{2,})", r"\1. \2", text)
+
     text = "\n".join(line.strip() for line in text.split("\n"))
     text = re.sub(r"\n{2,}", "\n", text)
 
