@@ -1,13 +1,13 @@
+import queue
 import threading
 import traceback
 
-from engine.task_queue import TaskQueue
 from engine.tts_runner import run_tts
 
 
 class TaskManager:
     def __init__(self, ui_callback=None):
-        self.queue        = TaskQueue()
+        self.q             = queue.Queue()
         self.current_task = None
         self.running      = False
         self.ui_callback  = ui_callback
@@ -16,7 +16,7 @@ class TaskManager:
     # ДОБАВИТЬ ЗАДАЧУ В ОЧЕРЕДЬ
     # =========================
     def add_task(self, task):
-        self.queue.add(task)
+        self.q.put(task)
         self._notify(task)
         if self.ui_callback:
             self.ui_callback({"stage": "queue_update"})
@@ -27,7 +27,7 @@ class TaskManager:
     # ПОЛУЧИТЬ ОЧЕРЕДЬ ДЛЯ UI
     # =========================
     def get_queue(self):
-        return list(self.queue.q.queue)
+        return list(self.q.queue)
 
     # =========================
     # ОТМЕНА ЗАДАЧИ
@@ -39,7 +39,7 @@ class TaskManager:
             return
 
         # задача ещё в очереди — помечаем и уведомляем GUI
-        for task in list(self.queue.q.queue):
+        for task in list(self.q.queue):
             if task.id == task_id:
                 task.cancelled = True
                 task.status    = "cancelled"
@@ -60,14 +60,14 @@ class TaskManager:
     # =========================
     def _loop(self):
         while self.running:
-            task = self.queue.get()
+            task = self.q.get()
             self.current_task = task
 
             # задача отменена до старта
             if getattr(task, "cancelled", False):
                 task.status = "cancelled"
                 self._notify(task)
-                self.queue.q.task_done()
+                self.q.task_done()
                 continue
 
             try:
@@ -77,6 +77,7 @@ class TaskManager:
 
                 output = run_tts(
                     text=task.text,
+                    raw_text=getattr(task, "raw_text", task.text),
                     ref_path=task.voice,
                     status_callback=self._make_progress_cb(task),
                     # ← передаём лямбду-проверку флага отмены
@@ -101,7 +102,7 @@ class TaskManager:
                 task.error  = traceback.format_exc()
 
             self._notify(task)
-            self.queue.q.task_done()
+            self.q.task_done()
 
     # =========================
     # КОЛБЭК ПРОГРЕССА

@@ -205,6 +205,11 @@ except Exception as e:
 # =========================
 current_pos = 0
 play_btn = None
+_highlight_pos = 0  # текущая позиция курсора подсветки в text_box
+import threading as _threading_gui
+_textbox_updated = _threading_gui.Event()
+
+word_replacer_enabled = tk.BooleanVar(value=True)
 
 ref_var = tk.StringVar()
 status_var = tk.StringVar(value="🔄 Инициализация модели...")
@@ -330,14 +335,11 @@ def normalize_text(text: str) -> str:
     text = text.replace("\r\n", "\n").replace("\r", "\n")
     text = re.sub(r"[ \t]+", " ", text)
 
-    text = text.replace("—", ". ")
 
     text = re.sub(r"!{2,}", "!", text)
     text = re.sub(r"\?{2,}", "?", text)
     text = re.sub(r",{2,}", ",", text)
-
-    # запятая между аббревиатурами → точка
-    text = re.sub(r"([A-ZА-Я]{2,}),\s*([A-ZА-Я]{2,})", r"\1. \2", text)
+    text = re.sub(r",([A-ZА-ЯЁa-zа-яё])", r", \1", text)
 
     text = "\n".join(line.strip() for line in text.split("\n"))
     text = re.sub(r"\n{2,}", "\n", text)
@@ -356,6 +358,18 @@ def set_textbox_content(content: str):
         text_box.config(fg=Colors.TEXT_MAIN)
     else:
         show_placeholder()
+
+def _update_textbox_normalized(text: str):
+    """Обновляет text_box финальным нормализованным текстом из runner."""
+    try:
+        unlock_textbox()
+        text_box.delete("1.0", tk.END)
+        text_box.insert("1.0", text)
+        text_box.config(fg=Colors.TEXT_MAIN)
+        lock_textbox()
+        _textbox_updated.set()
+    except Exception as e:
+        print(f"[TextBox update error]: {e}")
 
 def clear_chunk_highlight():
     try:
@@ -401,12 +415,41 @@ def on_task_update(data):
     if isinstance(data, dict) and data.get("stage") == "queue_update":
         root.after(0, update_queue_view)
         return
-
+    
     if isinstance(data, dict) and data.get("stage") == "chunk":
-        start = data.get("chunk_start", 0)
-        end = data.get("chunk_end", 0)
-        root.after_idle(lambda s=start, e=end: _highlight_chunk(s, e))
+        chunk_raw = data.get("chunk_raw", "")
+        chunk_start = data.get("chunk_start")
+        chunk_end = data.get("chunk_end")
+
+        def _do_chunk_highlight(s=chunk_start, e=chunk_end, t=chunk_raw):
+            try:
+                if s is not None and e is not None and int(e) > int(s):
+                    _highlight_chunk(int(s), int(e))
+                else:
+                    _highlight_chunk_by_text(t)
+            except Exception:
+                _highlight_chunk_by_text(t)
+
+        root.after_idle(_do_chunk_highlight)
         return
+
+    if isinstance(data, dict) and data.get("stage") == "normalized_text":
+        normalized = data.get("text", "")
+        if normalized:
+            try:
+                unlock_textbox()
+                text_box.delete("1.0", tk.END)
+                text_box.insert("1.0", normalized)
+                text_box.config(fg=Colors.TEXT_MAIN)
+                lock_textbox()
+                root.update_idletasks()
+                _textbox_updated.set()
+            except Exception as e:
+                print(f"[TextBox sync error]: {e}")
+        return
+
+    if isinstance(data, dict) and data.get("stage") == "check_textbox_ready":
+        return _textbox_updated.is_set()
 
     if isinstance(data, dict):
         return
@@ -474,6 +517,121 @@ def _highlight_chunk(start, end):
                                foreground=Colors.CHUNK_FG)
         text_box.tag_raise("chunk_highlight")
         text_box.see(start_idx)
+
+
+    except Exception as e:
+        print(f"[Highlight error]: {e}")
+
+def _highlight_chunk_by_text(chunk_raw: str):
+    global _highlight_pos
+    try:
+        clear_chunk_highlight()
+
+        content = text_box.get("1.0", "end-1c")
+        if not content or content == PLACEHOLDER:
+            return
+
+        chunk = (chunk_raw or "").replace("[NO_PAUSE]", "").strip()
+        if not chunk:
+            return
+
+        def _make_lookup(s: str):
+            norm_chars = []
+            index_map = []
+            prev_space = False
+
+            for i, ch in enumerate(s or ""):
+                if ch.isspace():
+                    if prev_space:
+                        continue
+                    norm_chars.append(" ")
+                    index_map.append(i)
+                    prev_space = True
+                else:
+                    norm_chars.append(ch.lower())
+                    index_map.append(i)
+                    prev_space = False
+
+            while norm_chars and norm_chars[0] == " ":
+                norm_chars.pop(0)
+                index_map.pop(0)
+
+            while norm_chars and norm_chars[-1] == " ":
+                norm_chars.pop()
+                index_map.pop()
+
+            return "".join(norm_chars), index_map
+
+        norm_content, index_map = _make_lookup(content)
+        norm_chunk, _ = _make_lookup(chunk)
+
+        if not norm_content or not norm_chunk or not index_map:
+            return
+
+        norm_search_from = 0
+        found_search_pos = False
+
+        for np, op in enumerate(index_map):
+            if op >= _highlight_pos:
+                norm_search_from = np
+                found_search_pos = True
+                break
+
+        if not found_search_pos:
+            norm_search_from = 0
+
+        idx = norm_content.find(norm_chunk, norm_search_from)
+
+        if idx == -1:
+            idx = norm_content.find(norm_chunk)
+
+        match_len = len(norm_chunk)
+
+        if idx == -1:
+            words = norm_chunk.split()
+            for n in (10, 8, 6, 5, 4, 3, 2):
+                if len(words) >= n:
+                    probe = " ".join(words[:n])
+                    idx = norm_content.find(probe, norm_search_from)
+                    if idx == -1:
+                        idx = norm_content.find(probe)
+                    if idx != -1:
+                        match_len = len(norm_chunk)
+                        break
+
+        if idx == -1:
+            print(f"[HL] chunk not found: {repr(chunk[:80])}")
+            return
+
+        end_norm = min(idx + match_len, len(index_map))
+        start_orig = index_map[idx]
+
+        if end_norm > idx:
+            end_orig = index_map[end_norm - 1] + 1
+        else:
+            end_orig = start_orig
+
+        text_len = len(content)
+        start_orig = max(0, min(start_orig, text_len))
+        end_orig = max(start_orig, min(end_orig, text_len))
+
+        if end_orig <= start_orig:
+            return
+
+        start_idx = f"1.0+{start_orig} chars"
+        end_idx = f"1.0+{end_orig} chars"
+
+        text_box.tag_add("chunk_highlight", start_idx, end_idx)
+        text_box.tag_configure(
+            "chunk_highlight",
+            background=Colors.CHUNK_BG,
+            foreground=Colors.CHUNK_FG
+        )
+        text_box.tag_raise("chunk_highlight")
+        text_box.see(start_idx)
+
+        _highlight_pos = end_orig
+
     except Exception as e:
         print(f"[Highlight error]: {e}")
 
@@ -817,6 +975,23 @@ def open_word_replacer():
     create_button(btn_frame_wr, "➕ Добавить", add_rule, bg=Colors.BG_INPUT).pack(side="left", padx=(0, 10))
     create_button(btn_frame_wr, "🗑️ Удалить", remove_rule, bg=Colors.BG_DANGER, fg=Colors.TEXT_MAIN).pack(side="left")
 
+    tk.Checkbutton(
+        btn_frame_wr,
+        text="Словарь активен",
+        variable=word_replacer_enabled,
+        bg=Colors.BG_CARD, fg=Colors.TEXT_MAIN,
+        selectcolor=Colors.BG_INPUT,
+        activebackground=Colors.BG_CARD,
+        activeforeground=Colors.TEXT_MAIN,
+        font=("Segoe UI", 9),
+        cursor="hand2"
+    ).pack(side="right")
+
+    def close_window():
+        save_settings()
+        win.destroy()
+    win.protocol("WM_DELETE_WINDOW", close_window)
+
 # =========================
 # CANCEL / GENERATE
 # =========================
@@ -856,7 +1031,15 @@ def generate():
 
     current_text_snapshot = text
     set_textbox_content(text)
+
+    global _highlight_pos
+    _highlight_pos = 0
+    try:
+        _textbox_updated.clear()
+    except Exception:
+        pass
     clear_chunk_highlight()
+
     lock_textbox()
     text_box.update_idletasks()
 
@@ -873,7 +1056,10 @@ def generate():
         speed=params["speed"].get(),
         language=lang_var.get(),
         quality=quality_name,
-        quality_params={k: v.get() for k, v in params.items()}
+        quality_params={
+            **{k: v.get() for k, v in params.items()},
+            "word_replacer_enabled": word_replacer_enabled.get(),
+        }
     )
 
     set_status("📥 Добавлено в очередь...")
@@ -1041,41 +1227,52 @@ def show_help():
 # =========================
 quality_params = {
     "Высокое качество": {
+        "qc_enabled": tk.BooleanVar(value=True),
         "temperature": tk.DoubleVar(value=0.70),
         "top_p": tk.DoubleVar(value=0.30),
         "top_k": tk.IntVar(value=80),
         "repetition_penalty": tk.DoubleVar(value=13.0),
         "prosody_intensity": tk.DoubleVar(value=0.0),
+        "de_esser_intensity": tk.DoubleVar(value=0.8),
         "trim_ms": tk.IntVar(value=100),
         "speed": tk.DoubleVar(value=1.0),
         "trim_mode": tk.StringVar(value="auto"),
     },
+
     "Нарратив": {
+        "qc_enabled": tk.BooleanVar(value=True),
         "temperature": tk.DoubleVar(value=0.75),
         "top_p": tk.DoubleVar(value=0.25),
         "top_k": tk.IntVar(value=85),
         "repetition_penalty": tk.DoubleVar(value=18.0),
         "prosody_intensity": tk.DoubleVar(value=0.5),
+        "de_esser_intensity": tk.DoubleVar(value=0.7),
         "trim_ms": tk.IntVar(value=80),
         "speed": tk.DoubleVar(value=0.9),
         "trim_mode": tk.StringVar(value="auto"),
     },
+
     "Динамика": {
+        "qc_enabled": tk.BooleanVar(value=True),
         "temperature": tk.DoubleVar(value=0.82),
         "top_p": tk.DoubleVar(value=0.20),
         "top_k": tk.IntVar(value=100),
         "repetition_penalty": tk.DoubleVar(value=16.0),
         "prosody_intensity": tk.DoubleVar(value=1.1),
+        "de_esser_intensity": tk.DoubleVar(value=1.0),
         "trim_ms": tk.IntVar(value=60),
         "speed": tk.DoubleVar(value=1.1),
         "trim_mode": tk.StringVar(value="auto"),
     },
+
     "Экспрессия": {
+        "qc_enabled": tk.BooleanVar(value=True),
         "temperature": tk.DoubleVar(value=0.88),
         "top_p": tk.DoubleVar(value=0.30),
         "top_k": tk.IntVar(value=90),
         "repetition_penalty": tk.DoubleVar(value=14.0),
         "prosody_intensity": tk.DoubleVar(value=1.3),
+        "de_esser_intensity": tk.DoubleVar(value=1.3),
         "trim_ms": tk.IntVar(value=100),
         "speed": tk.DoubleVar(value=1.0),
         "trim_mode": tk.StringVar(value="auto"),
@@ -1096,10 +1293,15 @@ def open_quality_settings(preset_name):
         preset_name = "Высокое качество"
     win = tk.Toplevel(root)
     win.title(f"⚙ Настройки — {preset_name}")
-    win.resizable(False, False)
+    win.resizable(False, True)
     win.configure(bg=Colors.BG_CARD)
     win.grab_set()
     params = quality_params[preset_name]
+
+    win.update_idletasks()
+    screen_h = win.winfo_screenheight()
+    max_h = int(screen_h * 0.85)
+    win.maxsize(600, max_h)
 
     fields = [
         ("temperature", "Temperature", 0.1, 1.0, 0.05,
@@ -1119,6 +1321,9 @@ def open_quality_settings(preset_name):
 
         ("prosody_intensity", "Просодия", 0.0, 2.0, 0.1,
         "Выразительность речи.\n\n0 — ровно.\n1 — естественно.\n2 — очень эмоционально."),
+
+        ("de_esser_intensity", "Де-эссер", 0.0, 2.0, 0.1,
+        "Подавление избыточных шипящих/свистящих звуков (С/Ш/Ц/Щ).\n\n0 — выключено.\n1 — стандартно.\n2 — агрессивно."),
 
         ("trim_ms", "Trim конца (мс)", 0, 300, 10,
         "Обрезка хвоста аудио.\n\nУбирает шум и затухание в конце чанка."),
@@ -1177,21 +1382,39 @@ def open_quality_settings(preset_name):
     update_trim_state()
 
     def reset():
-        defaults = {
-            "Высокое качество": (0.70, 0.30, 80, 13.0, 1.0, 100, "auto", 0.0),
-            "Нарратив":         (0.75, 0.25, 85,  18.0, 0.9, 80, "auto", 0.5),
-            "Динамика":         (0.82, 0.20, 100, 16.0, 1.1, 60, "auto", 1.1),
-            "Экспрессия":       (0.88, 0.30, 90,  14.0, 1.0, 100, "auto", 1.3),
-        }
-        d = defaults.get(preset_name, (0.70, 0.30, 80, 13.0, 1.0, 80, "auto", 0.8))
-        params["temperature"].set(d[0])
-        params["top_p"].set(d[1])
-        params["top_k"].set(d[2])
-        params["repetition_penalty"].set(d[3])
-        params["speed"].set(d[4])
-        params["trim_ms"].set(d[5])
-        params["trim_mode"].set(d[6])
-        params["prosody_intensity"].set(d[7])
+            defaults = {
+                "Высокое качество": (0.70, 0.30, 80, 13.0, 1.0, 100, "auto", 0.0, 0.8),
+                "Нарратив":         (0.75, 0.25, 85,  18.0, 0.9, 80, "auto", 0.5, 0.7),
+                "Динамика":         (0.82, 0.20, 100, 16.0, 1.1, 60, "auto", 1.1, 1.0),
+                "Экспрессия":       (0.88, 0.30, 90,  14.0, 1.0, 100, "auto", 1.3, 1.3),
+            }
+            d = defaults.get(preset_name, (0.70, 0.30, 80, 13.0, 1.0, 80, "auto", 0.8, 1.0))
+            params["temperature"].set(d[0])
+            params["top_p"].set(d[1])
+            params["top_k"].set(d[2])
+            params["repetition_penalty"].set(d[3])
+            params["speed"].set(d[4])
+            params["trim_ms"].set(d[5])
+            params["trim_mode"].set(d[6])
+            params["prosody_intensity"].set(d[7])
+            params["de_esser_intensity"].set(d[8])
+
+    # QC чекбокс
+    qc_row = tk.Frame(win, bg=Colors.BG_CARD)
+    qc_row.pack(fill="x", padx=15, pady=(5, 0))
+    qc_cb = tk.Checkbutton(
+        qc_row,
+        text="🛡 Контроль качества (авто-перегенерация бракованных чанков)",
+        variable=params["qc_enabled"],
+        bg=Colors.BG_CARD, fg=Colors.TEXT_MAIN,
+        selectcolor=Colors.BG_INPUT,
+        activebackground=Colors.BG_CARD,
+        activeforeground=Colors.TEXT_MAIN,
+        font=("Segoe UI", 9),
+        cursor="hand2"
+    )
+    qc_cb.pack(side="left")
+    ToolTip(qc_cb, "Включает детектор повторов и валидатор длительности.\nПри браке — автоматическая перегенерация чанка (до 3 попыток).\nНемного замедляет генерацию.")
 
     btn_frame = tk.Frame(win, bg=Colors.BG_CARD)
     btn_frame.pack(fill="x", padx=15, pady=(10, 15))
@@ -1215,6 +1438,7 @@ def save_settings():
         "language": lang_var.get(),
         "quality": quality_var.get(),
         "ref_path": ref_var.get(),
+        "word_replacer_enabled": word_replacer_enabled.get(),
         "quality_params": {
             preset: {k: v.get() for k, v in params.items()}
             for preset, params in quality_params.items()
@@ -1238,6 +1462,8 @@ def apply_settings(data):
         path = data["ref_path"]
         if path and os.path.isfile(path):
             ref_var.set(path)
+    if "word_replacer_enabled" in data:
+        word_replacer_enabled.set(data["word_replacer_enabled"])
     if "quality_params" in data:
         for preset, params in data["quality_params"].items():
             if preset in quality_params:
@@ -1375,27 +1601,7 @@ tk.Frame(left_panel, bg=Colors.BG_DARK).pack(fill="both", expand=True)
 # RIGHT PANEL
 # =========================
 
-# =========================
-# STATUS BAR (MOVED TO TOP, REPLACES SYSTEM STATE)
-# =========================
-status_frame = tk.Frame(right_panel, bg=Colors.BG_CARD)
-status_frame.pack(fill="x", pady=(0, 10))
-
-style = ttk.Style()
-style.theme_use("clam")
-style.configure("Horizontal.TProgressbar",
-                background=Colors.PROGRESS_FG, troughcolor=Colors.PROGRESS_BG,
-                borderwidth=0, thickness=8)
-ttk.Progressbar(
-    status_frame, orient="horizontal", mode="determinate", maximum=100,
-    variable=progress_value, style="Horizontal.TProgressbar"
-).pack(fill="x", padx=10, pady=(10, 5))
-
-tk.Label(status_frame, textvariable=status_var, anchor="w", bg=Colors.BG_CARD,
-         fg=Colors.TEXT_MAIN, font=("Segoe UI", 10)).pack(fill="x", padx=10, pady=(0, 10))
-
-
-# Text
+# Text — НАВЕРХ
 text_card = create_card(right_panel, "📝 Текст")
 text_card.pack(fill="both", expand=True, pady=(0, 10))
 text_box = tk.Text(
@@ -1604,7 +1810,7 @@ def update_quality_buttons(*args):
 quality_var.trace_add("write", update_quality_buttons)
 update_quality_buttons()
 
-# Action buttons
+# Action buttons — ПОСЛЕ текстового блока
 action_frame = tk.Frame(right_panel, bg=Colors.BG_DARK)
 action_frame.pack(fill="x", pady=(0, 10))
 create_button(action_frame, "🚀 ГЕНЕРИРОВАТЬ", generate,
@@ -1613,6 +1819,25 @@ create_button(action_frame, "🚀 ГЕНЕРИРОВАТЬ", generate,
 create_button(action_frame, "⛔ ОТМЕНА", cancel_task,
               bg=Colors.BG_DANGER, fg=Colors.TEXT_MAIN, height=2
               ).pack(side="left", fill="x", expand=True)
+
+# =========================
+# STATUS BAR — ВНИЗУ, ПОД КНОПКАМИ
+# =========================
+status_frame = tk.Frame(right_panel, bg=Colors.BG_CARD)
+status_frame.pack(fill="x", side="bottom", pady=(0, 0))
+
+style = ttk.Style()
+style.theme_use("clam")
+style.configure("Horizontal.TProgressbar",
+                background=Colors.PROGRESS_FG, troughcolor=Colors.PROGRESS_BG,
+                borderwidth=0, thickness=8)
+ttk.Progressbar(
+    status_frame, orient="horizontal", mode="determinate", maximum=100,
+    variable=progress_value, style="Horizontal.TProgressbar"
+).pack(fill="x", padx=10, pady=(10, 5))
+
+tk.Label(status_frame, textvariable=status_var, anchor="w", bg=Colors.BG_CARD,
+         fg=Colors.TEXT_MAIN, font=("Segoe UI", 10)).pack(fill="x", padx=10, pady=(0, 10))
 
 # =========================
 # LAUNCH

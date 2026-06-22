@@ -3,6 +3,8 @@
 import re
 from dataclasses import dataclass
 
+from engine.text_utils import is_list_item as _is_list_item
+
 
 @dataclass
 class ProsodyConfig:
@@ -36,9 +38,10 @@ class ProsodyLayer:
     def __init__(self, config: ProsodyConfig = ProsodyConfig()):
         self.cfg = config
 
-    def process(self, text: str, lang: str = "auto") -> str:
+    def process(self, text: str, lang: str = "auto",
+                in_list: bool = False, is_last_list_item: bool = False) -> str:
         if self.cfg.intensity == 0.0:
-            return text  # полный bypass
+            return text
         if lang not in ("ru", "en"):
             return text
         text = self._normalize(text)
@@ -46,14 +49,66 @@ class ProsodyLayer:
         text = self._insert_conclusion_pauses(text)
         text = self._insert_emphasis_pauses(text)
         text = self._insert_example_pauses(text)
+
+        # #4: специальная обработка контекста перечисления
+        if in_list:
+            text = self._apply_list_prosody(text, is_last=is_last_list_item)
+
         text = self._cleanup(text)
         return text
 
+    # =========================
+    # #4 LIST PROSODY
+    # =========================
+    def _apply_list_prosody(self, text: str, is_last: bool = False) -> str:
+        """
+        Для последнего пункта перечисления — гарантируем финальную точку
+        (сигнал модели завершить интонацию вниз, а не оборвать).
+        Для промежуточных — запятая в конце (перечислительная интонация).
+        """
+        text = text.rstrip()
+
+        if is_last:
+            # финальная точка — завершающая интонация
+            if text and text[-1] not in ".!?":
+                text += "."
+        else:
+            # запятая в конце промежуточного пункта — интонация продолжения
+            if text and text[-1] in ".":
+                text = text[:-1] + ","
+            elif text and text[-1] not in ",.!?":
+                text += ","
+
+        return text
+
     def process_chunks(self, chunks: list, lang: str = "auto") -> list:
+        """
+        Обрабатывает список чанков с учётом контекста перечисления.
+        Определяет runs из list-item чанков и помечает последний.
+        """
         result = []
-        for chunk in chunks:
-            chunk = self.process(chunk, lang=lang)
-            result.append(chunk)
+        n = len(chunks)
+
+        i = 0
+        while i < n:
+            chunk = chunks[i]
+            if _is_list_item(chunk):
+                # находим конец серии list items
+                j = i
+                while j < n and _is_list_item(chunks[j]):
+                    j += 1
+                # обрабатываем серию
+                for k in range(i, j):
+                    is_last = (k == j - 1)
+                    result.append(self.process(
+                        chunks[k], lang=lang,
+                        in_list=True, is_last_list_item=is_last
+                    ))
+                i = j
+            else:
+                result.append(self.process(chunk, lang=lang))
+                i += 1
+
         return result
 
     def _insert_contrast_pauses(self, text: str) -> str:
