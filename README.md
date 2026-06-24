@@ -11,7 +11,9 @@ XTTS Studio — полностью офлайн инструмент для си
 
 ---
 
-- ⚙️ CPU-only версия 2,5гб 👉 [📥 Download XTTS Studio (Google Drive)](https://drive.google.com/file/d/1Sqc4AkHZi6hbKqsPHTfO7IUZ26tAfZ8m/view?usp=drive_link)
+- ⚙️ CPU-only версия 5гб 👉 [📥 Download XTTS Studio (Google Drive)](https://drive.google.com/file/d/1Sqc4AkHZi6hbKqsPHTfO7IUZ26tAfZ8m/view?usp=drive_link)
+
+- ⚙️ С поддержкой видеокарты 10гб 👉 [📥 Download XTTS Studio (Google Drive)](https://github.com/DreamSketcher/XTTS-Studio-portable-/releases/tag/XTTS_Studio_CUDA)
 
 ---
 
