@@ -11,15 +11,16 @@ XTTS Studio — полностью офлайн инструмент для си
 
 ---
 
-👉 [📥 Download XTTS Studio (Google Drive)](https://drive.google.com/file/d/1pO7RmUkNwHyBfMURSP-IzJA3oyxw2NiT/view?usp=drive_link)
+- ⚙️ CPU-only версия 5гб 👉 [📥 Download XTTS Studio (Google Drive)](https://drive.google.com/file/d/1Sqc4AkHZi6hbKqsPHTfO7IUZ26tAfZ8m/view?usp=drive_link)
+
+- ⚙️ С поддержкой видеокарты 10гб 👉 [📥 Download XTTS Studio ](https://github.com/DreamSketcher/XTTS-Studio-portable-/releases/tag/XTTS_Studio_CUDA)
 
 ---
 
 ## ✨ Возможности
 
 - 📴 Полностью офлайн работа  
-- 💻 Portable версия  
-- ⚙️ CPU-only режим (GPU не требуется)  
+- 💻 Portable версия    
 - 🎤 Клонирование голоса по короткому референсу  
 - 📚 Библиотека голосов  
 - 🚀 Кэширование Speaker Embedding  
@@ -101,9 +102,8 @@ OpenAI → ОпенЭйАй
 
 ## 💻 Требования
 
-- Windows 10 / 11  
-- x64 CPU  
-- GPU не требуется  
+- Windows  
+- x64 CPU / GPU
 
 ---
 
