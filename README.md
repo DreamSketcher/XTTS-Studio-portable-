@@ -11,7 +11,7 @@ XTTS Studio — полностью офлайн инструмент для си
 
 ---
 
-👉 [📥 Download XTTS Studio (Google Drive)](https://drive.google.com/file/d/1Sqc4AkHZi6hbKqsPHTfO7IUZ26tAfZ8m/view?usp=drive_link)
+- ⚙️ CPU-only версия 2,5гб 👉 [📥 Download XTTS Studio (Google Drive)](https://drive.google.com/file/d/1Sqc4AkHZi6hbKqsPHTfO7IUZ26tAfZ8m/view?usp=drive_link)
 
 ---
 
@@ -19,7 +19,7 @@ XTTS Studio — полностью офлайн инструмент для си
 
 - 📴 Полностью офлайн работа  
 - 💻 Portable версия  
-- ⚙️ CPU-only режим (GPU не требуется)  
+- ⚙️ CPU-only режим (GPU не требуется  
 - 🎤 Клонирование голоса по короткому референсу  
 - 📚 Библиотека голосов  
 - 🚀 Кэширование Speaker Embedding  
