@@ -7,9 +7,16 @@ import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
 from tkinterdnd2 import DND_FILES, TkinterDnD
 import ntpath
+import datetime as _dt
 from datetime import datetime
 import pygame
 import threading
+import threading as _threading_gui
+import unicodedata
+try:
+    import soundfile as sf
+except ImportError:
+    sf = None
 from typing import Optional
 
 from engine.voice_manager import VoiceManager
@@ -402,14 +409,14 @@ def open_outputs_folder():
 
     def _get_duration(path):
         try:
-            import soundfile as sf
+            if sf is None:
+                return 0.0
             return sf.info(path).duration
         except Exception:
             return 0.0
 
     def _file_date(path):
         try:
-            import datetime as _dt
             ts = os.path.getmtime(path)
             d = _dt.datetime.fromtimestamp(ts)
             today = _dt.date.today()
@@ -588,12 +595,12 @@ def open_outputs_folder():
         btn_del.pack(side="left")
 
         # hover highlight
-        def _enter(e, c=card):
-            if _active_path["v"] != path:
+        def _enter(e, c=card, p=path):
+            if _active_path["v"] != p:
                 c.config(bg=Colors.BG_HOVER, highlightbackground=Colors.BORDER)
             for w in c.winfo_children():
                 try:
-                    w.config(bg=Colors.BG_HOVER if _active_path["v"] != path else "#1c2330")
+                    w.config(bg=Colors.BG_HOVER if _active_path["v"] != p else "#1c2330")
                 except Exception:
                     pass
             for w in btn_frame.winfo_children():
@@ -602,10 +609,10 @@ def open_outputs_folder():
                 except Exception:
                     pass
 
-        def _leave(e, c=card):
-            active_bg = "#1c2330" if _active_path["v"] == path else Colors.BG_CARD
+        def _leave(e, c=card, p=path):
+            active_bg = "#1c2330" if _active_path["v"] == p else Colors.BG_CARD
             c.config(bg=active_bg,
-                     highlightbackground=Colors.ACCENT if _active_path["v"] == path else Colors.BORDER)
+                     highlightbackground=Colors.ACCENT if _active_path["v"] == p else Colors.BORDER)
             for w in c.winfo_children():
                 try:
                     w.config(bg=active_bg)
@@ -867,7 +874,6 @@ def open_outputs_folder():
 # =========================
 def _make_output_name(text: str) -> str:
     """Генерирует имя файла из первых слов текста с защитой от дублей."""
-    import unicodedata
     # Берём первые ~40 символов текста
     snippet = text.strip()[:60]
     # Убираем переносы строк
@@ -1172,16 +1178,6 @@ def on_task_update(data):
         set_stage(task.status.upper())
         set_status(f"{task.status}... {task.progress}%")
 
-    def _on_task_done(task: Task):
-        global current_task
-        if current_task and current_task.id == task.id:
-            current_task = None
-        clear_chunk_highlight()
-        unlock_textbox()
-        _save_history(task)
-        refresh_voice_list()
-        messagebox.showinfo("✅ Готово", f"Файл сохранён:\n{task.output_path}")
-
 def _highlight_chunk(start, end):
     try:
         clear_chunk_highlight()
@@ -1327,6 +1323,7 @@ def _on_task_done(task: Task):
         current_task = None
     clear_chunk_highlight()
     unlock_textbox()
+    _save_history(task)
     refresh_voice_list()
     messagebox.showinfo("✅ Готово", f"Файл сохранён:\n{task.output_path}")
 
@@ -1412,7 +1409,7 @@ def play_reference():
         messagebox.showerror("❌ Ошибка", f"Не удалось воспроизвести: {e}")
 
 def _check_playback():
-    global current_pos
+    global current_pos, play_btn
     if not PYGAME_OK:
         return
     try:
@@ -1427,7 +1424,7 @@ def _check_playback():
         current_pos = 0
 
 def seek_forward():
-    global current_pos
+    global current_pos, play_btn
     if not PYGAME_OK:
         return
     ref = clean_path(ref_var.get().strip())
@@ -1444,7 +1441,7 @@ def seek_forward():
         messagebox.showerror("❌ Ошибка", f"Не удалось перемотать: {e}")
 
 def seek_back():
-    global current_pos
+    global current_pos, play_btn
     if not PYGAME_OK:
         return
     ref = clean_path(ref_var.get().strip())
@@ -1523,6 +1520,54 @@ def paste_safe(event=None):
     except Exception:
         pass
     return "break"
+
+def copy_text(event=None):
+    """Копировать выделенный текст в буфер обмена"""
+    try:
+        if text_box.tag_ranges(tk.SEL):
+            selected = text_box.get(tk.SEL_FIRST, tk.SEL_LAST)
+            root.clipboard_clear()
+            root.clipboard_append(selected)
+    except Exception:
+        pass
+    return "break"
+
+def cut_text(event=None):
+    """Вырезать выделенный текст (копировать и удалить)"""
+    try:
+        if text_box.tag_ranges(tk.SEL):
+            selected = text_box.get(tk.SEL_FIRST, tk.SEL_LAST)
+            root.clipboard_clear()
+            root.clipboard_append(selected)
+            text_box.delete(tk.SEL_FIRST, tk.SEL_LAST)
+    except Exception:
+        pass
+    return "break"
+
+def select_all_text(event=None):
+    """Выделить весь текст"""
+    try:
+        text_box.tag_add(tk.SEL, "1.0", tk.END)
+        text_box.mark_set(tk.INSERT, tk.END)
+        text_box.see(tk.INSERT)
+    except Exception:
+        pass
+    return "break"
+
+def on_text_key_press(event):
+    """Обработчик горячих клавиш для любой раскладки (физические коды клавиш)"""
+    # event.state: 0x4 = Control, 0x1 = Shift
+    # event.keycode - физический код клавиши, независимо от раскладки
+    if event.state & 0x4:  # Ctrl нажат
+        if event.keycode == 65:  # A
+            return select_all_text(event)
+        elif event.keycode == 67:  # C
+            return copy_text(event)
+        elif event.keycode == 88:  # X
+            return cut_text(event)
+        elif event.keycode == 86:  # V
+            return paste_safe(event)
+    return None
 
 def load_txt():
     hide_placeholder()
@@ -2867,8 +2912,8 @@ text_box.bind("<FocusOut>", lambda e: show_placeholder())
 text_box.drop_target_register(DND_FILES)
 text_box.dnd_bind("<<Drop>>", drop_handler)
 text_box.bind("<Button-3>", show_text_context_menu)
-text_box.bind("<Control-v>", paste_safe, add=False)
-text_box.bind("<Control-V>", paste_safe, add=False)
+# Горячие клавиши для любой раскладки (включая русскую)
+text_box.bind("<Key>", on_text_key_press, add="+")
 text_box.tag_configure("chunk_highlight", background=Colors.CHUNK_BG, foreground=Colors.CHUNK_FG)
 show_placeholder()
 
