@@ -1,7 +1,7 @@
 {
   "language": "auto",
   "quality": "Высокое качество",
-  "ref_path": "C:\\XTTS Studio\\library\\Elevenlabs - Леонид Каневский\\normalized.wav",
+  "ref_path": "C:\\XTTS Studio\\library\\Диктор в Московском метро_ Каховская линия\\normalized.wav",
   "word_replacer_enabled": true,
   "lang_split_enabled": true,
   "quality_params": {
@@ -16,7 +16,7 @@
       "trim_ms": 80,
       "speed": 1.0,
       "trim_mode": "auto",
-      "export_format": "mp3"
+      "export_format": "wav"
     },
     "Нарратив": {
       "qc_enabled": true,

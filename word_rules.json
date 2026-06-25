@@ -205,6 +205,10 @@
     "learning": {
       "text": "лирнинг",
       "weight": 1.0
+    },
+    "CamelCase": {
+      "text": "камелкасе",
+      "weight": 1.0
     }
   }
 }
