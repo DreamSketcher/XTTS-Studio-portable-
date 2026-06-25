@@ -914,6 +914,161 @@ def queue_autorefresh():
     update_queue_view()
     root.after(500, queue_autorefresh)
 
+HISTORY_PATH = os.path.join(BASE_DIR, "history.json")
+
+def _save_history(task):
+    try:
+        try:
+            with open(HISTORY_PATH, "r", encoding="utf-8") as f:
+                history = json.load(f)
+        except Exception:
+            history = []
+
+        entry = {
+            "date": datetime.now().strftime("%d.%m.%Y %H:%M"),
+            "text": (task.text or "")[:120],
+            "voice": os.path.basename(os.path.dirname(task.voice or "")),
+            "quality": task.quality or "",
+            "output": task.output_path or "",
+            "duration": task.stats.get("time_sec", 0) if task.stats else 0,
+            "chunks": task.stats.get("chunks", 0) if task.stats else 0,
+        }
+
+        history.insert(0, entry)
+        history = history[:100]  # храним последние 100
+
+        with open(HISTORY_PATH, "w", encoding="utf-8") as f:
+            json.dump(history, f, ensure_ascii=False, indent=2)
+    except Exception as e:
+        print(f"[History] Save error: {e}")
+
+def open_history():
+    try:
+        with open(HISTORY_PATH, "r", encoding="utf-8") as f:
+            history = json.load(f)
+    except Exception:
+        history = []
+
+    win = tk.Toplevel(root)
+    win.title("📜 История генераций")
+    win.geometry("720x500")
+    win.resizable(True, True)
+    win.configure(bg=Colors.BG_DARK)
+    win.grab_set()
+
+    # тулбар
+    toolbar = tk.Frame(win, bg=Colors.BG_CARD, pady=6)
+    toolbar.pack(fill="x")
+
+    lbl_count = tk.Label(toolbar, text=f"{len(history)} записей",
+                         bg=Colors.BG_CARD, fg=Colors.TEXT_DIM, font=("Segoe UI", 9))
+    lbl_count.pack(side="left", padx=12)
+
+    def clear_history():
+        if not messagebox.askyesno("Очистить?", "Удалить всю историю генераций?", parent=win):
+            return
+        try:
+            os.remove(HISTORY_PATH)
+        except Exception:
+            pass
+        for w in list(scroll_inner.winfo_children()):
+            try:
+                w.destroy()
+            except Exception:
+                pass
+        lbl_count.config(text="0 записей")
+
+    tk.Button(
+        toolbar, text="🗑 Очистить историю", command=clear_history,
+        bg=Colors.BG_INPUT, fg=Colors.TEXT_ERROR,
+        activebackground=Colors.BG_DANGER, activeforeground=Colors.TEXT_MAIN,
+        relief="flat", bd=0, font=("Segoe UI", 9), padx=10, pady=4, cursor="hand2"
+    ).pack(side="right", padx=10)
+
+    tk.Frame(win, bg=Colors.BORDER, height=1).pack(fill="x")
+
+    # прокручиваемый список
+    list_outer = tk.Frame(win, bg=Colors.BG_DARK)
+    list_outer.pack(fill="both", expand=True)
+
+    canvas = tk.Canvas(list_outer, bg=Colors.BG_DARK, bd=0, highlightthickness=0)
+    scrollbar = tk.Scrollbar(list_outer, orient="vertical", command=canvas.yview,
+                             bg=Colors.BG_INPUT, troughcolor=Colors.BG_DARK)
+    canvas.configure(yscrollcommand=scrollbar.set)
+    scrollbar.pack(side="right", fill="y")
+    canvas.pack(side="left", fill="both", expand=True)
+
+    scroll_inner = tk.Frame(canvas, bg=Colors.BG_DARK)
+    canvas_window = canvas.create_window((0, 0), window=scroll_inner, anchor="nw")
+
+    def _on_frame_configure(e):
+        canvas.configure(scrollregion=canvas.bbox("all"))
+
+    def _on_canvas_configure(e):
+        canvas.itemconfig(canvas_window, width=e.width)
+
+    scroll_inner.bind("<Configure>", _on_frame_configure)
+    canvas.bind("<Configure>", _on_canvas_configure)
+
+    def _on_mousewheel(e):
+        try:
+            if canvas.winfo_exists():
+                canvas.yview_scroll(int(-1 * (e.delta / 120)), "units")
+        except Exception:
+            pass
+
+    canvas.bind_all("<MouseWheel>", _on_mousewheel)
+
+    # карточки
+    for entry in history:
+        card = tk.Frame(scroll_inner, bg=Colors.BG_CARD,
+                        highlightthickness=1, highlightbackground=Colors.BORDER, bd=0)
+        card.pack(fill="x", padx=8, pady=3)
+
+        # левая часть — дата и мета
+        left = tk.Frame(card, bg=Colors.BG_CARD)
+        left.pack(side="left", padx=12, pady=8)
+
+        tk.Label(left, text=entry.get("date", ""),
+                 bg=Colors.BG_CARD, fg=Colors.ACCENT,
+                 font=("Segoe UI", 8)).pack(anchor="w")
+
+        tk.Label(left, text=f"🎤 {entry.get('voice', '?')}  ·  ⭐ {entry.get('quality', '?')}  ·  {entry.get('chunks', 0)} чанков",
+                 bg=Colors.BG_CARD, fg=Colors.TEXT_DIM,
+                 font=("Segoe UI", 8)).pack(anchor="w", pady=(2, 0))
+
+        # текст
+        text_preview = entry.get("text", "").replace("\n", " ")
+        tk.Label(card, text=text_preview,
+                 bg=Colors.BG_CARD, fg=Colors.TEXT_MAIN,
+                 font=("Segoe UI", 9), anchor="w",
+                 wraplength=480, justify="left").pack(side="left", fill="x",
+                                                      expand=True, pady=8)
+
+        # кнопка — вставить текст обратно
+        def _reuse(t=entry.get("text", "")):
+            set_textbox_content(t)
+            win.destroy()
+
+        tk.Button(
+            card, text="↩", command=_reuse,
+            bg=Colors.BG_INPUT, fg=Colors.TEXT_MAIN,
+            relief="flat", bd=0, font=("Segoe UI", 11),
+            padx=8, pady=4, cursor="hand2",
+            activebackground=Colors.BG_HOVER
+        ).pack(side="right", padx=8)
+
+    def on_close():
+        canvas.unbind_all("<MouseWheel>")
+        win.destroy()
+
+    win.protocol("WM_DELETE_WINDOW", on_close)
+
+    if not history:
+        tk.Label(scroll_inner, text="История пуста",
+                 bg=Colors.BG_DARK, fg=Colors.TEXT_DIM,
+                 font=("Segoe UI", 10)).pack(pady=40)
+
 # =========================
 # UI CALLBACK
 # =========================
@@ -1004,6 +1159,16 @@ def on_task_update(data):
     else:
         set_stage(task.status.upper())
         set_status(f"{task.status}... {task.progress}%")
+
+    def _on_task_done(task: Task):
+        global current_task
+        if current_task and current_task.id == task.id:
+            current_task = None
+        clear_chunk_highlight()
+        unlock_textbox()
+        _save_history(task)
+        refresh_voice_list()
+        messagebox.showinfo("✅ Готово", f"Файл сохранён:\n{task.output_path}")
 
 def _highlight_chunk(start, end):
     try:
@@ -1853,6 +2018,7 @@ quality_params = {
         "trim_ms": tk.IntVar(value=100),
         "speed": tk.DoubleVar(value=1.0),
         "trim_mode": tk.StringVar(value="auto"),
+        "export_format": tk.StringVar(value="wav"),
     },
 
     "Нарратив": {
@@ -1866,6 +2032,7 @@ quality_params = {
         "trim_ms": tk.IntVar(value=80),
         "speed": tk.DoubleVar(value=0.9),
         "trim_mode": tk.StringVar(value="auto"),
+        "export_format": tk.StringVar(value="wav"),
     },
 
     "Динамика": {
@@ -1879,6 +2046,7 @@ quality_params = {
         "trim_ms": tk.IntVar(value=60),
         "speed": tk.DoubleVar(value=1.1),
         "trim_mode": tk.StringVar(value="auto"),
+        "export_format": tk.StringVar(value="wav"),
     },
 
     "Экспрессия": {
@@ -1892,6 +2060,7 @@ quality_params = {
         "trim_ms": tk.IntVar(value=100),
         "speed": tk.DoubleVar(value=1.0),
         "trim_mode": tk.StringVar(value="auto"),
+        "export_format": tk.StringVar(value="wav"),
     },
 }
 
@@ -1983,6 +2152,17 @@ def open_quality_settings(preset_name):
     tk.Radiobutton(mode_row, text="Выкл", variable=params["trim_mode"], value="off",
                    bg=Colors.BG_CARD, fg=Colors.TEXT_MAIN, selectcolor=Colors.BG_CARD,
                    activebackground=Colors.BG_CARD, font=("Segoe UI", 9)).pack(side="left")
+    
+    fmt_row = tk.Frame(win, bg=Colors.BG_CARD)
+    fmt_row.pack(fill="x", padx=15, pady=(5, 0))
+    tk.Label(fmt_row, text="Формат экспорта:", width=20, anchor="w",
+            bg=Colors.BG_CARD, fg=Colors.TEXT_MAIN, font=("Segoe UI", 10)).pack(side="left")
+    tk.Radiobutton(fmt_row, text="WAV", variable=params["export_format"], value="wav",
+                bg=Colors.BG_CARD, fg=Colors.TEXT_MAIN, selectcolor=Colors.BG_CARD,
+                activebackground=Colors.BG_CARD, font=("Segoe UI", 9)).pack(side="left", padx=5)
+    tk.Radiobutton(fmt_row, text="MP3 192k", variable=params["export_format"], value="mp3",
+                bg=Colors.BG_CARD, fg=Colors.TEXT_MAIN, selectcolor=Colors.BG_CARD,
+                activebackground=Colors.BG_CARD, font=("Segoe UI", 9)).pack(side="left", padx=5)
 
     def update_trim_state(*args):
         if trim_scale:
@@ -2014,6 +2194,7 @@ def open_quality_settings(preset_name):
             params["trim_mode"].set(d[6])
             params["prosody_intensity"].set(d[7])
             params["de_esser_intensity"].set(d[8])
+            params["export_format"].set("wav")
 
     # QC чекбокс
     qc_row = tk.Frame(win, bg=Colors.BG_CARD)
@@ -2117,6 +2298,59 @@ tk.Label(
     fg=Colors.TEXT_DIM,
     font=("Segoe UI", 9)
 ).pack(anchor="w")
+def check_and_update():
+    from engine.updater import check_update, apply_update, restart
+    import tkinter.messagebox as mb
+
+    set_status("🔄 Проверка обновлений...")
+    def _run():
+        result = check_update()
+        if result.get("error"):
+            root.after(0, lambda: mb.showerror("❌ Ошибка", result["error"]))
+            set_status("⏳ Ожидание...")
+            return
+        if not result["available"]:
+            root.after(0, lambda: mb.showinfo(
+                "✅ Обновлений нет",
+                f"У вас актуальная версия {result['local']}"
+            ))
+            set_status("⏳ Ожидание...")
+            return
+        confirmed = [False]
+        def ask():
+            confirmed[0] = mb.askyesno(
+                "🆕 Доступно обновление",
+                f"Версия {result['remote']} доступна.\nСейчас у вас {result['local']}.\n\nОбновить?"
+            )
+        root.after(0, ask)
+        root.after(200, lambda: _do_update(confirmed, result))
+
+    def _do_update(confirmed, result):
+        if not confirmed[0]:
+            set_status("⏳ Ожидание...")
+            return
+        set_status("📥 Загрузка обновления...")
+        def _apply():
+            ok = apply_update(result["files"], progress_callback=lambda i, t: set_progress(int(i/t*100)))
+            if ok:
+                root.after(0, lambda: mb.showinfo(
+                    "✅ Готово",
+                    "Обновление установлено.\nПриложение перезапустится."
+                ))
+                root.after(500, restart)
+            else:
+                root.after(0, lambda: mb.showwarning(
+                    "⚠️ Частичное обновление",
+                    "Некоторые файлы не удалось обновить.\nПроверьте соединение."
+                ))
+                set_status("⏳ Ожидание...")
+        threading.Thread(target=_apply, daemon=True).start()
+
+    threading.Thread(target=_run, daemon=True).start()
+
+upd_btn = create_button(header_frame, "🆕 Обновить", check_and_update, bg=Colors.BG_INPUT, font_size=8)
+upd_btn.pack(anchor="w", pady=(4, 0))
+
 left_panel.update_idletasks()
 
 
@@ -2249,7 +2483,9 @@ create_button(text_btn_frame, "🗑️ Очистить", lambda: [set_textbox_c
 dict_btn = create_button(text_btn_frame, "📖 Словарь", open_word_replacer, bg=Colors.BG_INPUT)
 dict_btn.pack(side="left", padx=(0, 5))
 ToolTip(dict_btn, "Словарь произношений.\n\nАнглийские слова из текста автоматически\nраспознаются и добавляются — они будут\nчитаться кириллицей без артефактов.\n\nМожно добавлять и править — приоритет на пользовательское решение.")
-create_button(text_btn_frame, "🎵 Аудио", open_outputs_folder, bg=Colors.BG_INPUT).pack(side="left")
+create_button(text_btn_frame, "📜 История", open_history, bg=Colors.BG_INPUT).pack(side="left", padx=(0, 5))
+create_button(text_btn_frame, "🎵 Аудио", open_outputs_folder, bg=Colors.BG_INPUT).pack(side="left", padx=(0, 5))
+
 
 # =========================
 # 2-я строка действий: Язык/Справка слева, Стили/Высокое качество справа

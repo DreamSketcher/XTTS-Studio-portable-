@@ -1027,6 +1027,7 @@ def run_tts(
                 preset.pop("de_esser_intensity", None)
                 preset.pop("word_replacer_enabled", None)
                 preset.pop("lang_split_enabled", None)
+                preset.pop("export_format", None)
 
                 # #2: temperature schedule — компенсация угасания на перечислениях
                 preset = _adjust_params_for_chunk(preset, i, total, chunk)
@@ -1237,7 +1238,13 @@ def run_tts(
             if combined.dBFS != float("-inf"):
                 combined = combined.apply_gain(-18.0 - combined.dBFS)
 
-            combined.export(final_path, format="wav")
+            export_format = (quality_params or {}).get("export_format", "wav")
+            if export_format == "mp3":
+                mp3_path = os.path.splitext(final_path)[0] + ".mp3"
+                combined.export(mp3_path, format="mp3", bitrate="192k")
+                final_path = mp3_path
+            else:
+                combined.export(final_path, format="wav")
 
             cleanup([item["path"] for item in chunk_items])
 
