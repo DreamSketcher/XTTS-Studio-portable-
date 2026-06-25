@@ -127,5 +127,6 @@ bc1qz78u3lvagt3v886359glv57ct6rnlh506wjmdy
 ## 🧩 Разработка
 
 Использовались AI-инструменты:
-- ChatGPT
 - Claude
+- ChatGPT
+
