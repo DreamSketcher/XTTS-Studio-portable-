@@ -258,6 +258,22 @@ class TextNormalizer:
         # =========================
         text = text.strip()
         text = re.sub(r"[.,]+$", "", text)
+
+        # пауза перед противительными союзами
+        text = re.sub(
+            r'(?<![,;!?\.])(\s+)(но|однако|хотя|зато|впрочем|тем\s+не\s+менее)\b',
+            r',\1\2',
+            text,
+            flags=re.IGNORECASE
+        )
+        # «а» отдельно — только если перед ней строчная буква/цифра
+        text = re.sub(
+            r'(?<=[а-яёa-z0-9])(\s+)(а)\s+(?!то\b|значит\b|также\b|ещё\b|еще\b|о\b)',
+            r',\1\2 ',
+            text,
+            flags=re.IGNORECASE
+        )
+
         if text and text[-1] not in ".!?":
             text += "."
 
