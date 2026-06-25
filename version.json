@@ -1,0 +1,19 @@
+{
+  "version": "1.0.0",
+  "files": [
+    "gui.py",
+    "engine/tts_runner.py",
+    "engine/normalizer.py",
+    "engine/chunker.py",
+    "engine/word_replacer.py",
+    "engine/reference_processor.py",
+    "engine/prosody_layer.py",
+    "engine/smart_pauses.py",
+    "engine/de_esser.py",
+    "engine/text_utils.py",
+    "engine/voice_manager.py",
+    "engine/task_manager.py",
+    "engine/task_models.py",
+    "engine/updater.py"
+  ]
+}
