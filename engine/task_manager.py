@@ -122,6 +122,28 @@ class TaskManager:
                         self.ui_callback(data)
                     return
 
+                if data.get("stage") == "normalized_text":
+                    if self.ui_callback:
+                        self.ui_callback(data)
+                    return
+
+                if data.get("stage") == "check_textbox_ready":
+                    if self.ui_callback:
+                        return self.ui_callback(data)
+                    return False
+
+                # ↓ ДОБАВИТЬ ЭТИ ДВА БЛОКА
+                if data.get("stage") == "ai_conductor_on":
+                    if self.ui_callback:
+                        self.ui_callback(data)
+                    return
+
+                if data.get("stage") == "ai_conductor_off":
+                    if self.ui_callback:
+                        self.ui_callback(data)
+                    return
+                # ↑ КОНЕЦ ДОБАВЛЕНИЯ
+
                 if data.get("stage"):
                     task.status = data["stage"]
                 if data.get("progress") is not None:
@@ -135,7 +157,6 @@ class TaskManager:
                 self._notify(task)
 
         return callback
-
     # =========================
     # УВЕДОМЛЕНИЕ GUI
     # =========================

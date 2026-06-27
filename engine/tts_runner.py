@@ -187,9 +187,10 @@ def _get_embedding(tts, ref_wav, cache_path):
 # =========================
 import hashlib
 
-def _chunk_cache_key(chunk: str, lang: str, preset: dict, speed: float, ref_path: str = "") -> str:
+def _chunk_cache_key(chunk: str, lang: str, preset: dict, speed: float, ref_path: str = "", conductor_active: bool = False) -> str:
     ref_hash = hashlib.md5(ref_path.encode("utf-8")).hexdigest()[:8] if ref_path else ""
-    raw = f"v3_lang_split|{ref_hash}|{chunk}|{lang}|{speed}|{sorted(preset.items())}"
+    mode_tag = "conductor" if conductor_active else "standard"
+    raw = f"v4_{mode_tag}|{ref_hash}|{chunk}|{lang}|{speed}|{sorted(preset.items())}"
     return hashlib.md5(raw.encode("utf-8")).hexdigest()
 
 def _chunk_cache_path(output_dir: str, key: str) -> str:
@@ -907,23 +908,39 @@ def run_tts(
         send("reference", 10)
 
         # =========================
-        # NORMALIZE (10–20%)
+        # GPT PREPROCESS — на сыром тексте, ДО normalize().
+        # Иначе normalizer успевает развернуть числа в слова
+        # ("2024" → "две тысячи двадцать четыре"), и в GPT улетает
+        # раздутый по токенам текст — лишний расход дневной квоты Groq.
         # =========================
         if cancelled(): raise _Cancelled()
-        send("normalize", 10, "Нормализация текста...")
-        text = normalizer.normalize(text)
-        text = normalizer.safe_character_filter(text)
-        # OPTIONAL GPT PREPROCESS
         use_gpt = quality_params.get("use_gpt", False) if quality_params else False
 
         if use_gpt:
             from .gpt_client import preprocess_for_tts
 
-            send("gpt", 15, "GPT обработка текста...")
+            send("LLM", 12, "LLM обработка текста...")
+            # preprocess_for_tts (через improve_for_tts) сама гасит недоступность
+            # ИИ внутри себя и возвращает исходный текст без изменений —
+            # никаких исключений сюда не долетает, try/except не нужен.
             text = preprocess_for_tts(text, mode="assistant")
+            # показываем в GUI именно результат GPT — это то, что зрителю
+            # интересно увидеть. Финальная normalize-косметика для движка
+            # дальше остаётся "под капотом", в text_box её не выводим.
+            send("normalized_text", 18, text_msg=text)
 
-        # отправляем финальный текст в GUI для обновления text_box
-        send("normalized_text", 20, text_msg=text)
+        # =========================
+        # NORMALIZE (10–20%)
+        # =========================
+        if cancelled(): raise _Cancelled()
+        send("normalize", 15, "Нормализация текста...")
+        text = normalizer.normalize(text)
+        text = normalizer.safe_character_filter(text)
+
+        if not use_gpt:
+            # без GPT — показываем в GUI финальный normalize-текст, как раньше
+            send("normalized_text", 20, text_msg=text)
+
         send("normalize", 20)
 
         # ждём подтверждения от GUI что text_box обновлён
@@ -969,9 +986,52 @@ def run_tts(
             breath_length="medium"
         )
         # #4: process_chunks учитывает контекст серий list-item чанков
-        chunks = prosody_engine.process_chunks(chunks_before_prosody, lang=lang_detected)
+        ai_conductor_enabled = bool((quality_params or {}).get("ai_conductor_enabled", False))
+
+        if ai_conductor_enabled:
+            chunks = chunks_before_prosody  # prosody пропускается
+        else:
+            chunks = prosody_engine.process_chunks(chunks_before_prosody, lang=lang_detected)
 
         send("chunking", 30)
+
+        # AI Conductor — один вызов на весь текст до старта генерации
+        conductor_map = None
+        if ai_conductor_enabled:
+            from .ai_conductor import conduct
+            send("ai_conductor_on", None)   # ← пульсация сразу при старте
+            send("generate", 30, "AI Conductor анализирует текст...")
+            chunks_wr = [word_replacer.apply(c) if (quality_params is None or quality_params.get("word_replacer_enabled", True)) else c for c in chunks]
+            rewrite_enabled = bool((quality_params or {}).get("ai_rewrite_enabled", False))
+            rewrite_context = str((quality_params or {}).get("ai_rewrite_context", "")).strip()
+            rewrite_negative = str((quality_params or {}).get("ai_rewrite_negative", "")).strip()
+
+            conductor_result = conduct(
+                text, chunks, quality_params, chunks_wr=chunks_wr,
+                rewrite_enabled=rewrite_enabled,
+                rewrite_context=rewrite_context,
+                rewrite_negative=rewrite_negative,
+            )
+
+            # Если кондуктор вернул rewrite — перестраиваем текст и чанки
+            if isinstance(conductor_result, dict) and "rewritten_text" in conductor_result:
+                text = conductor_result["rewritten_text"]
+                send("normalized_text", None, text_msg=text)
+                chunks_before_prosody = chunker.chunk_text(text)
+                chunk_map = _build_chunk_text_map(text, chunks_before_prosody)
+                chunks = chunks_before_prosody
+                chunks_wr = [word_replacer.apply(c) if (quality_params is None or quality_params.get("word_replacer_enabled", True)) else c for c in chunks]
+                conductor_map = conductor_result["chunks"]
+                # Если длина чанков изменилась — кондуктор переназначает параметры
+                if len(conductor_map) != len(chunks):
+                    print(f"[Conductor] Rewrite changed chunk count {len(conductor_map)}→{len(chunks)}, re-conducting")
+                    from .ai_conductor import _fallback_params
+                    conductor_map = _fallback_params(chunks)
+            else:
+                conductor_map = conductor_result
+
+            if conductor_map is None:
+                send("ai_conductor_off", None)
 
         output_dir = path("outputs")
         os.makedirs(output_dir, exist_ok=True)
@@ -995,7 +1055,6 @@ def run_tts(
         for i, chunk in enumerate(chunks):
 
             if cancelled():
-                cleanup([item["path"] for item in chunk_items])
                 raise _Cancelled()
 
             if len(chunk.strip()) < 5:
@@ -1028,6 +1087,7 @@ def run_tts(
                 trim_mode = str(preset.pop("trim_mode", "auto") or "auto").lower()
 
                 # их нельзя передавать в XTTS inference.
+                # их нельзя передавать в XTTS inference.
                 preset.pop("prosody_intensity", None)
                 preset.pop("trim_range_ms", None)
                 preset.pop("silence_thresh_db", None)
@@ -1036,23 +1096,48 @@ def run_tts(
                 preset.pop("word_replacer_enabled", None)
                 preset.pop("lang_split_enabled", None)
                 preset.pop("export_format", None)
+                preset.pop("use_gpt", None)
+                preset.pop("ai_conductor_enabled", None)
+                preset.pop("ai_conductor_context", None)
+                preset.pop("ai_rewrite_enabled", None)
+                preset.pop("ai_rewrite_context", None)
+                preset.pop("ai_rewrite_negative", None)
 
                 # #2: temperature schedule — компенсация угасания на перечислениях
-                preset = _adjust_params_for_chunk(preset, i, total, chunk)
+                if ai_conductor_enabled and conductor_map and i < len(conductor_map):
+                    cmap = conductor_map[i]
+                    # AI управляет temperature schedule — _adjust пропускаем
+                    for k in ("temperature", "top_p", "repetition_penalty", "length_penalty"):
+                        if k in cmap:
+                            preset[k] = cmap[k]
+                    if "speed" in cmap:
+                        speed_value = cmap["speed"]
+                else:
+                    preset = _adjust_params_for_chunk(preset, i, total, chunk)
 
+                # Эти строки СНАРУЖИ любого if — всегда выполняются
                 no_pause_flag = "[NO_PAUSE]" in chunk
                 clean_chunk = chunk.replace("[NO_PAUSE]", "").strip()
 
-                #print(f"[WR] word_replacer_enabled={quality_params.get('word_replacer_enabled') if quality_params else None}")
+                raw_chunk_before_wr = clean_chunk  # сохраняем до WR
                 if quality_params is None or quality_params.get("word_replacer_enabled", True):
                     clean_chunk = word_replacer.apply(clean_chunk)
+
+                # Corrections — тоже снаружи, но проверяем условие внутри
+                if ai_conductor_enabled and conductor_map and i < len(conductor_map):
+                    cmap = conductor_map[i]
+                    if "corrections" in cmap:
+                        for original_word, corrected in cmap["corrections"].items():
+                            word_replacer.add_rule(original_word, corrected, category="ai_corrected")
+                            print(f"[WR] AI correction: {original_word} → {corrected}")
+                        clean_chunk = word_replacer.apply(raw_chunk_before_wr)
 
                 import soundfile as sf  # type: ignore
 
                 # =========================
                 # CHUNK CACHE — проверяем до генерации
                 # =========================
-                cache_key = _chunk_cache_key(chunk, lang, preset, speed_value, ref_path)
+                cache_key = _chunk_cache_key(chunk, lang, preset, speed_value, ref_path, conductor_active=ai_conductor_enabled)
                 cached = _chunk_cache_get(output_dir, cache_key)
                 #print(f"[CACHE CHECK] key={cache_key[:8]} cached={cached}")
 
@@ -1204,7 +1289,6 @@ def run_tts(
         # MERGE (90–100%)
         # =========================
         if cancelled():
-            cleanup([item["path"] for item in chunk_items])
             raise _Cancelled()
 
         send("merge", 90, "Сборка аудио...")
@@ -1259,7 +1343,10 @@ def run_tts(
                         pass
                     else:
                         next_chunk = valid_chunks[i + 1] if i + 1 < len(valid_chunks) else ""
-                        pause_ms = pause_engine.get_pause_ms(valid_chunks[i], next_chunk)
+                        if ai_conductor_enabled and conductor_map and i < len(conductor_map):
+                            pause_ms = conductor_map[i].get("pause_after_ms", 350)
+                        else:
+                            pause_ms = pause_engine.get_pause_ms(valid_chunks[i], next_chunk)
                         combined += AudioSegment.silent(pause_ms)  # type: ignore
 
             # De-essing — подавление избыточных шипящих на финальном файле
@@ -1271,8 +1358,8 @@ def run_tts(
                 except Exception as e:
                     print(f"[De-esser] Failed, skipping: {e}")
 
-            combined += AudioSegment.silent(200)  # type: ignore
-            combined = combined.fade_out(80)
+            combined += AudioSegment.silent(300)  # type: ignore
+            combined = combined.fade_out(200)
 
             if combined.dBFS != float("-inf"):
                 combined = combined.apply_gain(-18.0 - combined.dBFS)
@@ -1312,7 +1399,10 @@ def run_tts(
 
                     if i != len(chunk_items) - 1:
                         next_text = chunk_items[i + 1]["processed_text"] if i + 1 < len(chunk_items) else ""
-                        pause_ms = pause_engine.get_pause_ms(item["processed_text"], next_text)
+                        if ai_conductor_enabled and conductor_map and i < len(conductor_map):
+                            pause_ms = conductor_map[i].get("pause_after_ms", 350)
+                        else:
+                            pause_ms = pause_engine.get_pause_ms(item["processed_text"], next_text)
                         silence_samples = int(sample_rate * pause_ms / 1000)
 
                         if data.ndim == 1:
