@@ -3,6 +3,12 @@ import re
 import sys
 import json
 import traceback
+def _global_exception_handler(exc_type, exc_value, exc_tb):
+    traceback.print_exception(exc_type, exc_value, exc_tb)
+    input("Press Enter to exit...")
+
+sys.excepthook = _global_exception_handler
+import engine.chat_window as chat_window
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
 from tkinterdnd2 import DND_FILES, TkinterDnD
@@ -67,7 +73,6 @@ class Colors:
     MENU_BG = "#1c2330"
     MENU_HOVER = "#2a3142"
     MENU_ACTIVE = "#1f6feb"
-
 # =========================
 # TOOLTIP
 # =========================
@@ -111,7 +116,22 @@ class ToolTip:
 # ROOT
 # =========================
 
+import ctypes
+
+def set_dark_titlebar(root):
+    root.update()
+    hwnd = ctypes.windll.user32.GetParent(root.winfo_id())
+    # Windows 11
+    DWMWA_USE_IMMERSIVE_DARK_MODE = 20
+    ctypes.windll.dwmapi.DwmSetWindowAttribute(
+        hwnd,
+        DWMWA_USE_IMMERSIVE_DARK_MODE,
+        ctypes.byref(ctypes.c_int(1)),
+        ctypes.sizeof(ctypes.c_int)
+    )
+
 root = TkinterDnD.Tk()
+set_dark_titlebar(root)
 
 ICON_PATH = os.path.join(BASE_DIR, "icon.ico")
 
@@ -122,8 +142,8 @@ except Exception as e:
     print(f"[ICON ERROR] {e}")
 
 root.title("XTTS Studio")
-root.geometry("1000x820")
-root.minsize(800, 680)
+root.geometry("1160x820")
+root.minsize(920, 680)
 root.configure(bg=Colors.BG_DARK)
 
 try:
@@ -193,6 +213,10 @@ console_redirect = ConsoleRedirect()
 sys.stdout = console_redirect
 sys.stderr = console_redirect
 
+def _log(msg):
+    with open(r"C:\XTTS Studio\boot.log", "a", encoding="utf-8") as f:
+        f.write(msg + "\n")
+
 # =========================
 # PYGAME
 # =========================
@@ -233,21 +257,7 @@ model_ready = False
 voice_manager = VoiceManager(BACKUP_DIR)
 voice_manager.scan_voices()
 
-use_gpt = tk.BooleanVar()
-gpt_checkbox = tk.Checkbutton(
-    left_panel,
-    text="улучшение текста",
-    variable=use_gpt,
-    bg=Colors.BG_DARK,
-    fg=Colors.TEXT_MAIN,
-    selectcolor=Colors.BG_INPUT,
-    activebackground=Colors.BG_DARK,
-    activeforeground=Colors.TEXT_MAIN,
-    font=("Segoe UI", 9),
-    cursor="hand2"
-)
-gpt_checkbox.pack(anchor="w", padx=12, pady=(4, 8))
-ToolTip(gpt_checkbox, "Включает доработку текста через Groq перед озвучкой")
+use_gpt = tk.BooleanVar(value=False)
 
 # Chat interface state
 chat_history = None
@@ -750,6 +760,7 @@ def open_outputs_folder():
             n = 0
         count_lbl.config(text=f"{n} файлов")
 
+
     # ── LAYOUT ───────────────────────────────────────────────────────────────
 
     # — Тулбар —
@@ -877,6 +888,7 @@ def open_outputs_folder():
     btn_play.pack(side="left", padx=3)
     _ctrl_btn(ctrl, "⏭", lambda: seek_rel(5)).pack(side="left", padx=3)
     _ctrl_btn(ctrl, "⏩", lambda: seek_rel(10)).pack(side="left", padx=3)
+
 
     # ── наполнение карточками ─────────────────────────────────────────────
     for fname in _collect_files():
@@ -1116,6 +1128,7 @@ def open_history():
 # UI CALLBACK
 # =========================
 def on_task_update(data):
+    global current_task
     if data is None:
         return
 
@@ -1139,21 +1152,30 @@ def on_task_update(data):
 
         root.after_idle(_do_chunk_highlight)
         return
+    
+    if isinstance(data, dict) and data.get("stage") == "ai_conductor_on":
+        root.after(0, lambda: set_ai_pulse(True))
+        return
+
+    if isinstance(data, dict) and data.get("stage") == "ai_conductor_off":
+        root.after(0, lambda: set_ai_pulse(False))
+        return
 
     if isinstance(data, dict) and data.get("stage") == "normalized_text":
         normalized = data.get("text", "")
         if normalized:
-            try:
-                unlock_textbox()
-                text_box.delete("1.0", tk.END)
-                text_box.insert("1.0", normalized)
-                text_box.config(fg=Colors.TEXT_MAIN)
-                lock_textbox()
-                root.update_idletasks()
-                _textbox_updated.set()
-            except Exception as e:
-                print(f"[TextBox sync error]: {e}")
-        return
+            def _apply_normalized_text(t=normalized):
+                try:
+                    text_box.config(state="normal")
+                    text_box.delete("1.0", "end")
+                    text_box.insert("1.0", t)
+                    lock_textbox()
+                    root.update_idletasks()
+                    _textbox_updated.set()
+                except Exception as e:
+                    print(f"[TextBox sync error]: {e}")
+            root.after(0, _apply_normalized_text)
+            return
 
     if isinstance(data, dict) and data.get("stage") == "check_textbox_ready":
         return _textbox_updated.is_set()
@@ -1171,6 +1193,7 @@ def on_task_update(data):
         set_status(f"🔄 Генерация... {task.progress}%")
         set_stage("RUNNING")
     elif task.status == "done":
+        root.after(0, lambda: set_ai_pulse(False))
         set_stage("DONE")
         unlock_textbox()
         if task.stats:
@@ -1189,9 +1212,9 @@ def on_task_update(data):
         set_stage("ERROR")
         unlock_textbox()
         set_status("❌ Ошибка")
+        root.after(0, lambda: set_ai_pulse(False))
         root.after(0, lambda: _on_task_error(task))
     elif task.status == "cancelled":
-        global current_task
         if current_task and current_task.id == task.id:
             current_task = None
         clear_chunk_highlight()
@@ -1199,6 +1222,7 @@ def on_task_update(data):
         set_stage("IDLE")
         set_status("⛔ Отменено")
         set_progress(0)
+        root.after(0, lambda: set_ai_pulse(False))
     else:
         set_stage(task.status.upper())
         set_status(f"{task.status}... {task.progress}%")
@@ -1518,6 +1542,7 @@ def on_voice_select(event):
                 root.after(100, play_reference)
     set_status(f"🎤 Активный голос: {voice_name}")
 
+
 # =========================
 # PLACEHOLDER
 # =========================
@@ -1535,389 +1560,28 @@ def hide_placeholder(event=None):
         text_box.config(fg=Colors.TEXT_MAIN)
 
 # =========================
-# WEB CHAT HELPERS
+# CHAT — делегируем в engine/chat_window.py
+# =========================
+def _get_textbox_content():
+    return text_box.get("1.0", "end-1c").strip()
 
-def set_chat_status(message: str):
-    if chat_status_label is None:
-        return
-    chat_status_label.config(text=message)
-
-
-def append_chat_message(role: str, message: str):
-    if chat_history is None:
-        return
-    chat_history.config(state="normal")
-    if role == "user":
-        chat_history.insert("end", "Вы: ", "user")
-    elif role == "assistant":
-        chat_history.insert("end", "GPT: ", "assistant")
-    else:
-        chat_history.insert("end", "Система: ", "system")
-    chat_history.insert("end", message + "\n\n")
-    chat_history.config(state="disabled")
-    chat_history.see("end")
-def append_chat_message(role: str, message: str):
-    if chat_history is None:
-        return
-    chat_history.config(state="normal")
-    if role == "user":
-        chat_history.insert("end", "Вы: ", "user")
-    elif role == "assistant":
-        chat_history.insert("end", "AI: ", "assistant")
-    else:
-        chat_history.insert("end", "Система: ", "system")
-    chat_history.insert("end", message + "\n\n")
-    chat_history.config(state="disabled")
-    chat_history.see("end")
-
-
-def open_chat_window():
-    global chat_history, chat_input, chat_send_btn, chat_status_label, _chat_window, improve_btn
-
-    if _chat_window is not None:
-        try:
-            if _chat_window.winfo_exists():
-                _chat_window.lift()
-                _chat_window.focus_force()
-                return
-        except Exception:
-            pass
-
-    win = tk.Toplevel(root)
-    win.title("💬 Чат")
-    win.geometry("520x600")
-    win.minsize(480, 420)
-    win.resizable(True, True)
-    win.configure(bg=Colors.BG_DARK)
-
-    globals()["_chat_window"] = win
-
-    chat_card = create_card(win, "")
-    chat_card.pack(fill="both", expand=True, padx=10, pady=10)
-
-    tk.Label(
-        chat_card, text="💬 Чат с GroQ",
-        bg=Colors.BG_CARD, fg=Colors.TEXT_MAIN,
-        font=("Segoe UI", 11, "bold"), anchor="w"
-    ).pack(fill="x", padx=10, pady=(7, 5))
-
-    hist_frame = tk.Frame(chat_card, bg=Colors.BORDER, padx=1, pady=1)
-    hist_frame.pack(fill="both", expand=True, padx=10, pady=(0, 8))
-
-    hist_scroll = tk.Scrollbar(hist_frame, bg=Colors.BG_INPUT, troughcolor=Colors.BG_DARK)
-    hist_scroll.pack(side="right", fill="y")
-
-    history_widget = tk.Text(
-        hist_frame, wrap="word", state="disabled",
-        bg=Colors.BG_INPUT, fg=Colors.TEXT_MAIN,
-        relief="flat", highlightthickness=0,
-        font=("Segoe UI", 10), padx=10, pady=10,
-        yscrollcommand=hist_scroll.set
-    )
-    
-    chat_action_row = tk.Frame(chat_card, bg=Colors.BG_CARD)
-    chat_action_row.pack(side="bottom", fill="x", padx=10, pady=(6, 10))
-
-    improve_btn_local = create_button(
-        chat_action_row, "✨ Улучшить текст для TTS",
-        improve_text_with_gpt, bg=Colors.BG_INPUT, font_size=9, height=2
-    )
-    improve_btn_local.pack(side="left", padx=(0, 5), fill="x", expand=True)
-    ToolTip(improve_btn_local,
-        "Groq перепишет текст из редактора:\n"
-        "• раскроет сокращения\n"
-        "• разобьёт длинные предложения\n"
-        "• уберёт символы, плохо читаемые TTS\n"
-        "Результат вставится обратно в редактор.")
-    globals()["improve_btn"] = improve_btn_local
-
-    clear_hist_btn = create_button(
-        chat_action_row, "🗑 Очистить чат",
-        clear_chat_history, bg=Colors.BG_INPUT, font_size=9, height=2
-    )
-    clear_hist_btn.pack(side="left", padx=(0, 5), fill="x", expand=True)
-
-    gpt_settings_btn = create_button(
-        chat_action_row, "⚙ Настройки Groq",
-        open_gpt_settings, bg=Colors.BG_INPUT, font_size=9, height=2
-    )
-    gpt_settings_btn.pack(side="left", fill="x", expand=True)
-    ToolTip(gpt_settings_btn,
-        "API-ключ и выбор модели Groq.\n"
-        "Бесплатно: console.groq.com")
-
-    status_lbl = tk.Label(
-        chat_card, text="Готов к работе", anchor="w",
-        bg=Colors.BG_CARD, fg=Colors.TEXT_DIM, font=("Segoe UI", 8)
-    )
-    status_lbl.pack(side="bottom", fill="x", padx=10, pady=(0, 4))
-    globals()["chat_status_label"] = status_lbl
-
-    input_frame = tk.Frame(chat_card, bg=Colors.BG_CARD)
-    input_frame.pack(side="bottom", fill="x", padx=10, pady=(0, 6))
-
-    input_box = tk.Text(
-        input_frame, height=3, wrap="word",
-        bg=Colors.BG_INPUT, fg=Colors.TEXT_MAIN,
-        insertbackground=Colors.TEXT_MAIN,
-        relief="flat", highlightthickness=1,
-        highlightbackground=Colors.BORDER, highlightcolor=Colors.ACCENT,
-        font=("Segoe UI", 10), padx=8, pady=6
-    )
-    input_box.pack(side="left", fill="both", expand=True, padx=(0, 6))
-
-    globals()["chat_input"] = input_box
-
-    def _on_enter(event):
-        if not (event.state & 0x1):  # без Shift
-            send_chat_message()
-            return "break"
-        return None
-
-    input_box.bind("<Return>", _on_enter)
-
-    send_btn = create_button(input_frame, "➤", send_chat_message, bg=Colors.BG_ACTIVE, width=3)
-    send_btn.pack(side="left", fill="y")
-    globals()["chat_send_btn"] = send_btn
-
-    hist_frame = tk.Frame(chat_card, bg=Colors.BORDER, padx=1, pady=1)
-    hist_frame.pack(fill="both", expand=True, padx=10, pady=(0, 8))
-
-    hist_scroll = tk.Scrollbar(hist_frame, bg=Colors.BG_INPUT, troughcolor=Colors.BG_DARK)
-    hist_scroll.pack(side="right", fill="y")
-
-    history_widget = tk.Text(
-        hist_frame, wrap="word", state="disabled",
-        bg=Colors.BG_INPUT, fg=Colors.TEXT_MAIN,
-        relief="flat", highlightthickness=0,
-        font=("Segoe UI", 10), padx=10, pady=10,
-        yscrollcommand=hist_scroll.set
-    )
-    history_widget.pack(fill="both", expand=True)
-    hist_scroll.config(command=history_widget.yview)
-
-    history_widget.tag_configure("user", foreground=Colors.ACCENT, font=("Segoe UI", 10, "bold"))
-    history_widget.tag_configure("assistant", foreground=Colors.TEXT_SUCCESS, font=("Segoe UI", 10, "bold"))
-    history_widget.tag_configure("system", foreground=Colors.TEXT_DIM, font=("Segoe UI", 9, "italic"))
-
-    globals()["chat_history"] = history_widget
-
-    for entry in _chat_history_messages:
-        append_chat_message(entry.get("role", "assistant"), entry.get("content", ""))
-
-    def _on_close():
-        globals()["_chat_window"] = None
-        globals()["chat_history"] = None
-        globals()["chat_input"] = None
-        globals()["chat_send_btn"] = None
-        globals()["chat_status_label"] = None
-        win.destroy()
-
-    win.protocol("WM_DELETE_WINDOW", _on_close)
-    input_box.focus_set()
-
+chat_window.init(
+    root=root,
+    colors=Colors,
+    create_button_fn=create_button,
+    get_text_fn=_get_textbox_content,
+    set_text_fn=set_textbox_content,
+    placeholder=PLACEHOLDER,
+)
 
 def toggle_chat_panel():
-    open_chat_window()
+    chat_window.open_chat_window()
 
+def append_chat_message(role, message):
+    chat_window.append_chat_message(role, message)
 
-def show_chat_panel():
-    open_chat_window()
-
-def hide_chat_panel():
-    pass
-
-
-_chat_history_messages = []   # память разговора (последние 20 сообщений)
-
-def send_chat_message():
-    if chat_input is None or chat_send_btn is None:
-        return
-    prompt = chat_input.get("1.0", "end-1c").strip()
-    if not prompt:
-        return
-    chat_input.delete("1.0", tk.END)
-    append_chat_message("user", prompt)
-    chat_send_btn.config(state="disabled")
-    improve_btn.config(state="disabled")
-    set_chat_status("⏳ Отправка...")
-
-    def _send():
-        try:
-            from engine.gpt_client import chat
-            response = chat(prompt, history=list(_chat_history_messages))
-            _chat_history_messages.append({"role": "user", "content": prompt})
-            _chat_history_messages.append({"role": "assistant", "content": response})
-            if len(_chat_history_messages) > 20:
-                _chat_history_messages[:] = _chat_history_messages[-20:]
-            root.after(0, lambda: append_chat_message("assistant", response))
-            root.after(0, lambda: set_chat_status("✅ Ответ получен"))
-        except Exception as e:
-            err_msg = str(e)
-            root.after(0, lambda msg=err_msg: set_chat_status(f"❌ {msg}"))
-        finally:
-            root.after(0, lambda: chat_send_btn.config(state="normal"))
-            root.after(0, lambda: improve_btn.config(state="normal"))
-
-    threading.Thread(target=_send, daemon=True).start()
-
- 
-# ──────────────────────────────────────────────────────────────
-# Вставить блок целиком после закрывающей строки функции выше:
-# ──────────────────────────────────────────────────────────────
- 
-def improve_text_with_gpt():
-    """✨ Улучшить — GPT переписывает текст из редактора для TTS."""
-    raw = text_box.get("1.0", "end-1c").strip()
-    if not raw or raw == PLACEHOLDER:
-        messagebox.showwarning("⚠️", "Текст пустой", parent=root)
-        return
-
-    improve_btn.config(state="disabled")
-    chat_send_btn.config(state="disabled")
-    set_chat_status("⏳ Улучшаю текст...")
-
-    def _run():
-        try:
-            from engine.gpt_client import improve_for_tts
-            result = improve_for_tts(raw)
-            def _apply():
-                set_textbox_content(result)
-                append_chat_message(
-                    "system",
-                    f"[Текст улучшен для TTS — {len(raw)} → {len(result)} символов]"
-                )
-                set_chat_status("✅ Текст обновлён в редакторе")
-            root.after(0, _apply)
-        except Exception as e:
-            err_msg = str(e)
-            root.after(0, lambda msg=err_msg: set_chat_status(f"❌ {msg}"))
-            root.after(0, lambda msg=err_msg: messagebox.showerror("Groq Ошибка", msg, parent=root))
-        finally:
-            root.after(0, lambda: improve_btn.config(state="normal"))
-            root.after(0, lambda: chat_send_btn.config(state="normal"))
-
-    threading.Thread(target=_run, daemon=True).start()
-
-
-def clear_chat_history():
-    """Очистить историю переписки."""
-    _chat_history_messages.clear()
-    if chat_history is not None:
-        chat_history.config(state="normal")
-        chat_history.delete("1.0", tk.END)
-        chat_history.config(state="disabled")
-    set_chat_status("История очищена")
-
-
-def open_gpt_settings():
-    """Окно настроек Groq — ключ и модель."""
-    from engine.gpt_client import (
-        get_api_key, set_api_key, get_model, set_model,
-        validate_key, AVAILABLE_MODELS, DEFAULT_MODEL
-    )
-
-    win = tk.Toplevel(root)
-    win.title("⚙ Настройки Groq")
-    win.geometry("560x460")
-    win.minsize(480, 400)
-    win.resizable(True, True)
-    win.configure(bg=Colors.BG_CARD)
-    win.grab_set()
-
-    # Ключ
-    tk.Label(win, text="Groq API Key", bg=Colors.BG_CARD, fg=Colors.TEXT_MAIN,
-             font=("Segoe UI", 10, "bold")).pack(anchor="w", padx=20, pady=(18, 4))
-
-    key_var = tk.StringVar(value=get_api_key())
-    key_entry = tk.Entry(
-        win, textvariable=key_var, show="•", width=56,
-        bg=Colors.BG_INPUT, fg=Colors.TEXT_MAIN,
-        insertbackground=Colors.TEXT_MAIN, relief="flat",
-        font=("Consolas", 10),
-        highlightthickness=1, highlightbackground=Colors.BORDER
-    )
-    key_entry.pack(padx=20, pady=(0, 4), fill="x")
-
-    hint_row = tk.Frame(win, bg=Colors.BG_CARD)
-    hint_row.pack(anchor="w", padx=20, fill="x")
-
-    show_var = tk.BooleanVar(value=False)
-    def toggle_show():
-        key_entry.config(show="" if show_var.get() else "•")
-    tk.Checkbutton(
-        hint_row, text="Показать ключ", variable=show_var, command=toggle_show,
-        bg=Colors.BG_CARD, fg=Colors.TEXT_DIM,
-        selectcolor=Colors.BG_INPUT, activebackground=Colors.BG_CARD,
-        font=("Segoe UI", 9), cursor="hand2"
-    ).pack(side="left")
-
-    import webbrowser
-
-    def _open_groq_console(event=None):
-        webbrowser.open("https://console.groq.com/keys")
-
-    link_lbl = tk.Label(
-        hint_row, text="Получить бесплатно: console.groq.com",
-        bg=Colors.BG_CARD, fg=Colors.ACCENT,
-        font=("Segoe UI", 8, "underline"), cursor="hand2"
-    )
-    link_lbl.pack(side="right")
-    link_lbl.bind("<Button-1>", _open_groq_console)
-    # Модель
-    tk.Label(win, text="Модель", bg=Colors.BG_CARD, fg=Colors.TEXT_MAIN,
-             font=("Segoe UI", 10, "bold")).pack(anchor="w", padx=20, pady=(14, 6))
-
-    model_var = tk.StringVar(value=get_model())
-    model_descriptions = {
-        "llama-3.3-70b-versatile": "70B — лучшее качество, хорошо понимает русский",
-        "llama-3.1-8b-instant":    "8B — максимальная скорость, экономия лимитов",
-        "mixtral-8x7b-32768":      "Mixtral — большой контекст (32k токенов)",
-        "gemma2-9b-it":            "Gemma2 — компактная модель Google",
-    }
-    for m in AVAILABLE_MODELS:
-        row = tk.Frame(win, bg=Colors.BG_CARD)
-        row.pack(anchor="w", padx=20, pady=1)
-        tk.Radiobutton(
-            row, text=m, variable=model_var, value=m,
-            bg=Colors.BG_CARD, fg=Colors.TEXT_MAIN,
-            selectcolor=Colors.BG_INPUT, activebackground=Colors.BG_CARD,
-            font=("Segoe UI", 9, "bold" if m == DEFAULT_MODEL else "normal"),
-            cursor="hand2", width=28, anchor="w"
-        ).pack(side="left")
-        tk.Label(
-            row, text=model_descriptions.get(m, ""),
-            bg=Colors.BG_CARD, fg=Colors.TEXT_DIM,
-            font=("Segoe UI", 8)
-        ).pack(side="left")
-
-    # Кнопки и статус — прибиты к низу окна, не зависят от высоты содержимого выше
-    btn_row = tk.Frame(win, bg=Colors.BG_CARD)
-    btn_row.pack(side="bottom", fill="x", padx=20, pady=(10, 18))
-
-    status_lbl = tk.Label(win, text="", bg=Colors.BG_CARD, fg=Colors.TEXT_DIM,
-                          font=("Segoe UI", 9), anchor="w")
-    status_lbl.pack(side="bottom", fill="x", padx=20, pady=(0, 4))
-
-    def _test():
-        status_lbl.config(text="⏳ Проверка ключа...", fg=Colors.TEXT_DIM)
-        win.update_idletasks()
-        def _run():
-            ok, msg = validate_key(key_var.get().strip())
-            root.after(0, lambda: status_lbl.config(
-                text=msg,
-                fg=Colors.TEXT_SUCCESS if ok else Colors.TEXT_ERROR
-            ))
-        threading.Thread(target=_run, daemon=True).start()
-
-    def _save():
-        set_api_key(key_var.get().strip())
-        set_model(model_var.get())
-        status_lbl.config(text="✅ Сохранено", fg=Colors.TEXT_SUCCESS)
-
-    create_button(btn_row, "🔑 Проверить ключ", _test, bg=Colors.BG_INPUT, height=2).pack(side="left", fill="x", expand=True, padx=(0, 8))
-    create_button(btn_row, "💾 Сохранить", _save, bg=Colors.BG_ACTIVE, height=2).pack(side="left", fill="x", expand=True)
-
+def set_chat_status(message):
+    chat_window.set_chat_status(message)
 # =========================
 # TEXT HELPERS
 # =========================
@@ -2361,8 +2025,8 @@ def open_batch_window():
                     **{k: v.get() for k, v in params.items()},
                     "word_replacer_enabled": word_replacer_enabled.get(),
                     "lang_split_enabled": lang_split_enabled.get(),
-                    "output_path_override": dst,
                     "use_gpt": use_gpt.get(),
+                    "ai_conductor_enabled": params.get("ai_conductor_enabled", tk.BooleanVar()).get(),
                 }
             )
             task_manager.add_task(task)
@@ -2480,6 +2144,7 @@ def open_batch_window():
     # начальный placeholder
     _refresh_rows()
 
+
 # =========================
 # CANCEL / GENERATE
 # =========================
@@ -2493,6 +2158,7 @@ def cancel_task():
     set_status("⛔ Отмена задачи...")
     set_stage("CANCELLING")
     set_progress(0)
+    root.after(0, lambda: set_ai_pulse(False))
 
 def generate():
     global current_task, current_text_snapshot
@@ -2518,7 +2184,6 @@ def generate():
         return
 
     current_text_snapshot = text
-    set_textbox_content(text)
 
     global _highlight_pos
     _highlight_pos = 0
@@ -2549,15 +2214,19 @@ def generate():
             "word_replacer_enabled": word_replacer_enabled.get(),
             "lang_split_enabled": lang_split_enabled.get(),
             "use_gpt": use_gpt.get(),
+            "ai_conductor_enabled": params.get("ai_conductor_enabled", tk.BooleanVar()).get(),
+            "ai_conductor_context": params.get("ai_conductor_context", tk.StringVar()).get(),
         }
     )
 
     set_status("📥 Добавлено в очередь...")
     set_stage("QUEUED")
     set_progress(0)
+
     task_manager.add_task(current_task)
     root.after(0, update_queue_view)
     save_settings()
+
 
 # =========================
 def toggle_console():
@@ -2772,7 +2441,8 @@ quality_params = {
         "speed": tk.DoubleVar(value=1.0),
         "trim_mode": tk.StringVar(value="auto"),
         "export_format": tk.StringVar(value="wav"),
-        "use_gpt": tk.BooleanVar(value=use_gpt.get())
+        "use_gpt": tk.BooleanVar(value=use_gpt.get()),
+        "ai_conductor_enabled": tk.BooleanVar(value=False),
     },
 
     "Нарратив": {
@@ -2787,7 +2457,8 @@ quality_params = {
         "speed": tk.DoubleVar(value=0.9),
         "trim_mode": tk.StringVar(value="auto"),
         "export_format": tk.StringVar(value="wav"),
-        "use_gpt": tk.BooleanVar(value=use_gpt.get())
+        "use_gpt": tk.BooleanVar(value=use_gpt.get()),
+        "ai_conductor_enabled": tk.BooleanVar(value=False),
     },
 
     "Динамика": {
@@ -2802,7 +2473,8 @@ quality_params = {
         "speed": tk.DoubleVar(value=1.1),
         "trim_mode": tk.StringVar(value="auto"),
         "export_format": tk.StringVar(value="wav"),
-        "use_gpt": tk.BooleanVar(value=use_gpt.get())
+        "use_gpt": tk.BooleanVar(value=use_gpt.get()),
+        "ai_conductor_enabled": tk.BooleanVar(value=False),
     },
 
     "Экспрессия": {
@@ -2817,10 +2489,10 @@ quality_params = {
         "speed": tk.DoubleVar(value=1.0),
         "trim_mode": tk.StringVar(value="auto"),
         "export_format": tk.StringVar(value="wav"),
-        "use_gpt": tk.BooleanVar(value=use_gpt.get())
+        "use_gpt": tk.BooleanVar(value=use_gpt.get()),
+        "ai_conductor_enabled": tk.BooleanVar(value=False),
     },
 }
-
 # =========================
 # PRESET DESCRIPTIONS (для меню "Стили")
 # =========================
@@ -2920,6 +2592,7 @@ def open_quality_settings(preset_name):
     tk.Radiobutton(fmt_row, text="MP3 192k", variable=params["export_format"], value="mp3",
                 bg=Colors.BG_CARD, fg=Colors.TEXT_MAIN, selectcolor=Colors.BG_CARD,
                 activebackground=Colors.BG_CARD, font=("Segoe UI", 9)).pack(side="left", padx=5)
+    
 
     def update_trim_state(*args):
         if trim_scale:
@@ -2992,8 +2665,19 @@ def save_settings():
         "language": lang_var.get(),
         "quality": quality_var.get(),
         "ref_path": ref_var.get(),
+        "use_gpt": use_gpt.get(),
         "word_replacer_enabled": word_replacer_enabled.get(),
         "lang_split_enabled": lang_split_enabled.get(),
+        "ai_conductor_enabled": any(
+            params.get("ai_conductor_enabled", tk.BooleanVar()).get()
+            for params in quality_params.values()
+        ),
+        "ai_conductor_context": next(
+            (params["ai_conductor_context"].get()
+             for params in quality_params.values()
+             if "ai_conductor_context" in params),
+            ""
+        ),
         "quality_params": {
             preset: {
                 k: (v.get() if hasattr(v, "get") else v)
@@ -3009,10 +2693,13 @@ def save_settings():
         pass
 
 def apply_settings(data):
+    import traceback
     if not isinstance(data, dict):
         return
     if "language" in data:
         lang_var.set(data["language"])
+    if "use_gpt" in data:
+        use_gpt.set(data["use_gpt"])
     if "quality" in data:
         q = data["quality"]
         quality_var.set(q if q in quality_params else "Высокое качество")
@@ -3024,6 +2711,25 @@ def apply_settings(data):
         word_replacer_enabled.set(data["word_replacer_enabled"])
     if "lang_split_enabled" in data:
         lang_split_enabled.set(data["lang_split_enabled"])
+    if "ai_conductor_enabled" in data:
+        for preset_name, params in quality_params.items():
+            params["ai_conductor_enabled"].set(data["ai_conductor_enabled"])
+        try:
+            ai_btn.config(bg=Colors.BG_ACTIVE if data["ai_conductor_enabled"] else Colors.BG_INPUT)
+        except NameError:
+            pass
+    if "ai_rewrite_enabled" in data:
+        for preset_name, params in quality_params.items():
+            if "ai_rewrite_enabled" in params:
+                params["ai_rewrite_enabled"].set(data["ai_rewrite_enabled"])
+    if "ai_rewrite_context" in data:
+        for preset_name, params in quality_params.items():
+            if "ai_rewrite_context" in params:
+                params["ai_rewrite_context"].set(data["ai_rewrite_context"])
+    if "ai_rewrite_negative" in data:
+        for preset_name, params in quality_params.items():
+            if "ai_rewrite_negative" in params:
+                params["ai_rewrite_negative"].set(data["ai_rewrite_negative"])
     if "quality_params" in data:
         for preset, params in data["quality_params"].items():
             if preset in quality_params:
@@ -3032,6 +2738,7 @@ def apply_settings(data):
                         try:
                             quality_params[preset][key].set(value)
                         except Exception:
+                            traceback.print_exc()
                             pass
 
 # =========================
@@ -3230,6 +2937,7 @@ batch_btn_row.pack(fill="x", padx=10, pady=(0, 7))
 create_button(batch_btn_row, "📦 Пакетная обработка", open_batch_window,
               bg=Colors.BG_INPUT).pack(fill="x")
 
+
 # =========================
 # CONSOLE (MOVED TO LEFT PANEL UNDER QUEUE)
 # =========================
@@ -3340,15 +3048,30 @@ text_btn_frame.pack(fill="x", padx=10, pady=(0, 4))
 create_button(text_btn_frame, "📁 Загрузить", load_txt, bg=Colors.BG_INPUT).pack(side="left", padx=(0, 5))
 create_button(text_btn_frame, "📋 Вставить", paste_clipboard, bg=Colors.BG_INPUT).pack(side="left", padx=(0, 5))
 create_button(text_btn_frame, "🗑️Очистить", lambda: [set_textbox_content("")], bg=Colors.BG_INPUT).pack(side="left", padx=(0, 5))
-chat_btn = create_button(text_btn_frame, "💬 Чат", toggle_chat_panel, bg=Colors.BG_INPUT)
+chat_btn = create_button(text_btn_frame, "💬 AI Помощник", toggle_chat_panel, bg=Colors.BG_INPUT)
 chat_btn.pack(side="left", padx=(0, 5))
-ToolTip(chat_btn, "Открыть WEB чат-панель под редактором.\nТребует API-ключ AI (⚙ Настройки).")
+ToolTip(chat_btn, "Открыть AI - чат-панель под редактором.\nТребует API-ключ (см. в ⚙ Настройки).")
 chat_btn.pack(side="left", padx=(0, 5))
 ToolTip(chat_btn, "Открыть окно Chat под текстовым полем.")
 dict_btn = create_button(text_btn_frame, "📖 Словарь", open_word_replacer, bg=Colors.BG_INPUT)
 dict_btn.pack(side="left", padx=(0, 5))
 ToolTip(dict_btn, "Словарь произношений.\n\nАнглийские слова из текста автоматически\nраспознаются и добавляются — они будут\nчитаться кириллицей без артефактов.\n\nМожно добавлять и править — приоритет на пользовательское решение.")
 create_button(text_btn_frame, "🎵 Аудио", open_outputs_folder, bg=Colors.BG_INPUT).pack(side="left", padx=(0, 5))
+
+gpt_checkbox = tk.Checkbutton(
+    text_btn_frame,
+    text="✨ AI edit",
+    variable=use_gpt,
+    bg=Colors.BG_CARD,
+    fg=Colors.TEXT_DIM,
+    selectcolor=Colors.BG_INPUT,
+    activebackground=Colors.BG_CARD,
+    activeforeground=Colors.TEXT_MAIN,
+    font=("Segoe UI", 9),
+    cursor="hand2"
+)
+gpt_checkbox.pack(side="right")
+ToolTip(gpt_checkbox, "Включает доработку текста через AI перед озвучкой")
 
 
 # =========================
@@ -3436,6 +3159,7 @@ def open_styles_menu(event=None):
         # Двойной клик - выбор + открытие настроек
         item.bind("<Double-Button-1>", lambda e, n=value: select_and_open(n))
 
+
     # Разделитель
     sep = tk.Frame(menu, bg=Colors.BORDER, height=1)
     sep.pack(fill="x", padx=4, pady=(4, 4))
@@ -3489,6 +3213,252 @@ def open_styles_menu(event=None):
 styles_btn = create_button(right_opts, "🎨 Стили ▾", open_styles_menu, bg=Colors.BG_INPUT)
 styles_btn.pack(side="left", padx=(0, 5))
 ToolTip(styles_btn, STYLES_HINT)
+
+def open_ai_conductor_window():
+    win = tk.Toplevel(root)
+    win.title("🤖 AI Conductor")
+    win.resizable(False, False)
+    win.configure(bg=Colors.BG_CARD)
+    win.grab_set()
+
+    # Состояние
+    ai_enabled_var = tk.BooleanVar(value=False)
+    ai_preset_var = tk.StringVar(value="Все пресеты")
+    ai_rewrite_var = tk.BooleanVar(value=False)
+
+    # Загружаем из settings если есть
+    s = load_settings()
+    ai_enabled_var.set(s.get("ai_conductor_enabled", False))
+    ai_preset_var.set(s.get("ai_conductor_preset", "Все пресеты"))
+    ai_rewrite_var.set(s.get("ai_rewrite_enabled", False))
+
+    # Заголовок
+    tk.Label(win, text="🤖 AI Conductor", bg=Colors.BG_CARD, fg=Colors.TEXT_MAIN,
+             font=("Segoe UI", 13, "bold")).pack(padx=20, pady=(18, 4))
+    tk.Label(win,
+             text="Анализирует весь текст одним вызовом и назначает\n"
+                  "параметры XTTS для каждого чанка индивидуально.\n"
+                  "Основные параметры отключаются — AI управляет ими.",
+             bg=Colors.BG_CARD, fg=Colors.TEXT_DIM,
+             font=("Segoe UI", 9), justify="left").pack(padx=20, pady=(0, 12))
+
+    tk.Frame(win, bg=Colors.BORDER, height=1).pack(fill="x", padx=20, pady=(0, 12))
+
+    # Включить/выключить
+    enable_row = tk.Frame(win, bg=Colors.BG_CARD)
+    enable_row.pack(fill="x", padx=20, pady=(0, 10))
+    def toggle_enabled():
+        ai_enabled_var.set(not ai_enabled_var.get())
+        toggle_btn.config(
+            text="✅ Включён — нажмите чтобы выключить" if ai_enabled_var.get()
+                 else "❌ Выключен — нажмите чтобы включить",
+            bg=Colors.BG_ACTIVE if ai_enabled_var.get() else Colors.BG_INPUT
+        )
+
+    toggle_btn = tk.Button(
+        enable_row,
+        text="✅ Включён — нажмите чтобы выключить" if ai_enabled_var.get()
+             else "❌ Выключен — нажмите чтобы включить",
+        command=toggle_enabled,
+        bg=Colors.BG_ACTIVE if ai_enabled_var.get() else Colors.BG_INPUT,
+        fg=Colors.TEXT_MAIN,
+        activebackground=Colors.BG_HOVER,
+        activeforeground=Colors.TEXT_MAIN,
+        relief="flat", bd=0,
+        font=("Segoe UI", 10, "bold"),
+        cursor="hand2", padx=12, pady=5
+    )
+    toggle_btn.pack(side="left")
+
+    # Применять к пресету
+    preset_row = tk.Frame(win, bg=Colors.BG_CARD)
+    preset_row.pack(fill="x", padx=20, pady=(0, 6))
+    tk.Label(preset_row, text="Применять к:", bg=Colors.BG_CARD,
+             fg=Colors.TEXT_MAIN, font=("Segoe UI", 9)).pack(side="left", padx=(0, 10))
+    
+    tk.Frame(win, bg=Colors.BORDER, height=1).pack(fill="x", padx=20, pady=(10, 10))
+    
+    tk.Frame(win, bg=Colors.BORDER, height=1).pack(fill="x", padx=20, pady=(10, 10))
+
+    # --- Уровень 2: Стиль текста ---
+    rewrite_row = tk.Frame(win, bg=Colors.BG_CARD)
+    rewrite_row.pack(fill="x", padx=20, pady=(0, 6))
+
+    def toggle_rewrite():
+        ai_rewrite_var.set(not ai_rewrite_var.get())
+        rewrite_btn.config(
+            text="✅ Стиль текста — нажмите чтобы выключить" if ai_rewrite_var.get()
+                 else "❌ Стиль текста — нажмите чтобы включить",
+            bg=Colors.BG_ACTIVE if ai_rewrite_var.get() else Colors.BG_INPUT
+        )
+        rewrite_text.config(state="normal" if ai_rewrite_var.get() else "disabled")
+        rewrite_negative_text.config(state="normal" if ai_rewrite_var.get() else "disabled")
+
+    rewrite_btn = tk.Button(
+        rewrite_row,
+        text="✅ Стиль текста — нажмите чтобы выключить" if ai_rewrite_var.get()
+             else "❌ Стиль текста — нажмите чтобы включить",
+        command=toggle_rewrite,
+        bg=Colors.BG_ACTIVE if ai_rewrite_var.get() else Colors.BG_INPUT,
+        fg=Colors.TEXT_MAIN,
+        activebackground=Colors.BG_HOVER,
+        activeforeground=Colors.TEXT_MAIN,
+        relief="flat", bd=0,
+        font=("Segoe UI", 10, "bold"),
+        cursor="hand2", padx=12, pady=5
+    )
+    rewrite_btn.pack(side="left")
+
+    tk.Label(win,
+             text="AI переработает текст под заданный жанр или настроение\n"
+                  "перед генерацией. Параметры движка назначаются под новый текст.",
+             bg=Colors.BG_CARD, fg=Colors.TEXT_DIM,
+             font=("Segoe UI", 8), justify="left").pack(fill="x", padx=20, pady=(4, 6))
+
+    tk.Label(win, text="Задание на стиль:",
+             bg=Colors.BG_CARD, fg=Colors.TEXT_MAIN,
+             font=("Segoe UI", 9), anchor="w").pack(fill="x", padx=20, pady=(0, 4))
+
+    rewrite_text = tk.Text(
+        win, height=4, width=48,
+        bg=Colors.BG_INPUT, fg=Colors.TEXT_MAIN,
+        insertbackground=Colors.TEXT_MAIN,
+        relief="flat", font=("Segoe UI", 9),
+        highlightthickness=1, highlightbackground=Colors.BORDER,
+        padx=8, pady=6, wrap="word"
+    )
+    rewrite_text.pack(fill="x", padx=20, pady=(0, 4))
+
+    _saved_rewrite = s.get("ai_rewrite_context", "")
+    if _saved_rewrite:
+        rewrite_text.insert("1.0", _saved_rewrite)
+
+    if not ai_rewrite_var.get():
+        rewrite_text.config(state="disabled")
+
+    tk.Label(win, text="Negative prompt (чего избегать):",
+             bg=Colors.BG_CARD, fg=Colors.TEXT_MAIN,
+             font=("Segoe UI", 9), anchor="w").pack(fill="x", padx=20, pady=(6, 4))
+
+    rewrite_negative_text = tk.Text(
+        win, height=2, width=48,
+        bg=Colors.BG_INPUT, fg=Colors.TEXT_MAIN,
+        insertbackground=Colors.TEXT_MAIN,
+        relief="flat", font=("Segoe UI", 9),
+        highlightthickness=1, highlightbackground=Colors.BORDER,
+        padx=8, pady=6, wrap="word"
+    )
+    rewrite_negative_text.pack(fill="x", padx=20, pady=(0, 4))
+
+    _saved_rewrite_negative = s.get("ai_rewrite_negative", "")
+    if _saved_rewrite_negative:
+        rewrite_negative_text.insert("1.0", _saved_rewrite_negative)
+
+    if not ai_rewrite_var.get():
+        rewrite_negative_text.config(state="disabled")
+
+    preset_options = ["Все пресеты"] + list(quality_params.keys())
+    for opt in preset_options:
+        tk.Radiobutton(
+            preset_row, text=opt, variable=ai_preset_var, value=opt,
+            bg=Colors.BG_CARD, fg=Colors.TEXT_MAIN,
+            selectcolor=Colors.BG_INPUT,
+            activebackground=Colors.BG_CARD,
+            font=("Segoe UI", 9), cursor="hand2"
+        ).pack(side="left", padx=(0, 8))
+
+    tk.Frame(win, bg=Colors.BORDER, height=1).pack(fill="x", padx=20, pady=(10, 10))
+
+    # Инфо о провайдере
+    try:
+        from engine.gpt_client import get_provider, get_model, PROVIDERS
+        prov = get_provider()
+        model = get_model(prov)
+        prov_label = PROVIDERS[prov]["label"]
+        info_text = f"Провайдер: {prov_label}\nМодель: {model}"
+    except Exception:
+        info_text = "Провайдер: не настроен"
+
+    tk.Label(win, text=info_text, bg=Colors.BG_CARD, fg=Colors.TEXT_DIM,
+             font=("Consolas", 8), justify="left").pack(padx=20, pady=(0, 12), anchor="w")
+
+    # Кнопки
+    btn_row = tk.Frame(win, bg=Colors.BG_CARD)
+    btn_row.pack(fill="x", padx=20, pady=(0, 18))
+
+    def save_and_close():
+        enabled = ai_enabled_var.get()
+        preset_target = ai_preset_var.get()
+
+        for preset_name, params in quality_params.items():
+            if preset_target == "Все пресеты" or preset_target == preset_name:
+                params["ai_conductor_enabled"].set(enabled)
+                if "ai_rewrite_enabled" not in params:
+                    params["ai_rewrite_enabled"] = tk.BooleanVar()
+                params["ai_rewrite_enabled"].set(ai_rewrite_var.get())
+                if "ai_rewrite_context" not in params:
+                    params["ai_rewrite_context"] = tk.StringVar()
+                params["ai_rewrite_context"].set(rewrite_text.get("1.0", "end-1c").strip())
+                if "ai_rewrite_negative" not in params:
+                    params["ai_rewrite_negative"] = tk.StringVar()
+                params["ai_rewrite_negative"].set(rewrite_negative_text.get("1.0", "end-1c").strip())
+                
+
+        s2 = load_settings()
+        s2["ai_conductor_enabled"] = enabled
+        s2["ai_conductor_preset"] = preset_target
+        s2["ai_rewrite_enabled"] = ai_rewrite_var.get()
+        s2["ai_rewrite_context"] = rewrite_text.get("1.0", "end-1c").strip()
+        s2["ai_rewrite_negative"] = rewrite_negative_text.get("1.0", "end-1c").strip()
+        try:
+            with open(SETTINGS_PATH, "w", encoding="utf-8") as f:
+                json.dump(s2, f, ensure_ascii=False, indent=2)
+        except Exception:
+            pass
+
+        ai_btn.config(
+            bg=Colors.BG_INPUT,
+            fg=Colors.ACCENT if enabled else Colors.TEXT_DIM
+        )
+        win.destroy()
+
+    create_button(btn_row, "✓ Сохранить", save_and_close, bg=Colors.BG_ACTIVE).pack(side="left", padx=(0, 10))
+    create_button(btn_row, "Отмена", win.destroy, bg=Colors.BG_INPUT).pack(side="left")
+# Восстанавливаем состояние кнопки из settings
+_ai_s = load_settings()
+_ai_active = _ai_s.get("ai_conductor_enabled", False)
+
+ai_btn = create_button(right_opts, "🤖 AI",
+                       open_ai_conductor_window,
+                       bg=Colors.BG_INPUT,
+                       fg=Colors.ACCENT if _ai_active else Colors.TEXT_DIM)
+ai_btn.pack(side="left", padx=(0, 5))
+ToolTip(ai_btn, "AI Conductor — управляет параметрами каждого чанка через AI.")
+_ai_pulse_active = {"v": False, "state": False}
+
+def _ai_pulse_tick():
+    if not _ai_pulse_active["v"]:
+        # Сбросит set_ai_pulse, не трогаем здесь
+        return
+    _ai_pulse_active["state"] = not _ai_pulse_active["state"]
+    ai_btn.config(bg="#1f6feb" if _ai_pulse_active["state"] else Colors.BG_ACTIVE,
+                  fg=Colors.TEXT_MAIN)
+    root.after(600, _ai_pulse_tick)
+
+def set_ai_pulse(active: bool):
+    _ai_pulse_active["v"] = active
+    if active:
+        _ai_pulse_tick()
+    else:
+        # Конец работы — вернуть в "включён но простаивает" или "выключен"
+        enabled = any(
+            params.get("ai_conductor_enabled", tk.BooleanVar()).get()
+            for params in quality_params.values()
+        )
+        ai_btn.config(
+            bg=Colors.BG_INPUT,
+            fg=Colors.ACCENT if enabled else Colors.TEXT_DIM
+        )
 
 # Кнопка "Высокое качество"
 def studio_click():
@@ -3574,7 +3544,7 @@ sw = root.winfo_screenwidth()
 sh = root.winfo_screenheight()
 x = max(0, (sw - 1000) // 2)
 y = max(0, (sh - 820) // 2)
-root.geometry(f"1000x820+{x}+{y}")
+root.geometry(f"1160x820+{x}+{y}")
 
 root.after(150, start_preload_thread)
 root.mainloop()

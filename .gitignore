@@ -1,0 +1,74 @@
+# =========================
+# BUILD / RELEASE
+# =========================
+*.exe
+*.zip
+*.7z
+*.tar
+*.gz
+*.spec
+build/
+dist/
+release/
+
+# =========================
+# PYTHON
+# =========================
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.log
+
+venv/
+env/
+.python/
+python/
+
+# =========================
+# IDE
+# =========================
+.vscode/
+.idea/
+*.swp
+
+# =========================
+# SYSTEM
+# =========================
+.DS_Store
+Thumbs.db
+
+# =========================
+# SECRETS / KEYS (ОБЯЗАТЕЛЬНО)
+# =========================
+secrets.json
+keys/
+api_keys.json
+
+# =========================
+# AI SETTINGS / HISTORY
+# =========================
+gpt_settings.json
+chat_history.json
+history.json
+
+# =========================
+# ALL RUNTIME DATA (portable bundle excluded from Git)
+# =========================
+models/
+library/
+outputs/
+logs/
+reference/
+ffmpeg/
+python/runtime/
+temp/
+tmp/
+cache/
+
+# =========================
+# AUDIO
+# =========================
+*.wav
+*.mp3
+*.flac
