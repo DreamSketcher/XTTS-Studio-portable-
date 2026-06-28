@@ -5,12 +5,12 @@
   "use_gpt": true,
   "word_replacer_enabled": true,
   "lang_split_enabled": true,
-  "ai_conductor_enabled": false,
+  "ai_conductor_enabled": true,
   "ai_conductor_context": "",
   "quality_params": {
     "Высокое качество": {
       "qc_enabled": true,
-      "temperature": 1.0,
+      "temperature": 0.5,
       "top_p": 0.5,
       "top_k": 50,
       "repetition_penalty": 10.0,
@@ -66,12 +66,7 @@
       "trim_mode": "auto",
       "export_format": "wav",
       "use_gpt": false,
-      "ai_conductor_enabled": true
+      "ai_conductor_enabled": false
     }
-  },
-  "ai_conductor_warning_dismissed": false,
-  "ai_conductor_preset": "Все пресеты",
-  "ai_rewrite_enabled": false,
-  "ai_rewrite_context": "",
-  "ai_rewrite_negative": ""
+  }
 }
