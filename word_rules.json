@@ -1,223 +1,235 @@
 {
-  "meta": {
-    "version": "2.0",
-    "mode": "xtts_chunking_aware"
-  },
-  "abbreviations": {
-    "CPU": {
-      "text": "цэ пи ю",
-      "weight": 2.0
+  "auto": {
+    "Saas": {
+      "text": "саас",
+      "weight": 1.0
     },
     "GPU": {
       "text": "джи пи ю",
-      "weight": 2.0
+      "weight": 1.0
     },
-    "RAM": {
-      "text": "рам",
-      "weight": 1.5
+    "cpu": {
+      "text": "си пи ю",
+      "weight": 1.0
     },
-    "OS": {
-      "text": "о эс",
-      "weight": 1.5
+    "bat": {
+      "text": "би эй ти",
+      "weight": 1.0
+    },
+    "torch": {
+      "text": "торч",
+      "weight": 1.0
     },
     "API": {
       "text": "эй пи ай",
-      "weight": 2.0
+      "weight": 1.0
     },
     "JSON": {
-      "text": "джейсон",
-      "weight": 1.8
-    },
-    "HTTP": {
-      "text": "эйч ти ти пи",
-      "weight": 2.2
-    },
-    "HTTPS": {
-      "text": "эйч ти ти пи эс",
-      "weight": 2.2
-    },
-    "AI": {
-      "text": "эй ай",
-      "weight": 2.0
-    },
-    "ML": {
-      "text": "эм эл",
-      "weight": 1.8
-    },
-    "LLM": {
-      "text": "эл эл эм",
-      "weight": 2.2
-    },
-    "RVC": {
-      "text": "ар ви си",
-      "weight": 2.0
-    }
-  },
-  "locations": {
-    "г.": {
-      "text": "город",
-      "weight": 0.8
-    },
-    "гор.": {
-      "text": "город",
-      "weight": 0.8
-    },
-    "ул.": {
-      "text": "улица",
-      "weight": 0.8
-    },
-    "пр-т": {
-      "text": "проспект",
-      "weight": 0.8
-    },
-    "пер.": {
-      "text": "переулок",
-      "weight": 0.8
-    },
-    "д.": {
-      "text": "деревня",
-      "weight": 0.8
-    },
-    "с.": {
-      "text": "село",
-      "weight": 0.8
-    }
-  },
-  "units": {
-    "кг": {
-      "text": "килограмм",
+      "text": "джей эс оу эн",
       "weight": 1.0
     },
-    "г": {
-      "text": "грамм",
+    "SDK": {
+      "text": "эс ди кей",
       "weight": 1.0
     },
-    "м": {
-      "text": "метр",
+    "CLI": {
+      "text": "си эл ай",
       "weight": 1.0
     },
-    "мм": {
-      "text": "миллиметров",
+    "RAM": {
+      "text": "ар эй эм",
       "weight": 1.0
     },
-    "м/с": {
-      "text": "метров в секунду",
-      "weight": 1.5
-    },
-    "км/ч": {
-      "text": "километров в час",
-      "weight": 1.5
-    }
-  },
-  "time": {
-    "сек.": {
-      "text": "секунда",
-      "weight": 0.8
-    },
-    "мин.": {
-      "text": "минута",
-      "weight": 0.8
-    }
-  },
-  "organizations": {
-    "ООО": {
-      "text": "общество с ограниченной ответственностью",
-      "weight": 1.2
-    },
-    "АО": {
-      "text": "акционерное общество",
-      "weight": 1.2
-    },
-    "ПАО": {
-      "text": "публичное акционерное общество",
-      "weight": 1.2
-    },
-    "ИП": {
-      "text": "индивидуальный предприниматель",
+    "SSD": {
+      "text": "эс эс ди",
       "weight": 1.0
-    }
-  },
-  "tech_companies": {
-    "NASA": {
-      "text": "наса",
-      "weight": 1.5
     },
-    "NATO": {
-      "text": "нато",
-      "weight": 1.5
+    "HTML": {
+      "text": "эйч ти эм эл",
+      "weight": 1.0
     },
-    "OpenAI": {
-      "text": "оупен эй ай",
-      "weight": 2.0
+    "CSS": {
+      "text": "си эс эс",
+      "weight": 1.0
     },
-    "ChatGPT": {
-      "text": "чат джи пи ти",
-      "weight": 2.0
+    "SQL": {
+      "text": "эс кью эл",
+      "weight": 1.0
+    },
+    "VPN": {
+      "text": "ви пи эн",
+      "weight": 1.0
+    },
+    "UI": {
+      "text": "ю ай",
+      "weight": 1.0
+    },
+    "UX": {
+      "text": "ю икс",
+      "weight": 1.0
+    },
+    "DB": {
+      "text": "ди би",
+      "weight": 1.0
     }
   },
   "custom": {
-    "soundfile": {
-      "text": "саундфайл",
-      "weight": 1.0
-    },
-    "tkinterdnd2": {
-      "text": "ткинтерднд два",
-      "weight": 1.0
-    },
     "Studio": {
       "text": "студио",
       "weight": 1.0
     },
-    "CamelCase": {
-      "text": "камелкейс",
+    "launcher": {
+      "text": "лаунчер",
       "weight": 1.0
     }
   },
-  "auto": {
-    "TTS": {
-      "text": "ти ти эс",
+  "builtin": {
+    "python": {
+      "text": "пайтон",
       "weight": 1.0
     },
-    "pydub": {
-      "text": "пайдаб",
+    "pytorch": {
+      "text": "пайторч",
       "weight": 1.0
     },
-    "tkinter": {
-      "text": "ткинтер",
+    "tensorflow": {
+      "text": "тензорфлоу",
       "weight": 1.0
     },
-    "num2words": {
-      "text": "эн ю эм два вордс",
+    "numpy": {
+      "text": "нампай",
       "weight": 1.0
     },
-    "pth": {
-      "text": "пи ти эйч",
+    "pandas": {
+      "text": "пандас",
       "weight": 1.0
     },
-    "SNR": {
-      "text": "эс эн ар",
+    "django": {
+      "text": "джанго",
       "weight": 1.0
     },
-    "machine": {
-      "text": "мачине",
+    "flask": {
+      "text": "фласк",
       "weight": 1.0
     },
-    "learning": {
-      "text": "лирнинг",
+    "node": {
+      "text": "ноуд",
       "weight": 1.0
     },
-    "vigilant": {
-      "text": "вигилант",
+    "nodejs": {
+      "text": "ноуд джей эс",
       "weight": 1.0
     },
-    "ghost": {
-      "text": "гхост",
+    "github": {
+      "text": "гитхаб",
       "weight": 1.0
-    }
-  },
-  "ai_corrected": {
-    "XTTS": {
+    },
+    "gitlab": {
+      "text": "гитлаб",
+      "weight": 1.0
+    },
+    "google": {
+      "text": "гугл",
+      "weight": 1.0
+    },
+    "microsoft": {
+      "text": "майкрософт",
+      "weight": 1.0
+    },
+    "nvidia": {
+      "text": "энвидиа",
+      "weight": 1.0
+    },
+    "openai": {
+      "text": "оупен эй ай",
+      "weight": 1.0
+    },
+    "ubuntu": {
+      "text": "убунту",
+      "weight": 1.0
+    },
+    "docker": {
+      "text": "докер",
+      "weight": 1.0
+    },
+    "linux": {
+      "text": "линукс",
+      "weight": 1.0
+    },
+    "windows": {
+      "text": "виндоус",
+      "weight": 1.0
+    },
+    "android": {
+      "text": "андроид",
+      "weight": 1.0
+    },
+    "chrome": {
+      "text": "хром",
+      "weight": 1.0
+    },
+    "firefox": {
+      "text": "файрфокс",
+      "weight": 1.0
+    },
+    "chatgpt": {
+      "text": "чат джи пи ти",
+      "weight": 1.0
+    },
+    "claude": {
+      "text": "клод",
+      "weight": 1.0
+    },
+    "gemini": {
+      "text": "джемини",
+      "weight": 1.0
+    },
+    "coqui": {
+      "text": "кокуи",
+      "weight": 1.0
+    },
+    "xtts": {
       "text": "икс ти ти эс",
+      "weight": 1.0
+    },
+    "speaker embedding": {
+      "text": "спикер эмбеддинг",
+      "weight": 1.0
+    },
+    "top p": {
+      "text": "топ пи",
+      "weight": 1.0
+    },
+    "top k": {
+      "text": "топ кей",
+      "weight": 1.0
+    },
+    "cross correlation": {
+      "text": "кросс корреляция",
+      "weight": 1.0
+    },
+    "drag and drop": {
+      "text": "драг энд дроп",
+      "weight": 1.0
+    },
+    "temperature": {
+      "text": "температура",
+      "weight": 1.0
+    },
+    "wav": {
+      "text": "вав",
+      "weight": 1.0
+    },
+    "ffmpeg": {
+      "text": "эфэфмпег",
+      "weight": 1.0
+    },
+    "bat": {
+      "text": "бат",
+      "weight": 1.0
+    },
+    "saas": {
+      "text": "саас",
       "weight": 1.0
     }
   }
