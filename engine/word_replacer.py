@@ -4,7 +4,14 @@ import re
 from typing import Optional
 
 
-BUILTIN_DICTIONARY = {
+# =========================
+# SEED DICTIONARY
+# =========================
+# Эти слова пишутся в word_rules.json ОДИН РАЗ при первом запуске —
+# в категорию "builtin". После этого они живут только в JSON и
+# редактируются/удаляются через окно "📖 Словарь" как любые другие.
+# Код трогать больше не нужно — это просто стартовый набор данных.
+_SEED_DICTIONARY = {
     "python":      "пайтон",
     "pytorch":     "пайторч",
     "tensorflow":  "тензорфлоу",
@@ -32,9 +39,6 @@ BUILTIN_DICTIONARY = {
     "gemini":      "джемини",
     "coqui":       "кокуи",
     "xtts":        "икс ти ти эс",
-    # технические двусловные термины — заданы целыми фразами, чтобы
-    # word_replacer.apply() заменял их раньше, чем _split_by_language
-    # увидит "слишком короткий, но не однословный" EN-сегмент.
     "speaker embedding": "спикер эмбеддинг",
     "top p":             "топ пи",
     "top k":             "топ кей",
@@ -43,7 +47,16 @@ BUILTIN_DICTIONARY = {
     "temperature":       "температура",
     "wav":               "вав",
     "ffmpeg":            "эфэфмпег",
+    "bat":               "бат",
+    "saas":              "саас",
 }
+
+# Приоритет категорий при сборке flat_rules: позже = выше приоритет.
+# builtin — базовые сиды (низший приоритет)
+# auto — слова, добавленные эвристическим автодетектором
+# ai_corrected — исправления от AI Conductor
+# custom — ручные правки пользователя через окно "📖 Словарь" (высший приоритет)
+_CATEGORY_PRIORITY = ["builtin", "auto", "ai_corrected", "custom"]
 
 _LATIN_LETTER_MAP = {
     "a": "эй",  "b": "би",  "c": "си",  "d": "ди",  "e": "и",   "f": "эф",
@@ -53,12 +66,6 @@ _LATIN_LETTER_MAP = {
     "x": "икс", "y": "уай", "z": "зед",
 }
 
-# Обычные служебные/часто встречающиеся английские слова, которые могут
-# затесаться в смешанный русско-английский текст (опечатки, цитаты,
-# остатки английских фраз). Их НЕ нужно транслитерировать — список
-# намеренно небольшой и покрывает самые частые случаи; этого достаточно,
-# т.к. редкие настоящие английские слова, не попавшие в список, безопаснее
-# транслитерировать (узнаваемый результат), чем оставить как мусор-латиницу.
 _SERVICE_WORDS = {
     "a", "an", "the", "is", "are", "was", "were", "be", "been", "being",
     "and", "or", "but", "if", "of", "in", "on", "at", "to", "for", "with",
@@ -73,6 +80,7 @@ _DIGRAPHS = [
     ("th", "т"), ("sh", "ш"), ("ch", "ч"), ("ph", "ф"), ("wh", "у"),
     ("ck", "к"), ("ng", "нг"), ("qu", "кв"),
     ("ee", "и"), ("oo", "у"), ("ou", "ау"), ("ow", "оу"),
+    ("au", "ау"),
     ("ai", "эй"), ("ay", "эй"), ("ea", "и"), ("ie", "ай"),
     ("oa", "оу"), ("ue", "ю"), ("ui", "ю"),
 ]
@@ -118,15 +126,6 @@ def _looks_like_lowercase_term(word: str) -> bool:
     Lowercase-слово, не входящее в список служебных слов -> кандидат на
     слоговую транслитерацию (pydub, tkinter, soundfile, ffmpeg,
     tkinterdnd2, num2words).
-
-    Намеренно НЕ проверяет количество гласных — короткие реальные слова
-    уже отфильтрованы через _SERVICE_WORDS. Всё остальное латинское
-    lowercase-слово, затесавшееся в русский текст, считается термином:
-    транслитерация даёт узнаваемый результат даже в худшем случае, тогда
-    как оставшаяся латиница даёт нестабильный inference на стороне XTTS.
-
-    Разрешены буквы и цифры вместе (tkinterdnd2, num2words) — чистая
-    проверка isalpha() их бы отсеяла.
     """
     if not word or len(word) < 2:
         return False
@@ -135,7 +134,7 @@ def _looks_like_lowercase_term(word: str) -> bool:
     if not re.fullmatch(r'[A-Za-z][A-Za-z0-9]*', word):
         return False
     if word.isupper():
-        return False  # капс уже обрабатывается _looks_like_abbrev
+        return False
     if word.lower() in _SERVICE_WORDS:
         return False
     return True
@@ -143,25 +142,12 @@ def _looks_like_lowercase_term(word: str) -> bool:
 
 def _transliterate_term_word(word: str) -> str:
     """
-    Транслитерация технического термина.
-
-    Сегменты длиной <= 3 буквы читаются побуквенно (как имена букв
-    алфавита) — на такой короткой длине совпадения с диграфами (th, ph...)
-    чаще случайны, чем фонетически верны (например "pth" — это
-    p+t+h по отдельности, а не диграф "th", который проглотил бы h).
-
-    Более длинные сегменты идут через слоговую g2p-эвристику — см.
-    _letters_to_word_sound.
-
-    ВАЖНО: это эвристика, не полноценный g2p-движок. Она покрывает
-    типичные паттерны (диграфы th/sh/ch/ph, повтор согласных, y как "ай"
-    в начале слова перед согласной, числа внутри слова) и даёт узнаваемый
-    результат для большинства технических терминов и составных слов
-    (pydub, tkinter, soundfile, num2words), но не гарантирует корректное
-    произношение каждого возможного английского слова — английская
-    орфография нерегулярна, и без словаря произношений (g2p-модели)
-    100% точность недостижима. Для слов, где точное произношение
-    критично, правильное решение — явная запись в BUILTIN_DICTIONARY.
+    Транслитерация технического термина (эвристика, не словарь).
+    Используется только как запасной вариант для слов, которых ЕЩЁ НЕТ
+    в word_rules.json — после первого срабатывания слово автоматически
+    сохраняется в категорию "auto" и больше не идёт через эвристику.
+    Если результат неверный — поправьте слово в окне "📖 Словарь",
+    оно перейдёт в "custom" и будет иметь приоритет навсегда.
     """
     segments = re.findall(r'[a-zA-Z]+|\d+', word)
     parts = []
@@ -181,15 +167,12 @@ def _letters_to_word_sound(letters: str) -> str:
     i = 0
     n = len(w)
     while i < n:
-        # 'y' в начале слова или после согласной, перед согласной/концом
-        # слова -> читается как "ай" (try, py- в pydub)
         if w[i] == "y" and (i == 0 or w[i - 1] not in _VOWELS):
             nxt = w[i + 1] if i + 1 < n else ""
             if nxt == "" or nxt not in _VOWELS:
                 out.append("ай")
                 i += 1
                 continue
-        # схлопываем повтор одной согласной (ff, mm, pp...)
         if i + 1 < n and w[i] == w[i + 1] and w[i] not in _VOWELS:
             out.append(_SINGLE_SOUND.get(w[i], w[i]))
             i += 2
@@ -214,6 +197,7 @@ class WordReplacer:
         self.data = {}
         self.flat_rules = {}
         self.load()
+        self._seed_builtin_if_needed()
 
     def load(self):
         if os.path.exists(self.rules_path):
@@ -224,13 +208,36 @@ class WordReplacer:
                 self.data = {}
         self._build_flat_rules()
 
+    def _seed_builtin_if_needed(self):
+        """
+        Одноразовая миграция: если категории "builtin" ещё нет в файле —
+        записываем туда стартовый набор слов. После этого они — обычные
+        записи в JSON, ничем не отличаются от auto/custom, видны и
+        редактируются в окне "📖 Словарь". Если пользователь сам удалит
+        категорию "builtin" — повторно она не создаётся (уважаем выбор).
+        """
+        if "builtin" not in self.data:
+            self.data["builtin"] = {
+                word: {"text": text, "weight": 1.0}
+                for word, text in _SEED_DICTIONARY.items()
+            }
+            self._build_flat_rules()
+            self.save()
+
     def _build_flat_rules(self):
         self.flat_rules = {}
-        for word, replacement in BUILTIN_DICTIONARY.items():
-            self.flat_rules[word] = replacement
-        for category_name, category_data in self.data.items():
-            if category_name == "meta":
-                continue
+        categories = [c for c in self.data.keys() if c != "meta"]
+
+        def _priority(cat):
+            try:
+                return _CATEGORY_PRIORITY.index(cat)
+            except ValueError:
+                return len(_CATEGORY_PRIORITY)  # неизвестные категории — выше custom
+
+        categories.sort(key=_priority)
+
+        for category_name in categories:
+            category_data = self.data.get(category_name)
             if not isinstance(category_data, dict):
                 continue
             for word, value in category_data.items():
@@ -251,7 +258,7 @@ class WordReplacer:
             if isinstance(category_data, dict):
                 words.extend(category_data.keys())
         return sorted(words)
-    
+
     def get_category(self, word: str):
         for category_name, category_data in self.data.items():
             if category_name == "meta":
@@ -285,11 +292,6 @@ class WordReplacer:
         self.save()
 
     def apply(self, text: str) -> str:
-        # Сортировка по убыванию длины ключа: многословные фразы
-        # ("speaker embedding") должны матчиться раньше, чем потенциальные
-        # будущие правила для отдельных слов из той же фразы ("embedding"),
-        # иначе короткое правило может "съесть" часть текста раньше, чем
-        # длинное успеет сработать.
         sorted_rules = sorted(
             self.flat_rules.items(),
             key=lambda kv: len(kv[0]),

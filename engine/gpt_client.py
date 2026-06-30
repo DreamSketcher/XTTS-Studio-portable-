@@ -402,7 +402,12 @@ def hide_provider(pid: str):
         raise ValueError(f"{pid!r} не встроенный провайдер")
     hidden = get_hidden_providers()
     hidden.add(pid)
-    _write_settings({"hidden_providers": list(hidden)})
+    data = _read_settings()
+    data["hidden_providers"] = list(hidden)
+    data.pop(f"api_key_{pid}", None)
+    data.pop(f"model_{pid}", None)
+    with open(_SETTINGS_PATH, "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
 
 def show_provider(pid: str):
     hidden = get_hidden_providers()
@@ -421,8 +426,6 @@ def add_custom_provider(pid: str, label: str, url: str,
     pid = pid.strip()
     if not pid:
         raise ValueError("ID провайдера пустой")
-    if pid in PROVIDERS:
-        raise ValueError(f"ID {pid!r} занят встроенным провайдером")
     existing = [p["id"] for p in list_custom_providers()]
     if pid in existing:
         raise ValueError(f"Провайдер с ID {pid!r} уже существует")
@@ -455,9 +458,18 @@ def update_custom_provider(pid: str, **kwargs):
 
 def delete_custom_provider(pid: str):
     items = [p for p in list_custom_providers() if p.get("id") != pid]
-    _write_settings({"custom_providers": items})
-
-
+    data = _read_settings()
+    data["custom_providers"] = items
+    # чистим все возможные варианты ключей
+    for key in list(data.keys()):
+        if key in (f"api_key_{pid}", f"model_{pid}"):
+            del data[key]
+    # если это был активный провайдер — сбрасываем на дефолт
+    if data.get("provider") == pid:
+        data["provider"] = DEFAULT_PROVIDER
+    with open(_SETTINGS_PATH, "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
+        
 def get_key_entry(key_id: str):
     for it in list_keys():
         if it.get("id") == key_id:
@@ -582,12 +594,12 @@ class AIUnavailable(RuntimeError):
 
 def _build_provider_chain() -> list:
     chain = []
-    
+
     # Сначала — выбранный пользователем провайдер
     active = get_provider()
     if get_api_key(active):
         chain.append(active)
-    
+
     # Затем остальные встроенные
     for pid in PROVIDERS.keys():
         if pid == active:
@@ -596,8 +608,6 @@ def _build_provider_chain() -> list:
             continue
         if get_api_key(pid):
             chain.append(pid)
-        else:
-            print(f"[AI] Провайдер «{PROVIDERS[pid]['label']}» пропущен — нет API-ключа")
 
     # Затем кастомные
     for p in list_custom_providers():
@@ -606,11 +616,81 @@ def _build_provider_chain() -> list:
             continue
         if get_api_key(pid):
             chain.append(pid)
-        else:
-            print(f"[AI] Провайдер «{p.get('label', pid)}» пропущен — нет API-ключа")
 
     return chain
 
+def get_chain_diagnostics() -> dict:
+    """
+    Структурированная диагностика цепочки провайдеров — без парсинга
+    print()/консоли. Используется UI для окна "🔌 AI статус".
+
+    Возвращает:
+        {
+            "active": "groq",                  # id активного провайдера
+            "chain_order": ["groq", "proxy"],   # реальный порядок fallback
+            "providers": [
+                {
+                    "id": "groq",
+                    "label": "Groq (нужен VPN из РФ)",
+                    "status": "active" | "in_chain" | "skipped" | "hidden",
+                    "reason": "человекочитаемая причина",
+                    "has_key": True/False,
+                    "model": "llama-3.3-70b-versatile",
+                    "builtin": True/False,
+                },
+                ...
+            ]
+        }
+    """
+    active = get_provider()
+    hidden = get_hidden_providers()
+
+    def _entry(pid, info, is_active):
+        has_key = bool(get_api_key(pid))
+        is_hidden = pid in hidden
+        if is_active:
+            status, reason = "active", "Активный, используется первым"
+        elif is_hidden:
+            status, reason = "hidden", "Скрыт пользователем"
+        elif not has_key:
+            status, reason = "skipped", "Пропущен — нет API-ключа"
+        else:
+            status, reason = "in_chain", "Доступен как fallback"
+        return {
+            "id": pid,
+            "label": info.get("label", pid),
+            "status": status,
+            "reason": reason,
+            "has_key": has_key,
+            "model": get_model(pid) if (has_key or is_active) else info.get("default_model", ""),
+            "builtin": pid in PROVIDERS,
+        }
+
+    entries = []
+
+    if active in PROVIDERS:
+        entries.append(_entry(active, PROVIDERS[active], True))
+    else:
+        custom_active = next((p for p in list_custom_providers() if p.get("id") == active), None)
+        if custom_active:
+            entries.append(_entry(active, custom_active, True))
+
+    for pid, info in PROVIDERS.items():
+        if pid == active:
+            continue
+        entries.append(_entry(pid, info, False))
+
+    for p in list_custom_providers():
+        pid = p.get("id")
+        if pid == active:
+            continue
+        entries.append(_entry(pid, p, False))
+
+    return {
+        "active": active,
+        "chain_order": _build_provider_chain(),
+        "providers": entries,
+    }
 
 def _call_with_chain(messages: list, max_tokens: int = 2048) -> str:
     """
@@ -753,3 +833,14 @@ def validate_key(key: str, provider: str = None) -> tuple:
         return False, f"❌ {e}"
     finally:
         set_api_key(old_key, provider)
+
+# ── UI state (для аккордеона настроек) ─────────────────────────────────────────
+
+def get_ui_state() -> dict:
+    return _read_settings().get("ui_state", {})
+
+
+def set_ui_state(**kwargs):
+    state = get_ui_state()
+    state.update(kwargs)
+    _write_settings({"ui_state": state})
