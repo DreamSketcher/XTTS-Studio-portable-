@@ -21,102 +21,6 @@ from datetime import datetime
 from tkinter import filedialog, messagebox
 import tkinter as tk
 
-# --- CTk compat, copied from gui.py ---
-try:
-    import customtkinter as ctk
-    CTK_AVAILABLE = True
-except Exception:
-    CTK_AVAILABLE = False
-    ctk = None
-
-if CTK_AVAILABLE:
-    ctk.set_appearance_mode("dark")
-    ctk.set_default_color_theme("blue")
-
-    class CTkFrame(ctk.CTkFrame):
-        def __init__(self, *args, bg=None, highlightthickness=None, highlightbackground=None, bd=None, cursor=None, padx=None, pady=None, **kwargs):
-            if bg is not None: kwargs.setdefault("fg_color", bg)
-            if highlightbackground is not None: kwargs.setdefault("border_color", highlightbackground)
-            if highlightthickness is not None: kwargs.setdefault("border_width", highlightthickness)
-            kwargs.setdefault("corner_radius", 0)
-            super().__init__(*args, **kwargs)
-        def configure(self, cnf=None, **kwargs):
-            if cnf: kwargs.update(cnf)
-            if "bg" in kwargs: kwargs["fg_color"] = kwargs.pop("bg")
-            if "highlightbackground" in kwargs: kwargs["border_color"] = kwargs.pop("highlightbackground")
-            kwargs.pop("bd", None); kwargs.pop("cursor", None); kwargs.pop("padx", None); kwargs.pop("pady", None)
-            return super().configure(**kwargs)
-        config = configure
-
-    class CTkLabel(ctk.CTkLabel):
-        def __init__(self, *args, bg=None, fg=None, **kwargs):
-            if bg is not None: kwargs.setdefault("fg_color", bg)
-            if fg is not None: kwargs.setdefault("text_color", fg)
-            kwargs.setdefault("corner_radius", 0)
-            super().__init__(*args, **kwargs)
-        def configure(self, cnf=None, **kwargs):
-            if cnf: kwargs.update(cnf)
-            if "bg" in kwargs: kwargs["fg_color"] = kwargs.pop("bg")
-            if "fg" in kwargs: kwargs["text_color"] = kwargs.pop("fg")
-            return super().configure(**kwargs)
-        config = configure
-
-    class CTkButton(ctk.CTkButton):
-        def __init__(self, *args, bg=None, fg=None, activebackground=None, activeforeground=None, borderwidth=None, relief=None, padx=None, pady=None, bd=None, cursor=None, **kwargs):
-            if bg is not None: kwargs.setdefault("fg_color", bg)
-            if fg is not None: kwargs.setdefault("text_color", fg)
-            if activebackground is not None: kwargs.setdefault("hover_color", activebackground)
-            kwargs.setdefault("corner_radius", 10)
-            if "height" in kwargs:
-                try: h=int(kwargs["height"]); kwargs["height"]=max(28,h*28)
-                except: pass
-            super().__init__(*args, **kwargs)
-        def configure(self, cnf=None, **kwargs):
-            if cnf: kwargs.update(cnf)
-            if "bg" in kwargs: kwargs["fg_color"] = kwargs.pop("bg")
-            if "fg" in kwargs: kwargs["text_color"] = kwargs.pop("fg")
-            if "activebackground" in kwargs: kwargs["hover_color"] = kwargs.pop("activebackground")
-            kwargs.pop("activeforeground", None); kwargs.pop("borderwidth", None); kwargs.pop("relief", None); kwargs.pop("bd", None); kwargs.pop("cursor", None)
-            return super().configure(**kwargs)
-        config = configure
-
-    TkFrame = CTkFrame
-    TkLabel = CTkLabel
-    TkButton = CTkButton
-else:
-    TkFrame = tk.Frame
-    TkLabel = tk.Label
-    TkButton = tk.Button
-
-def TkRawFrame(parent, bg=None, highlightthickness=None,
-            highlightbackground=None, bd=None, **kwargs):
-    kwargs.pop("padx", None)
-    kwargs.pop("pady", None)
-    f = tk.Frame(parent, **kwargs)
-    if bg is not None: f.configure(bg=bg)
-    if highlightthickness is not None: f.configure(highlightthickness=highlightthickness)
-    if highlightbackground is not None: f.configure(highlightbackground=highlightbackground)
-    if bd is not None: f.configure(bd=bd)
-    return f
-
-# ─────────────────────────────────────────────────────────────────────────────
-# TkRawFrame
-# ─────────────────────────────────────────────────────────────────────────────
-def TkRawFrame(*args, bg=None, highlightthickness=None, highlightbackground=None,
-               highlightcolor=None, bd=None, padx=None, pady=None, **kwargs):
-    """
-    Обычный tk.Frame для случаев, когда внутрь кладутся stdlib tk-виджеты
-    (Text/Entry/Listbox/Scrollbar). CTkFrame в режиме CTK имеет собственный
-    canvas для отрисовки fg_color/border, который перекрывает обычные
-    tk-виджеты по z-order — отсюда "поглощение" поля ввода фоном карточки.
-    """
-    f = tk.Frame(*args, **kwargs)
-    if bg is not None: f.configure(bg=bg)
-    if highlightthickness is not None: f.configure(highlightthickness=highlightthickness)
-    if highlightbackground is not None: f.configure(highlightbackground=highlightbackground)
-    if highlightcolor is not None: f.configure(highlightcolor=highlightcolor)
-    if bd is not None: f.configure(bd=bd)
-    return f
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Dependency injection
@@ -129,17 +33,15 @@ _get_text = None
 _set_text = None
 _placeholder = None
 
-_use_gpt_var = None
 
-def init(root, colors, create_button_fn, get_text_fn, set_text_fn, placeholder, use_gpt_var=None):
-    global _root, _colors, _create_button, _get_text, _set_text, _placeholder, _use_gpt_var
+def init(root, colors, create_button_fn, get_text_fn, set_text_fn, placeholder):
+    global _root, _colors, _create_button, _get_text, _set_text, _placeholder
     _root = root
     _colors = colors
     _create_button = create_button_fn
     _get_text = get_text_fn
     _set_text = set_text_fn
     _placeholder = placeholder
-    _use_gpt_var = use_gpt_var
     _load_sessions()
 
 
@@ -150,7 +52,6 @@ def init(root, colors, create_button_fn, get_text_fn, set_text_fn, placeholder, 
 HISTORY_FILE = os.path.abspath(
     os.path.join(os.path.dirname(__file__), "..", "chat_history.json")
 )
-os.makedirs(os.path.dirname(HISTORY_FILE), exist_ok=True)
 
 MAX_SESSIONS = 50
 MAX_MESSAGES_PER_SESSION = 100
@@ -163,8 +64,6 @@ _editor_window = None
 _sessions: list[dict] = []
 _current_session_id: str | None = None
 _sessions_loaded = False
-
-_scroll_debounce_id = None
 
 # Widgets
 session_listbox = None
@@ -199,7 +98,7 @@ _generation_running = False
 _generation_token = None
 _generation_cancel_event: threading.Event | None = None
 
-_message_labels: list = []
+_message_labels: list[tk.Label] = []
 _selected_bubble_frame = None
 _selected_bubble_content = ""
 _search_results: list[tuple[str, int]] = []
@@ -344,7 +243,7 @@ def _ask_simple_text(parent, title: str, prompt: str, initial: str = "") -> str 
     dlg.grab_set()
     
 
-    TkLabel(
+    tk.Label(
         dlg, text=prompt, bg=_c("BG_CARD"), fg=_c("TEXT_MAIN"),
         font=("Segoe UI", 9), wraplength=320, justify="left",
     ).pack(padx=16, pady=(16, 8), anchor="w")
@@ -359,7 +258,7 @@ def _ask_simple_text(parent, title: str, prompt: str, initial: str = "") -> str 
     entry.pack(padx=16, pady=(0, 12), ipady=5)
     entry.select_range(0, tk.END)
 
-    btn_row = TkFrame(dlg, bg=_c("BG_CARD"))
+    btn_row = tk.Frame(dlg, bg=_c("BG_CARD"))
     btn_row.pack(padx=16, pady=(0, 16), fill="x")
 
     def confirm(event=None):
@@ -388,9 +287,15 @@ def _ask_simple_text(parent, title: str, prompt: str, initial: str = "") -> str 
 
 
 def _make_button(parent, text: str, command=None, **kwargs):
+    """
+    Унифицированная фабрика кнопок.
+    Пытается использовать create_button_fn из GUI.
+    """
     if _create_button is not None:
         attempts = (
+            lambda: _create_button(parent, text, "", command, **kwargs),
             lambda: _create_button(parent, text, command, **kwargs),
+            lambda: _create_button(parent, text, "", command),
             lambda: _create_button(parent, text, command),
         )
         for attempt in attempts:
@@ -402,8 +307,6 @@ def _make_button(parent, text: str, command=None, **kwargs):
                 continue
             except Exception:
                 break
-    # fallback — создаём TkButton напрямую
-    ...
 
     bg = kwargs.get("bg", _c("BG_CARD"))
     fg = kwargs.get("fg", _c("TEXT_MAIN"))
@@ -413,7 +316,7 @@ def _make_button(parent, text: str, command=None, **kwargs):
     padx = kwargs.get("padx", 10)
     pady = kwargs.get("pady", 5)
 
-    btn = TkButton(
+    btn = tk.Button(
         parent,
         text=text,
         command=command,
@@ -422,6 +325,7 @@ def _make_button(parent, text: str, command=None, **kwargs):
         activebackground=_c("BG_ACTIVE"),
         activeforeground=_c("TEXT_MAIN"),
         relief="flat",
+        bd=0,
         cursor="hand2",
         font=("Segoe UI", font_size, "bold"),
         padx=padx,
@@ -442,10 +346,7 @@ def _set_button_text(button, text: str):
     try:
         button.config(text=text)
     except Exception:
-        try:
-            button.configure(text=text)
-        except Exception:
-            pass
+        pass
 
 
 def _set_button_state(button, state: str):
@@ -682,7 +583,7 @@ def _create_placeholder_overlay(parent, text_widget, text: str, *, x=12, y=10, f
     if not _widget_exists(parent) or not _widget_exists(text_widget):
         return None
 
-    label = TkLabel(
+    label = tk.Label(
         parent,
         text=text,
         bg=bg or parent.cget("bg"),
@@ -772,6 +673,8 @@ def _show_editor_preview(text: str):
         _editor_preview_content = text
         return
 
+    # Уничтожаем старую карточку превью (если была), НЕ трогая _editor_preview_content —
+    # он будет перезаписан новым текстом ниже.
     if _widget_exists(_editor_preview_frame):
         try:
             _editor_preview_frame.destroy()
@@ -779,9 +682,9 @@ def _show_editor_preview(text: str):
             pass
     _editor_preview_frame = None
     _editor_preview_text = None
+
     _editor_preview_content = text
 
-    # ВАЖНО: чистый tk.Frame, не TkFrame
     _editor_preview_frame = tk.Frame(
         composer_outer_ref[0],
         bg=_c("BG_CARD"),
@@ -816,12 +719,7 @@ def _show_editor_preview(text: str):
         padx=4, pady=0,
     ).pack(side="right")
 
-    preview_border = tk.Frame(
-        _editor_preview_frame,
-        bg=_c("BORDER"),
-        highlightthickness=1,
-        highlightbackground=_c("BORDER"),
-    )
+    preview_border = tk.Frame(_editor_preview_frame, bg=_c("BORDER"), padx=1, pady=1)
     preview_border.pack(fill="x", padx=10, pady=(0, 8))
 
     preview_inner = tk.Frame(preview_border, bg=_c("BG_INPUT"))
@@ -842,9 +740,13 @@ def _show_editor_preview(text: str):
         fg=_c("TEXT_MAIN"),
         insertbackground=_c("TEXT_MAIN"),
         relief="flat",
-        highlightthickness=0,
+        highlightthickness=1,
+        highlightbackground=_c("BORDER"),
+        highlightcolor=_c("ACCENT"),
         font=("Segoe UI", 9),
         padx=8, pady=6,
+        state="normal",
+        takefocus=1,
         undo=True,
     )
     _editor_preview_text.insert("1.0", text)
@@ -880,43 +782,47 @@ def _is_chat_near_bottom(threshold: float = 0.01) -> bool:
         return True
 
 
-_scroll_debounce_id = None
-
 def _scroll_chat_to_bottom(immediate: bool = False):
-    global _scroll_debounce_id
     if not _widget_exists(chat_canvas):
         return
 
+    # Сначала принудительно пересчитываем scrollregion
+    try:
+        chat_canvas.update_idletasks()
+        chat_canvas.configure(scrollregion=chat_canvas.bbox("all"))
+    except Exception:
+        pass
+
     if immediate:
         try:
-            chat_canvas.update_idletasks()
-            chat_canvas.configure(scrollregion=chat_canvas.bbox("all"))
             chat_canvas.yview_moveto(1.0)
         except Exception:
             pass
         return
 
-    # Отменяем предыдущий запланированный скролл
-    if _scroll_debounce_id is not None:
-        try:
-            _root.after_cancel(_scroll_debounce_id)
-        except Exception:
-            pass
-        _scroll_debounce_id = None
+    try:
+        start = chat_canvas.yview()[0]
+    except Exception:
+        start = 1.0
 
-    def _do_scroll():
-        global _scroll_debounce_id
-        _scroll_debounce_id = None
+    steps = 8
+    target = 1.0
+
+    def step(i=1):
         if not _widget_exists(chat_canvas):
             return
         try:
-            chat_canvas.update_idletasks()
+            # Пересчитываем scrollregion на каждом шаге анимации —
+            # пузырь может ещё рендериться пока мы едем вниз
             chat_canvas.configure(scrollregion=chat_canvas.bbox("all"))
-            chat_canvas.yview_moveto(1.0)
+            pos = start + (target - start) * (i / steps)
+            chat_canvas.yview_moveto(pos)
+            if i < steps:
+                chat_canvas.after(12, lambda: step(i + 1))
         except Exception:
             pass
 
-    _scroll_debounce_id = _safe_after(80, _do_scroll)
+    step()
 
 def _show_new_message_indicator():
     global _new_message_btn
@@ -1401,11 +1307,11 @@ def _add_empty_state():
     if not _widget_exists(chat_messages_frame):
         return
 
-    box = TkFrame(chat_messages_frame, bg=_c("BG_DARK"))
+    box = tk.Frame(chat_messages_frame, bg=_c("BG_DARK"))
     box._is_empty_state = True
     box.pack(fill="both", expand=True, padx=24, pady=60)
 
-    TkLabel(
+    tk.Label(
         box,
         text="💬",
         bg=_c("BG_DARK"),
@@ -1413,7 +1319,7 @@ def _add_empty_state():
         font=("Segoe UI Emoji", 42),
     ).pack(pady=(0, 10))
 
-    TkLabel(
+    tk.Label(
         box,
         text="Новый чат",
         bg=_c("BG_DARK"),
@@ -1421,7 +1327,7 @@ def _add_empty_state():
         font=("Segoe UI", 16, "bold"),
     ).pack()
 
-    TkLabel(
+    tk.Label(
         box,
         text="Спросите AI о тексте, дикторе, TTS или улучшите текст для озвучки.",
         bg=_c("BG_DARK"),
@@ -1481,12 +1387,12 @@ def _add_message_bubble(message: dict, smooth_scroll: bool = True, force_scroll:
 
     is_user = role == "user"
 
-    row = TkFrame(chat_messages_frame, bg=_c("BG_DARK"))
+    row = tk.Frame(chat_messages_frame, bg=_c("BG_DARK"))
     row._is_message_row = True
     row.pack(fill="x", padx=12, pady=6)
 
     avatar_text = "🧑" if is_user else "🤖"
-    avatar = TkLabel(
+    avatar = tk.Label(
         row,
         text=avatar_text,
         bg=_c("BG_DARK"),
@@ -1537,7 +1443,6 @@ def _add_message_bubble(message: dict, smooth_scroll: bool = True, force_scroll:
                 pass
         _send_to_main_editor(content)
 
-    # to_editor_btn
     to_editor_btn = tk.Button(
         btn_box,
         text="→",
@@ -1556,7 +1461,6 @@ def _add_message_bubble(message: dict, smooth_scroll: bool = True, force_scroll:
     )
     to_editor_btn.pack(side="right", padx=(4, 0))
 
-    # copy_btn
     copy_btn = tk.Button(
         btn_box,
         text="",
@@ -1691,26 +1595,33 @@ def _add_message_bubble(message: dict, smooth_scroll: bool = True, force_scroll:
             pass
 
     # Сначала задаём правильную ширину, потом пересчитываем высоту
-    _safe_after(50, lambda: _resize_bubble_text(text_label) if _widget_exists(text_label) else None)
+    _safe_after(10, lambda: _resize_bubble_text(text_label) if _widget_exists(text_label) else None)
+    _safe_after(120, lambda: _resize_bubble_text(text_label) if _widget_exists(text_label) else None)
 
     # Проверяем позицию ПОСЛЕ того как пузырь отрисован и scrollregion обновился
     def _check_and_scroll():
         if not _widget_exists(chat_canvas):
             return
+        try:
+            chat_canvas.update_idletasks()
+            chat_canvas.configure(scrollregion=chat_canvas.bbox("all"))
+        except Exception:
+            pass
         if _was_near_bottom:
             _scroll_chat_to_bottom(immediate=False)
             _hide_new_message_indicator()
         elif role == "assistant" and smooth_scroll:
+            # smooth_scroll=False только при начальном рендере сессии
             _show_new_message_indicator()
 
-    _safe_after(150, _check_and_scroll)
+    _safe_after(200, _check_and_scroll)
 
 def _add_system_message(content: str, ts: str):
     row = tk.Frame(chat_messages_frame, bg=_c("BG_DARK"))
     row._is_message_row = True
     row.pack(fill="x", padx=18, pady=8)
 
-    label = TkLabel(
+    label = tk.Label(
         row,
         text=f"{ts} · {content}",
         bg=_c("BG_CARD"),
@@ -1860,26 +1771,26 @@ def _show_bubble_context_menu(event, content: str, text_widget=None):
 def _update_wraplengths(event=None):
     if not _widget_exists(chat_canvas):
         return
+
     try:
         width = chat_canvas.winfo_width()
         if width < 50:
             return
         wrap_px = max(260, min(720, int(width * 0.62)))
         char_width = max(30, wrap_px // 7)
-        
-        # Собираем все изменения, применяем за один проход без update_idletasks внутри цикла
         for widget in list(_message_labels):
             if not _widget_exists(widget):
                 continue
             try:
                 if isinstance(widget, tk.Text):
                     widget.config(width=char_width)
+                    widget.update_idletasks()
+                    _resize_bubble_text(widget)
                 else:
                     widget.config(wraplength=wrap_px)
             except Exception:
                 pass
-        
-        # update_idletasks только один раз в конце
+        # После изменения высот пересчитываем scrollregion
         try:
             chat_canvas.update_idletasks()
             chat_canvas.configure(scrollregion=chat_canvas.bbox("all"))
@@ -1887,6 +1798,7 @@ def _update_wraplengths(event=None):
             pass
     except Exception:
         pass
+
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Typing animation
@@ -1901,11 +1813,11 @@ def _show_typing():
     _hide_typing()
     _typing_step = 0
 
-    row = TkFrame(chat_messages_frame, bg=_c("BG_DARK"))
+    row = tk.Frame(chat_messages_frame, bg=_c("BG_DARK"))
     row._is_message_row = True
     row.pack(fill="x", padx=12, pady=6)
 
-    avatar = TkLabel(
+    avatar = tk.Label(
         row,
         text="🤖",
         bg=_c("BG_DARK"),
@@ -1915,7 +1827,7 @@ def _show_typing():
     )
     avatar.pack(side="left", anchor="n")
 
-    bubble = TkFrame(
+    bubble = tk.Frame(
         row,
         bg=_c("BG_CARD"),
         highlightthickness=1,
@@ -1925,7 +1837,7 @@ def _show_typing():
     )
     bubble.pack(side="left", padx=(8, 60), anchor="w")
 
-    lbl = TkLabel(
+    lbl = tk.Label(
         bubble,
         text="AI печатает",
         bg=_c("BG_CARD"),
@@ -2334,20 +2246,16 @@ def _stop_generation(silent: bool = False):
 
 
 def _set_generation_ui(running: bool):
-    # Кнопка отправки/стоп
-    if _widget_exists(chat_send_btn):
-        try:
-            chat_send_btn.config(
-                text="⏹" if running else "➤",
-                command=lambda: _stop_generation() if running else send_chat_message(),
-            )
-        except Exception:
-            pass
+    _set_button_text(chat_send_btn, "⏹" if running else "➤")
 
     state = "disabled" if running else "normal"
-    for btn in (improve_btn, paste_editor_btn, clear_btn,
-                export_btn, settings_btn, new_chat_btn, delete_chat_btn):
-        _set_button_state(btn, state)
+    _set_button_state(improve_btn, state)
+    _set_button_state(paste_editor_btn, state)
+    _set_button_state(clear_btn, state)
+    _set_button_state(export_btn, state)
+    _set_button_state(settings_btn, state)
+    _set_button_state(new_chat_btn, state)
+    _set_button_state(delete_chat_btn, state)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -2355,14 +2263,14 @@ def _set_generation_ui(running: bool):
 # ─────────────────────────────────────────────────────────────────────────────
 
 def improve_text_with_gpt():
-    if _use_gpt_var is not None and not _use_gpt_var.get():
-        messagebox.showwarning(
-            "AI edit выключен",
-            "Включите флажок ✨ AI edit в главном окне.",
+    if _get_text is None or _set_text is None:
+        messagebox.showerror(
+            "Ошибка",
+            "Функции доступа к редактору не инициализированы.",
             parent=_get_app_parent() or _root,
         )
         return
-    
+
     try:
         raw = _get_text()
     except Exception as e:
@@ -2454,10 +2362,10 @@ def open_editor_text_window(event=None):
     win.configure(bg=_c("BG_DARK"))
     win.transient(_get_app_parent() or _root)
 
-    main = TkFrame(win, bg=_c("BG_DARK"))
+    main = tk.Frame(win, bg=_c("BG_DARK"))
     main.pack(fill="both", expand=True, padx=14, pady=14)
 
-    TkLabel(
+    tk.Label(
         main,
         text="Текст из редактора",
         bg=_c("BG_DARK"),
@@ -2466,7 +2374,7 @@ def open_editor_text_window(event=None):
         anchor="w",
     ).pack(fill="x")
 
-    TkLabel(
+    tk.Label(
         main,
         text="Выделите фрагмент сверху и нажмите «В редактор». Ниже можно написать комментарий для AI.",
         bg=_c("BG_DARK"),
@@ -2476,7 +2384,7 @@ def open_editor_text_window(event=None):
         justify="left",
     ).pack(fill="x", pady=(4, 8))
 
-    TkLabel(
+    tk.Label(
         main,
         text="Enter — отправить и закрыть · Shift+Enter — новая строка · Ctrl+Enter — отправить и закрыть · Ctrl+Shift+Enter — вставить в поле ввода · Ctrl+F — поиск",
         bg=_c("BG_DARK"),
@@ -2498,17 +2406,17 @@ def open_editor_text_window(event=None):
     panes.pack(fill="both", expand=True)
 
     # Source card
-    source_card = TkFrame(
+    source_card = tk.Frame(
         panes,
         bg=_c("BG_CARD"),
         highlightthickness=1,
         highlightbackground=_c("BORDER"),
     )
 
-    src_header = TkFrame(source_card, bg=_c("BG_CARD"))
+    src_header = tk.Frame(source_card, bg=_c("BG_CARD"))
     src_header.pack(fill="x", padx=12, pady=(10, 8))
 
-    TkLabel(
+    tk.Label(
         src_header,
         text="Источник",
         bg=_c("BG_CARD"),
@@ -2551,7 +2459,7 @@ def open_editor_text_window(event=None):
         except Exception as e:
             messagebox.showerror("Ошибка", f"Не удалось перезаписать редактор: {e}", parent=win)
 
-    src_btn_row = TkFrame(src_header, bg=_c("BG_CARD"))
+    src_btn_row = tk.Frame(src_header, bg=_c("BG_CARD"))
     src_btn_row.pack(side="right")
 
     _make_button(
@@ -2589,12 +2497,11 @@ def open_editor_text_window(event=None):
         pady=2,
     ).pack(side="left")
 
-    source_body = TkRawFrame(source_card, bg=_c("BORDER"),
-                          highlightthickness=1, highlightbackground=_c("BORDER"))
-    source_inner = TkRawFrame(source_body, bg=_c("BG_INPUT"))
-    comment_body = TkRawFrame(comment_send_row, bg=_c("BORDER"),
-                            highlightthickness=1, highlightbackground=_c("BORDER"))
-    comment_inner = TkRawFrame(comment_body, bg=_c("BG_INPUT"))
+    source_body = tk.Frame(source_card, bg=_c("BORDER"), padx=1, pady=1)
+    source_body.pack(fill="both", expand=True, padx=12, pady=(0, 12))
+
+    source_inner = tk.Frame(source_body, bg=_c("BG_INPUT"))
+    source_inner.pack(fill="both", expand=True)
 
     src_scroll = tk.Scrollbar(source_inner)
     src_scroll.pack(side="right", fill="y")
@@ -2614,23 +2521,22 @@ def open_editor_text_window(event=None):
         yscrollcommand=src_scroll.set,
     )
     editor_source_text.pack(fill="both", expand=True)
-    editor_source_text.lift() 
     src_scroll.config(command=editor_source_text.yview)
 
     editor_source_text.insert("1.0", text)
 
     # Comment card
-    comment_card = TkFrame(
+    comment_card = tk.Frame(
         panes,
         bg=_c("BG_CARD"),
         highlightthickness=1,
         highlightbackground=_c("BORDER"),
     )
 
-    comment_header = TkFrame(comment_card, bg=_c("BG_CARD"))
+    comment_header = tk.Frame(comment_card, bg=_c("BG_CARD"))
     comment_header.pack(fill="x", padx=12, pady=(10, 8))
 
-    TkLabel(
+    tk.Label(
         comment_header,
         text="Комментарий к тексту",
         bg=_c("BG_CARD"),
@@ -2638,7 +2544,7 @@ def open_editor_text_window(event=None):
         font=("Segoe UI", 10, "bold"),
     ).pack(side="left")
 
-    TkLabel(
+    tk.Label(
         comment_header,
         text="Что сделать с текстом?",
         bg=_c("BG_CARD"),
@@ -2647,13 +2553,13 @@ def open_editor_text_window(event=None):
         anchor="e",
     ).pack(side="right")
 
-    comment_send_row = TkFrame(comment_card, bg=_c("BG_CARD"))
+    comment_send_row = tk.Frame(comment_card, bg=_c("BG_CARD"))
     comment_send_row.pack(fill="both", expand=True, padx=12, pady=(0, 8))
 
-    comment_body = TkFrame(comment_send_row, bg=_c("BORDER"), padx=1, pady=1)
+    comment_body = tk.Frame(comment_send_row, bg=_c("BORDER"), padx=1, pady=1)
     comment_body.pack(side="left", fill="both", expand=True)
 
-    comment_inner = TkFrame(comment_body, bg=_c("BG_INPUT"))
+    comment_inner = tk.Frame(comment_body, bg=_c("BG_INPUT"))
     comment_inner.pack(fill="both", expand=True)
 
     comment_scroll = tk.Scrollbar(comment_inner)
@@ -2688,17 +2594,17 @@ def open_editor_text_window(event=None):
         font=("Segoe UI", 9, "italic"),
     )
 
-    send_side = TkFrame(comment_send_row, bg=_c("BG_CARD"))
+    send_side = tk.Frame(comment_send_row, bg=_c("BG_CARD"))
     send_side.pack(side="left", fill="y", padx=(6, 0))
 
     panes.add(source_card, minsize=250)
     panes.add(comment_card, minsize=180)
 
     # Stats + status
-    info_row = TkFrame(main, bg=_c("BG_DARK"))
+    info_row = tk.Frame(main, bg=_c("BG_DARK"))
     info_row.pack(fill="x", pady=(10, 8))
 
-    editor_stats_label = TkLabel(
+    editor_stats_label = tk.Label(
         info_row,
         text="Источник: 0 симв. · Комментарий: 0 симв. · Итого: 0 симв.",
         bg=_c("BG_DARK"),
@@ -2708,7 +2614,7 @@ def open_editor_text_window(event=None):
     )
     editor_stats_label.pack(side="left", fill="x", expand=True)
 
-    editor_status_label = TkLabel(
+    editor_status_label = tk.Label(
         info_row,
         text="Enter — отправить и закрыть · Esc — закрыть",
         bg=_c("BG_DARK"),
@@ -2718,7 +2624,7 @@ def open_editor_text_window(event=None):
     )
     editor_status_label.pack(side="right")
 
-    btn_row = TkFrame(main, bg=_c("BG_DARK"))
+    btn_row = tk.Frame(main, bg=_c("BG_DARK"))
     btn_row.pack(fill="x")
 
     def build_prompt() -> str:
@@ -3089,7 +2995,7 @@ def open_search(event=None):
     win.transient(_chat_window)
 
 
-    TkLabel(
+    tk.Label(
         win,
         text="Поиск по истории чатов",
         bg=_c("BG_DARK"),
@@ -3097,7 +3003,7 @@ def open_search(event=None):
         font=("Segoe UI", 12, "bold"),
     ).pack(anchor="w", padx=14, pady=(14, 6))
 
-    TkLabel(
+    tk.Label(
         win,
         text="Enter — поиск · Double click / Enter — открыть · Esc — закрыть · Ctrl+F — фокус в строке поиска",
         bg=_c("BG_DARK"),
@@ -3118,7 +3024,7 @@ def open_search(event=None):
     )
     entry.pack(fill="x", padx=14, pady=(0, 10), ipady=7)
 
-    frame = TkFrame(win, bg=_c("BORDER"), padx=1, pady=1)
+    frame = tk.Frame(win, bg=_c("BORDER"), padx=1, pady=1)
     frame.pack(fill="both", expand=True, padx=14, pady=(0, 14))
 
     scroll = tk.Scrollbar(frame)
@@ -3139,7 +3045,7 @@ def open_search(event=None):
     results.pack(fill="both", expand=True)
     scroll.config(command=results.yview)
 
-    status = TkLabel(
+    status = tk.Label(
         win,
         text="Введите запрос",
         bg=_c("BG_DARK"),
@@ -3272,6 +3178,7 @@ def open_gpt_settings(event=None):
     win.resizable(True, True)
     win.configure(bg=_c("BG_CARD"))
     win.transient(_get_app_parent() or _root)
+    win.grab_set()
     
 
 # ── Скроллируемый каркас ────────────────────────────────────────────────
@@ -3284,7 +3191,7 @@ def open_gpt_settings(event=None):
     settings_scrollbar.pack(side="right", fill="y")
     settings_canvas.pack(side="left", fill="both", expand=True)
 
-    settings_scroll_frame = TkFrame(settings_canvas, bg=_c("BG_CARD"))
+    settings_scroll_frame = tk.Frame(settings_canvas, bg=_c("BG_CARD"))
 
     # Принудительно обновляем геометрию ДО создания canvas-window, чтобы
     # winfo_width() вернул реальную ширину, а не 1px по умолчанию —
@@ -3402,7 +3309,7 @@ def open_gpt_settings(event=None):
     has_custom_providers = callable(list_custom_providers) and callable(add_custom_provider)
 
     if multi_provider:
-        TkLabel(
+        tk.Label(
             settings_scroll_frame,
             text="Провайдер AI",
             bg=_c("BG_CARD"),
@@ -3410,7 +3317,7 @@ def open_gpt_settings(event=None):
             font=("Segoe UI", 10, "bold"),
         ).pack(anchor="w", padx=20, pady=(18, 6))
 
-        prov_outer = TkFrame(settings_scroll_frame, bg=_c("BORDER"), padx=1, pady=1)
+        prov_outer = tk.Frame(settings_scroll_frame, bg=_c("BORDER"), padx=1, pady=1)
         prov_outer.pack(fill="x", padx=20)
 
         prov_scroll = tk.Scrollbar(prov_outer)
@@ -3475,7 +3382,7 @@ def open_gpt_settings(event=None):
 
         prov_listbox.bind("<<ListboxSelect>>", _on_prov_listbox_select)
 
-        prov_btn_row = TkFrame(settings_scroll_frame, bg=_c("BG_CARD"))
+        prov_btn_row = tk.Frame(settings_scroll_frame, bg=_c("BG_CARD"))
         prov_btn_row.pack(fill="x", padx=20, pady=(6, 0))
 
         def _open_provider_form(edit_pid: str = None):
@@ -3499,7 +3406,7 @@ def open_gpt_settings(event=None):
             form.grab_set()
 
             def _field(parent, label_text, initial="", height=1):
-                TkLabel(
+                tk.Label(
                     parent, text=label_text,
                     bg=_c("BG_CARD"), fg=_c("TEXT_MAIN"),
                     font=("Segoe UI", 9, "bold"), anchor="w",
@@ -3519,9 +3426,9 @@ def open_gpt_settings(event=None):
                     _bind_text_hotkeys(e)
                     return var, e
                 else:
-                    frame = TkFrame(parent, bg=_c("BORDER"), padx=1, pady=1)
+                    frame = tk.Frame(parent, bg=_c("BORDER"), padx=1, pady=1)
                     frame.pack(fill="x", padx=16)
-                    inner = TkFrame(frame, bg=_c("BG_INPUT"))
+                    inner = tk.Frame(frame, bg=_c("BG_INPUT"))
                     inner.pack(fill="x")
                     t = tk.Text(
                         inner, height=height, wrap="word",
@@ -3554,14 +3461,14 @@ def open_gpt_settings(event=None):
                 except Exception:
                     pass
 
-            form_status = TkLabel(
+            form_status = tk.Label(
                 form, text="",
                 bg=_c("BG_CARD"), fg=_c("TEXT_DIM"),
                 font=("Segoe UI", 9), anchor="w",
             )
             form_status.pack(fill="x", padx=16, pady=(8, 0))
 
-            btn_row_f = TkFrame(form, bg=_c("BG_CARD"))
+            btn_row_f = tk.Frame(form, bg=_c("BG_CARD"))
             btn_row_f.pack(fill="x", padx=16, pady=(6, 16))
 
             def _save_form():
@@ -3647,19 +3554,19 @@ def open_gpt_settings(event=None):
             dlg.transient(win)
             dlg.grab_set()
 
-            TkLabel(
+            tk.Label(
                 dlg, text="Выберите провайдера из каталога",
                 bg=_c("BG_CARD"), fg=_c("TEXT_MAIN"),
                 font=("Segoe UI", 11, "bold"),
             ).pack(anchor="w", padx=16, pady=(14, 6))
 
-            TkLabel(
+            tk.Label(
                 dlg, text="Двойной клик или «Добавить» — подключить провайдера",
                 bg=_c("BG_CARD"), fg=_c("TEXT_DIM"),
                 font=("Segoe UI", 8),
             ).pack(anchor="w", padx=16, pady=(0, 8))
 
-            list_outer = TkFrame(dlg, bg=_c("BORDER"), padx=1, pady=1)
+            list_outer = tk.Frame(dlg, bg=_c("BORDER"), padx=1, pady=1)
             list_outer.pack(fill="both", expand=True, padx=16)
 
             cat_scroll = tk.Scrollbar(list_outer)
@@ -3684,14 +3591,14 @@ def open_gpt_settings(event=None):
                 suffix = "  ✓ уже добавлен" if pid in already else ""
                 cat_listbox.insert(tk.END, f"{lbl}{suffix}  —  {notes}")
 
-            info_lbl = TkLabel(
+            info_lbl = tk.Label(
                 dlg, text="Выберите провайдера из списка",
                 bg=_c("BG_CARD"), fg=_c("TEXT_DIM"),
                 font=("Segoe UI", 8), anchor="w", wraplength=500,
             )
             info_lbl.pack(fill="x", padx=16, pady=(8, 0))
 
-            status_lbl_cat = TkLabel(
+            status_lbl_cat = tk.Label(
                 dlg, text="",
                 bg=_c("BG_CARD"), fg=_c("TEXT_DIM"),
                 font=("Segoe UI", 8), anchor="w",
@@ -3771,7 +3678,7 @@ def open_gpt_settings(event=None):
                 import threading as _threading
                 _threading.Thread(target=_worker, daemon=True).start()
 
-            btn_row_cat = TkFrame(dlg, bg=_c("BG_CARD"))
+            btn_row_cat = tk.Frame(dlg, bg=_c("BG_CARD"))
             btn_row_cat.pack(fill="x", padx=16, pady=(8, 16))
 
             _make_button(
@@ -3855,7 +3762,7 @@ def open_gpt_settings(event=None):
         prov_listbox.bind("<Double-Button-1>", lambda e: _on_prov_listbox_select())
 
     # ── API key ──────────────────────────────────────────────────────────────
-    key_label = TkLabel(
+    key_label = tk.Label(
         settings_scroll_frame,
         text="API Key",
         bg=_c("BG_CARD"),
@@ -3881,7 +3788,7 @@ def open_gpt_settings(event=None):
     )
     key_entry.pack(fill="x", padx=20, pady=(0, 6), ipady=6)
 
-    row = TkFrame(settings_scroll_frame, bg=_c("BG_CARD"))
+    row = tk.Frame(settings_scroll_frame, bg=_c("BG_CARD"))
     row.pack(fill="x", padx=20)
 
     show_var = tk.BooleanVar(value=False)
@@ -3903,12 +3810,12 @@ def open_gpt_settings(event=None):
         cursor="hand2",
     ).pack(side="left")
 
-    link = TkLabel(
+    link = tk.Label(
         row,
         text="console.groq.com/keys",
         bg=_c("BG_CARD"),
         fg=_c("ACCENT"),
-        font=("Segoe UI", 10, "bold"),
+        font=("Segoe UI", 10, "bold underline"),
         cursor="hand2",
         wraplength=300,
         justify="right",
@@ -3989,7 +3896,7 @@ def open_gpt_settings(event=None):
     has_key_library = callable(list_keys) and callable(add_key) and callable(delete_key)
 
     if has_key_library:
-        TkLabel(
+        tk.Label(
             settings_scroll_frame,
             text="Библиотека ключей",
             bg=_c("BG_CARD"),
@@ -3997,7 +3904,7 @@ def open_gpt_settings(event=None):
             font=("Segoe UI", 10, "bold"),
         ).pack(anchor="w", padx=20, pady=(18, 6))
 
-        lib_outer = TkFrame(settings_scroll_frame, bg=_c("BORDER"), padx=1, pady=1)
+        lib_outer = tk.Frame(settings_scroll_frame, bg=_c("BORDER"), padx=1, pady=1)
         lib_outer.pack(fill="x", padx=20)
 
         lib_scroll = tk.Scrollbar(lib_outer)
@@ -4106,7 +4013,7 @@ def open_gpt_settings(event=None):
                 messagebox.showerror("Ошибка", str(e), parent=win)
             return "break"
 
-        lib_btn_row = TkFrame(settings_scroll_frame, bg=_c("BG_CARD"))
+        lib_btn_row = tk.Frame(settings_scroll_frame, bg=_c("BG_CARD"))
         lib_btn_row.pack(fill="x", padx=20, pady=(6, 0))
 
         _make_button(
@@ -4134,7 +4041,7 @@ def open_gpt_settings(event=None):
         _refresh_lib_list()
 
     # ── Модель ───────────────────────────────────────────────────────────────
-    TkLabel(
+    tk.Label(
         settings_scroll_frame,
         text="Модель",
         bg=_c("BG_CARD"),
@@ -4144,7 +4051,7 @@ def open_gpt_settings(event=None):
 
     model_var = tk.StringVar(value=current_model)
 
-    models_frame = TkFrame(settings_scroll_frame, bg=_c("BG_CARD"))
+    models_frame = tk.Frame(settings_scroll_frame, bg=_c("BG_CARD"))
     models_frame.pack(fill="both", padx=20)
 
     def _rebuild_models_list():
@@ -4173,7 +4080,7 @@ def open_gpt_settings(event=None):
                     cursor="hand2",
                 ).pack(fill="x", anchor="w", pady=1)
         else:
-            TkLabel(
+            tk.Label(
                 models_frame,
                 text="Список моделей недоступен.",
                 bg=_c("BG_CARD"),
@@ -4214,7 +4121,7 @@ def open_gpt_settings(event=None):
 
     _rebuild_models_list()
 
-    status_lbl = TkLabel(
+    status_lbl = tk.Label(
         settings_scroll_frame,
         text="",
         bg=_c("BG_CARD"),
@@ -4224,7 +4131,7 @@ def open_gpt_settings(event=None):
     )
     status_lbl.pack(fill="x", padx=20, pady=(4, 8))
 
-    btn_row = TkFrame(settings_scroll_frame, bg=_c("BG_CARD"))
+    btn_row = tk.Frame(settings_scroll_frame, bg=_c("BG_CARD"))
     btn_row.pack(fill="x", padx=20, pady=(0, 18))
     def test_key():
         key = key_var.get().strip()
@@ -4302,15 +4209,15 @@ def open_gpt_settings(event=None):
 
     def close_settings(event=None):
         global _settings_window
-        _settings_window = None
         try:
             win.grab_release()
         except Exception:
             pass
         try:
-            win.after(0, win.destroy)
+            win.destroy()
         except Exception:
             pass
+        _settings_window = None
         return "break"
 
     _make_button(
@@ -4458,15 +4365,15 @@ def open_chat_window():
     _chat_window = win
 
     # Root layout
-    main = TkFrame(win, bg=_c("BG_DARK"))
+    main = tk.Frame(win, bg=_c("BG_DARK"))
     main.pack(fill="both", expand=True)
 
     # Sidebar
-    sidebar = TkFrame(main, bg=_c("BG_CARD"), width=220)
+    sidebar = tk.Frame(main, bg=_c("BG_CARD"), width=220)
     sidebar.pack(side="left", fill="y")
     sidebar.pack_propagate(False)
 
-    TkLabel(
+    tk.Label(
         sidebar,
         text="XTTS AI",
         bg=_c("BG_CARD"),
@@ -4499,7 +4406,7 @@ def open_chat_window():
     )
     delete_chat_btn.pack(fill="x", padx=10, pady=(0, 10))
 
-    TkLabel(
+    tk.Label(
         sidebar,
         text="Поиск: Ctrl+F",
         bg=_c("BG_CARD"),
@@ -4508,7 +4415,7 @@ def open_chat_window():
         anchor="w",
     ).pack(fill="x", padx=12, pady=(0, 8))
 
-    list_outer = TkFrame(sidebar, bg=_c("BORDER"), padx=1, pady=1)
+    list_outer = tk.Frame(sidebar, bg=_c("BORDER"), padx=1, pady=1)
     list_outer.pack(fill="both", expand=True, padx=10, pady=(0, 10))
 
     list_scroll = tk.Scrollbar(list_outer)
@@ -4530,14 +4437,14 @@ def open_chat_window():
     list_scroll.config(command=session_listbox.yview)
     session_listbox.bind("<<ListboxSelect>>", _on_session_select)
 
-# Chat area
-    right = TkFrame(main, bg=_c("BG_DARK"))
+    # Chat area
+    right = tk.Frame(main, bg=_c("BG_DARK"))
     right.pack(side="left", fill="both", expand=True)
 
-    header = TkFrame(right, bg=_c("BG_DARK"))
-    header.pack(side="top", fill="x", padx=14, pady=(12, 8))
+    header = tk.Frame(right, bg=_c("BG_DARK"))
+    header.pack(fill="x", padx=14, pady=(12, 8))
 
-    TkLabel(
+    tk.Label(
         header,
         text="AI Чат",
         bg=_c("BG_DARK"),
@@ -4581,205 +4488,9 @@ def open_chat_window():
     )
     settings_btn.pack(side="right", padx=(8, 0))
 
-    # Status row — bottom
-    status_row = TkFrame(right, bg=_c("BG_DARK"))
-    status_row.pack(side="bottom", fill="x", padx=14, pady=(0, 6))
-
-    chat_status_label = TkLabel(
-        status_row,
-        text="Готов к работе",
-        bg=_c("BG_DARK"),
-        fg=_c("TEXT_DIM"),
-        font=("Segoe UI", 9),
-        anchor="w",
-    )
-    chat_status_label.pack(side="left", fill="x", expand=True)
-
-    chat_token_label = TkLabel(
-        status_row,
-        text="Ввод: ≈0 ток. · Чат: ≈0 ток.",
-        bg=_c("BG_DARK"),
-        fg=_c("TEXT_DIM"),
-        font=("Segoe UI", 9),
-        anchor="e",
-    )
-    chat_token_label.pack(side="right")
-
-    # Actions — bottom
-    action_row = TkFrame(right, bg=_c("BG_DARK"))
-    action_row.pack(side="bottom", fill="x", padx=14, pady=(0, 6))
-
-    improve_btn = ctk.CTkButton(
-        action_row,
-        text="✨ Улучшить",
-        command=improve_text_with_gpt,
-        fg_color=_c("BG_INPUT"),
-        text_color=_c("TEXT_MAIN"),
-        hover_color=_c("BORDER"),
-        corner_radius=10,
-        height=40,
-        font=("Segoe UI", 13),
-        cursor="hand2",
-    )
-    improve_btn.pack(side="left", fill="x", expand=True, padx=(0, 5))
-
-    paste_editor_btn = ctk.CTkButton(
-        action_row,
-        text="📋 Из редактора",
-        command=paste_from_editor,
-        fg_color=_c("BG_INPUT"),
-        text_color=_c("TEXT_MAIN"),
-        hover_color=_c("BORDER"),
-        corner_radius=10,
-        height=40,
-        font=("Segoe UI", 13),
-        cursor="hand2",
-    )
-    paste_editor_btn.pack(side="left", fill="x", expand=True, padx=(0, 5))
-
-    clear_btn = ctk.CTkButton(
-        action_row,
-        text="🧹 Очистить",
-        command=clear_chat_history,
-        fg_color=_c("BG_INPUT"),
-        text_color=_c("TEXT_MAIN"),
-        hover_color=_c("BORDER"),
-        corner_radius=10,
-        height=40,
-        font=("Segoe UI", 13),
-        cursor="hand2",
-    )
-    clear_btn.pack(side="left", fill="x", expand=True)
-
-    # Input card — bottom
-    composer_outer = TkFrame(right, bg=_c("BG_DARK"))
-    composer_outer.pack(side="bottom", fill="x", padx=14, pady=(0, 14))
-    composer_outer_ref = [composer_outer]
-
-    composer_card = TkRawFrame(
-        composer_outer,
-        bg=_c("BG_CARD"),
-        highlightthickness=1,
-        highlightbackground=_c("BORDER"),
-    )
-    composer_card.pack(fill="x")
-    composer_card_ref = [composer_card]
-
-    hint_row = TkRawFrame(composer_card, bg=_c("BG_CARD"))
-    hint_row.pack(fill="x", padx=12, pady=(9, 5))
-
-    global _hint_text_var
-    _hint_text_var = tk.StringVar(value="Enter — отправить · Shift+Enter — новая строка · Ctrl+F — поиск")
-    _hint_label = TkLabel(
-        hint_row,
-        textvariable=_hint_text_var,
-        bg=_c("BG_CARD"),
-        fg=_c("TEXT_DIM"),
-        font=("Segoe UI", 11),
-        anchor="w",
-    )
-    _hint_label.pack(side="left", fill="x", expand=True)
-
-    def _toggle_free_chat():
-        global _free_chat_mode
-        _free_chat_mode = not _free_chat_mode
-        try:
-            _free_chat_btn.config(
-                text="💬 Свободный чат ✓" if _free_chat_mode else "💬 Свободный чат",
-                fg=_c("ACCENT") if _free_chat_mode else _c("TEXT_DIM"),
-            )
-        except Exception:
-            pass
-        set_chat_status("Режим: свободный чат" if _free_chat_mode else "Режим: редактор текста")
-        _mode_label.config(
-            text="режим: свободный чат" if _free_chat_mode else "режим: редактор",
-            fg=_c("ACCENT") if _free_chat_mode else _c("TEXT_MUTED"),
-        )
-
-    _free_chat_btn = tk.Button(
-        hint_row,
-        text="💬 Свободный чат",
-        command=_toggle_free_chat,
-        bg=_c("BG_CARD"),
-        fg=_c("TEXT_DIM"),
-        activebackground=_c("BG_CARD"),
-        activeforeground=_c("ACCENT"),
-        relief="flat",
-        bd=0,
-        font=("Segoe UI", 8),
-        cursor="hand2",
-        padx=6,
-        pady=0,
-    )
-    _mode_label = tk.Label(
-        hint_row,
-        text="сменить режим",
-        bg=_c("BG_CARD"),
-        fg=_c("TEXT_MUTED"),
-        font=("Segoe UI", 8, "italic"),
-    )
-    _mode_label.pack(side="right", padx=(0, 6))
-    _free_chat_btn.pack(side="right")
-
-    input_row = TkRawFrame(composer_card, bg=_c("BG_CARD"))
-    input_row.pack(fill="x", padx=12, pady=(0, 12))
-
-    input_border = TkRawFrame(input_row, bg=_c("BORDER"),
-                           highlightthickness=1, highlightbackground=_c("BORDER"))
-    input_border.pack(side="left", fill="x", expand=True, padx=(0, 8))
-
-    input_inner = TkRawFrame(input_border, bg=_c("BG_INPUT"))
-    input_inner.pack(fill="x")
-
-    chat_input = tk.Text(
-        input_inner,
-        height=3,
-        wrap="word",
-        bg=_c("BG_INPUT"),
-        fg=_c("TEXT_MAIN"),
-        insertbackground=_c("TEXT_MAIN"),
-        relief="flat",
-        highlightthickness=0,
-        font=("Segoe UI", 10),
-        padx=10,
-        pady=10,
-        undo=True,
-    )
-    chat_input.pack(fill="x")
-    chat_input.lift() 
-
-    chat_input_placeholder_label = _create_placeholder_overlay(
-        input_inner,
-        chat_input,
-        "Напишите сообщение…",
-        x=13,
-        y=11,
-        fg=_c("TEXT_DIM"),
-        bg=_c("BG_INPUT"),
-        font=("Segoe UI", 9, "italic"),
-    )
-
-    chat_send_btn = tk.Button(
-        input_row,
-        text="➤",
-        command=send_chat_message,
-        bg=_c("BG_ACTIVE"),
-        fg="#ffffff",
-        activebackground=_c("BG_ACTIVE"),
-        activeforeground="#ffffff",
-        relief="flat",
-        bd=0,
-        cursor="hand2",
-        font=("Segoe UI", 12, "bold"),
-        width=5,
-        padx=8,
-        pady=4,
-    )
-    chat_send_btn.pack(side="right")
-
-    # Messages scrollable canvas — после всех bottom элементов, займёт оставшееся место
-    canvas_outer = TkRawFrame(right, bg=_c("BORDER"), padx=1, pady=1)
-    canvas_outer.pack(side="top", fill="both", expand=True, padx=14, pady=(0, 8))
+    # Messages scrollable canvas
+    canvas_outer = tk.Frame(right, bg=_c("BORDER"), padx=1, pady=1)
+    canvas_outer.pack(fill="both", expand=True, padx=14, pady=(0, 8))
 
     chat_scrollbar = tk.Scrollbar(canvas_outer)
     chat_scrollbar.pack(side="right", fill="y")
@@ -4794,7 +4505,7 @@ def open_chat_window():
     chat_canvas.pack(side="left", fill="both", expand=True)
     chat_scrollbar.config(command=chat_canvas.yview)
 
-    chat_messages_frame = TkFrame(chat_canvas, bg=_c("BG_DARK"), pady=50)
+    chat_messages_frame = tk.Frame(chat_canvas, bg=_c("BG_DARK"), pady=50)
     chat_canvas_window = chat_canvas.create_window(
         (0, 0),
         window=chat_messages_frame,
@@ -4814,6 +4525,8 @@ def open_chat_window():
             old_width = getattr(chat_canvas, "_last_width", None)
             chat_canvas._last_width = new_width
             chat_canvas.itemconfig(chat_canvas_window, width=new_width)
+            # Пересчитываем только если ширина canvas реально изменилась,
+            # а не из-за pack/destroy виджетов в composer_outer
             if old_width != new_width:
                 _update_wraplengths()
         except Exception:
@@ -4829,6 +4542,136 @@ def open_chat_window():
             target.bind("<Button-5>", _chat_mousewheel, add="+")
         except Exception:
             pass
+
+    # Status row
+    status_row = tk.Frame(right, bg=_c("BG_DARK"))
+    status_row.pack(fill="x", padx=14, pady=(0, 6))
+
+    chat_status_label = tk.Label(
+        status_row,
+        text="Готов к работе",
+        bg=_c("BG_DARK"),
+        fg=_c("TEXT_DIM"),
+        font=("Segoe UI", 9),
+        anchor="w",
+    )
+    chat_status_label.pack(side="left", fill="x", expand=True)
+
+    chat_token_label = tk.Label(
+        status_row,
+        text="Ввод: ≈0 ток. · Чат: ≈0 ток.",
+        bg=_c("BG_DARK"),
+        fg=_c("TEXT_DIM"),
+        font=("Segoe UI", 9),
+        anchor="e",
+    )
+    chat_token_label.pack(side="right")
+
+    # Input card — теперь выше кнопок действий
+    composer_outer = tk.Frame(right, bg=_c("BG_DARK"))
+    composer_outer.pack(fill="x", padx=14, pady=(0, 8))
+    composer_outer_ref = [composer_outer]  # для доступа из _show_editor_preview
+
+    composer_card = tk.Frame(
+        composer_outer,
+        bg=_c("BG_CARD"),
+        highlightthickness=1,
+        highlightbackground=_c("BORDER"),
+    )
+    composer_card.pack(fill="x")
+    composer_card_ref = [composer_card]
+
+    hint_row = tk.Frame(composer_card, bg=_c("BG_CARD"))
+    hint_row.pack(fill="x", padx=12, pady=(9, 5))
+
+    global _hint_text_var
+    _hint_text_var = tk.StringVar(value="Enter — отправить · Shift+Enter — новая строка · Ctrl+F — поиск")
+    _hint_label = tk.Label(
+        hint_row,
+        textvariable=_hint_text_var,
+        bg=_c("BG_CARD"),
+        fg=_c("TEXT_DIM"),
+        font=("Segoe UI", 8),
+        anchor="w",
+    )
+    _hint_label.pack(side="left", fill="x", expand=True)
+
+    
+
+    def _toggle_free_chat():
+        global _free_chat_mode
+        _free_chat_mode = not _free_chat_mode
+        _free_chat_btn.config(
+            text="💬 Свободный чат ✓" if _free_chat_mode else "💬 Свободный чат",
+            fg=_c("ACCENT") if _free_chat_mode else _c("TEXT_DIM"),
+            relief="solid" if _free_chat_mode else "flat",
+        )
+        set_chat_status("Режим: свободный чат" if _free_chat_mode else "Режим: редактор текста")
+        _mode_label.config(
+            text="режим: свободный чат" if _free_chat_mode else "режим: редактор",
+            fg=_c("ACCENT") if _free_chat_mode else _c("TEXT_MUTED"),
+        )
+
+    _free_chat_btn = tk.Button(
+        hint_row,
+        text="💬 Свободный чат",
+        command=_toggle_free_chat,
+        bg=_c("BG_CARD"),
+        fg=_c("TEXT_DIM"),
+        activebackground=_c("BG_CARD"),
+        activeforeground=_c("ACCENT"),
+        relief="flat",
+        bd=1,
+        font=("Segoe UI", 8),
+        cursor="hand2",
+        padx=6,
+        pady=0,
+    )
+    _mode_label = tk.Label(
+        hint_row,
+        text="сменить режим",
+        bg=_c("BG_CARD"),
+        fg=_c("TEXT_MUTED"),
+        font=("Segoe UI", 8, "italic"),
+    )
+    _mode_label.pack(side="right", padx=(0, 6))
+    _free_chat_btn.pack(side="right")
+
+    input_row = tk.Frame(composer_card, bg=_c("BG_CARD"))
+    input_row.pack(fill="x", padx=12, pady=(0, 12))
+
+    input_border = tk.Frame(input_row, bg=_c("BORDER"), padx=1, pady=1)
+    input_border.pack(side="left", fill="both", expand=True, padx=(0, 8))
+
+    input_inner = tk.Frame(input_border, bg=_c("BG_INPUT"))
+    input_inner.pack(fill="both", expand=True)
+
+    chat_input = tk.Text(
+        input_inner,
+        height=3,
+        wrap="word",
+        bg=_c("BG_INPUT"),
+        fg=_c("TEXT_MAIN"),
+        insertbackground=_c("TEXT_MAIN"),
+        relief="flat",
+        highlightthickness=0,
+        font=("Segoe UI", 10),
+        padx=10,
+        pady=10,
+        undo=True,
+    )
+    chat_input.pack(fill="both", expand=True)
+
+    chat_input_placeholder_label = _create_placeholder_overlay(
+        input_inner,
+        chat_input,
+        "Напишите сообщение…",
+        x=13,
+        y=11,
+        fg=_c("TEXT_DIM"),
+        bg=_c("BG_INPUT"),
+        font=("Segoe UI", 9, "italic"),
+    )
 
     chat_input.bind("<FocusIn>", _on_input_focus_in)
     chat_input.bind("<FocusOut>", _on_input_focus_out)
@@ -4868,6 +4711,59 @@ def open_chat_window():
 
     chat_input.bind("<Button-3>", _chat_input_context_menu)
 
+    chat_send_btn = _make_button(
+        input_row,
+        "➤",
+        send_chat_message,
+        bg=_c("BG_ACTIVE"),
+        font_size=12,
+        width=5,
+        height=2,
+        padx=8,
+        pady=4,
+    )
+    chat_send_btn.pack(side="right", fill="y")
+
+    # Actions — теперь ниже поля ввода, компактнее
+    action_row = tk.Frame(right, bg=_c("BG_DARK"))
+    action_row.pack(fill="x", padx=14, pady=(0, 12))
+
+    improve_btn = _make_button(
+        action_row,
+        "✨ Улучшить",
+        improve_text_with_gpt,
+        bg=_c("BG_INPUT"),
+        font_size=10,
+        height=1,
+        padx=8,
+        pady=3,
+    )
+    improve_btn.pack(side="left", fill="x", expand=True, padx=(0, 5))
+
+    paste_editor_btn = _make_button(
+        action_row,
+        "📋 Из редактора",
+        paste_from_editor,
+        bg=_c("BG_INPUT"),
+        font_size=10,
+        height=1,
+        padx=8,
+        pady=3,
+    )
+    paste_editor_btn.pack(side="left", fill="x", expand=True, padx=(0, 5))
+
+    clear_btn = _make_button(
+        action_row,
+        "🧹 Очистить",
+        clear_chat_history,
+        bg=_c("BG_INPUT"),
+        font_size=10,
+        height=1,
+        padx=8,
+        pady=3,
+    )
+    clear_btn.pack(side="left", fill="x", expand=True)
+
     # Hotkeys
     def _send_shortcut(event=None):
         if event is not None and _event_has_shift(event):
@@ -4897,15 +4793,20 @@ def open_chat_window():
 
     def _ctrl_enter(event=None):
         if _editor_mode and _editor_preview_content:
+            # Ctrl+Enter — всегда отправить исходный текст из редактора БЕЗ комментария,
+            # даже если пользователь успел что-то напечатать в поле ввода.
             _submit_prompt("", clear_input=True)
             _focus_chat_input()
             return "break"
         send_chat_message()
         return "break"
 
+    # Привязываем с высоким приоритетом (без add="+"), чтобы точно
+    # не конфликтовать с _handle_text_ctrl на <Control-KeyPress>.
     win.bind("<Control-Return>", _ctrl_enter)
     chat_input.bind("<Control-Return>", _ctrl_enter)
 
+    # Render saved sessions
     _refresh_session_list()
     _render_current_session()
     _set_input_placeholder()
@@ -4981,13 +4882,14 @@ def open_chat_window():
             win.destroy()
         except Exception:
             pass
-        
+
     win.protocol("WM_DELETE_WINDOW", on_close)
 
     try:
         chat_input.focus_set()
     except Exception:
         pass
+
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Backward-compatible names / helpers

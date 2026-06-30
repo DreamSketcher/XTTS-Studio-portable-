@@ -2,15 +2,15 @@
   "language": "auto",
   "quality": "Высокое качество",
   "ref_path": "C:\\XTTS Studio\\library\\Диктор в Московском метро_ Каховская линия\\normalized.wav",
-  "use_gpt": false,
+  "use_gpt": true,
   "word_replacer_enabled": true,
   "lang_split_enabled": true,
-  "ai_conductor_enabled": true,
+  "ai_conductor_enabled": false,
   "ai_conductor_context": "",
   "quality_params": {
     "Высокое качество": {
       "qc_enabled": true,
-      "temperature": 0.5,
+      "temperature": 1.0,
       "top_p": 0.5,
       "top_k": 50,
       "repetition_penalty": 10.0,
@@ -21,10 +21,7 @@
       "trim_mode": "auto",
       "export_format": "wav",
       "use_gpt": false,
-      "ai_conductor_enabled": true,
-      "ai_rewrite_enabled": true,
-      "ai_rewrite_context": "упрости до самого важного",
-      "ai_rewrite_negative": ""
+      "ai_conductor_enabled": false
     },
     "Нарратив": {
       "qc_enabled": true,
@@ -39,10 +36,7 @@
       "trim_mode": "auto",
       "export_format": "wav",
       "use_gpt": false,
-      "ai_conductor_enabled": true,
-      "ai_rewrite_enabled": true,
-      "ai_rewrite_context": "упрости до самого важного",
-      "ai_rewrite_negative": ""
+      "ai_conductor_enabled": false
     },
     "Динамика": {
       "qc_enabled": true,
@@ -57,10 +51,7 @@
       "trim_mode": "auto",
       "export_format": "wav",
       "use_gpt": false,
-      "ai_conductor_enabled": true,
-      "ai_rewrite_enabled": true,
-      "ai_rewrite_context": "упрости до самого важного",
-      "ai_rewrite_negative": ""
+      "ai_conductor_enabled": false
     },
     "Экспрессия": {
       "qc_enabled": true,
@@ -75,10 +66,7 @@
       "trim_mode": "auto",
       "export_format": "wav",
       "use_gpt": false,
-      "ai_conductor_enabled": true,
-      "ai_rewrite_enabled": true,
-      "ai_rewrite_context": "упрости до самого важного",
-      "ai_rewrite_negative": ""
+      "ai_conductor_enabled": false
     }
   }
 }
