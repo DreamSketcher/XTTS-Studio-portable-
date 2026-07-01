@@ -2184,7 +2184,7 @@ def load_settings():
             return json.load(f)
     except Exception:
         return {}
-def save_settings():
+def save_settings(extra=None):
     data = {
         "language": lang_var.get(),
         "quality": quality_var.get(),
@@ -2210,6 +2210,8 @@ def save_settings():
             for preset, params in quality_params.items()
         }
     }
+    if extra:
+        data.update(extra)
     try:
         with open(SETTINGS_PATH, "w", encoding="utf-8") as f:
             json.dump(data, f, ensure_ascii=False, indent=2)
@@ -2852,9 +2854,23 @@ styles_btn = create_button(right_opts, "🎨 Стили ▾", open_styles_menu,
 bg=Colors.BG_INPUT)
 styles_btn.pack(side="left", padx=(0, 5))
 ToolTip(styles_btn, STYLES_HINT)
+# Как часто показывать предупреждение AI Conductor (раз в N открытий окна)
+AI_CONDUCTOR_WARNING_INTERVAL = 5
+
 def open_ai_conductor_window():
     s_check = load_settings()
-    if not s_check.get("ai_conductor_warning_dismissed", False):
+    dismissed_forever = s_check.get("ai_conductor_warning_dismissed", False)
+    open_count = s_check.get("ai_conductor_open_count", 0) + 1
+    s_check["ai_conductor_open_count"] = open_count
+    try:
+        with open(SETTINGS_PATH, "w", encoding="utf-8") as f:
+            json.dump(s_check, f, ensure_ascii=False, indent=2)
+    except Exception:
+        pass
+    should_warn = (not dismissed_forever) and (
+        open_count % AI_CONDUCTOR_WARNING_INTERVAL == 1
+    )
+    if should_warn:
         def _show_conductor_warning():
             dlg = tk.Toplevel(root)
             dlg.title("AI Conductor")
@@ -3076,18 +3092,7 @@ anchor="w")
                 params["ai_rewrite_negative"].set(rewrite_negative_text.get("1.0",
                 "end-1c").strip())
 
-        s2 = load_settings()
-        s2["ai_conductor_enabled"] = enabled
-        s2["ai_conductor_preset"] = preset_target
-        s2["ai_rewrite_enabled"] = ai_rewrite_var.get()
-        s2["ai_rewrite_context"] = rewrite_text.get("1.0", "end-1c").strip()
-        s2["ai_rewrite_negative"] = rewrite_negative_text.get("1.0",
-"end-1c").strip()
-        try:
-            with open(SETTINGS_PATH, "w", encoding="utf-8") as f:
-                json.dump(s2, f, ensure_ascii=False, indent=2)
-        except Exception:
-            pass
+        save_settings(extra={"ai_conductor_preset": preset_target})
         ai_btn.config(
             bg=Colors.BG_INPUT,
             fg=Colors.ACCENT if enabled else Colors.TEXT_DIM
