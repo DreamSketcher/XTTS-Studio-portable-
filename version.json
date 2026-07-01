@@ -1,5 +1,5 @@
 {
-  "version": "1.0.3",
+  "version": "1.0.4",
   "files": [
     "gui.py",
     "engine/tts_runner.py",
@@ -18,12 +18,11 @@
     "engine/ai_conductor.py",
     "engine/gpt_client.py",
     "engine/chat_window.py",
+    "engine/word_replacer_window.py",
+    "engine/batch_window.py",
     "settings.json",
-    "voice_manager.py",
     "XTTS_DIAG.bat",
-    "XTTS Studio.exe",
-    "word_replacer_window.py",
-    "batch_window.py"
+    "XTTS Studio.exe"
   ],
   "changelog": "- Новый интерфейс\n- Улучшена диагностика запуска XTTS_DIAG.bat\n- Переработано окно настроек провайдера AI\n- Переработан AI fallback\n- Улучшен детектор слов\n- Различные исправления и оптимизации"
 }
