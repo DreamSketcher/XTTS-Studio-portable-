@@ -59,7 +59,7 @@ def get_remote_version_info() -> dict:
 
 
 def download_file(relative_path: str) -> bool:
-    url = f"{RAW_BASE}/{relative_path}"
+    url = f"{RAW_BASE}/{urllib.parse.quote(relative_path)}"
     dst = os.path.join(BASE_DIR, relative_path.replace("/", os.sep))
     tmp = dst + ".tmp"
     try:
