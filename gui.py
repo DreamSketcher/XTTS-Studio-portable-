@@ -2421,8 +2421,40 @@ def open_ai_status_window():
                   bg=Colors.BG_INPUT).pack(side="left", padx=(12, 6))
     create_button(bottom, "✓ Закрыть", win.destroy, bg=Colors.BG_ACTIVE).pack(side="left")
 
+def _do_update(result):
+    """Скачивает и устанавливает обновление. Не показывает диалог
+    подтверждения — вызывающий код должен спросить пользователя заранее.
+    """
+    from engine.updater import apply_update, restart
+    import tkinter.messagebox as mb
+    set_status("📥 Загрузка обновления...")
+    def _apply():
+        ok = apply_update(result["files"], progress_callback=lambda i, t:
+set_progress(int(i/t*100)))
+        if ok:
+            changelog = result.get("changelog", "").strip()
+            msg = f"Обновление до версии {result['remote']} установлено."
+            if changelog:
+                msg += f"\n\nЧто изменилось:\n{changelog}"
+            msg += "\n\nПриложение перезапустится после нажатия ОК."
+            def _notify_and_restart():
+                mb.showinfo("✅ Готово", msg)
+                restart()
+            root.after(0, _notify_and_restart)
+        else:
+            root.after(0, lambda: mb.showwarning(
+                "⚠ Частичное обновление",
+                "Некоторые файлы не удалось обновить.\nПроверьтесоединение."
+            ))
+            set_status("⏳ Ожидание...")
+    threading.Thread(target=_apply, daemon=True).start()
+
+
 def check_and_update():
-    from engine.updater import check_update, apply_update, restart
+    """Ручная проверка (по кнопке): сама проверяет версию, сама спрашивает
+    подтверждение, сама скачивает.
+    """
+    from engine.updater import check_update
     import tkinter.messagebox as mb
     set_status("🔄 Проверка обновлений...")
     def _run():
@@ -2450,29 +2482,8 @@ def check_and_update():
             else:
                 set_status("⏳ Ожидание...")
         root.after(0, ask)
-    def _do_update(result):
-        set_status("📥 Загрузка обновления...")
-        def _apply():
-            ok = apply_update(result["files"], progress_callback=lambda i, t:
-set_progress(int(i/t*100)))
-            if ok:
-                changelog = result.get("changelog", "").strip()
-                msg = f"Обновление до версии {result['remote']} установлено."
-                if changelog:
-                    msg += f"\n\nЧто изменилось:\n{changelog}"
-                msg += "\n\nПриложение перезапустится после нажатия ОК."
-                def _notify_and_restart():
-                    mb.showinfo("✅ Готово", msg)
-                    restart()
-                root.after(0, _notify_and_restart)
-            else:
-                root.after(0, lambda: mb.showwarning(
-                    "⚠ Частичное обновление",
-                    "Некоторые файлы не удалось обновить.\nПроверьтесоединение."
-                ))
-                set_status("⏳ Ожидание...")
-        threading.Thread(target=_apply, daemon=True).start()
     threading.Thread(target=_run, daemon=True).start()
+
 
 
 header_btn_row = tk.Frame(header_frame, bg=Colors.BG_DARK)
@@ -3292,7 +3303,7 @@ def _auto_check_update():
                 text += f"\nЧто нового:\n{changelog}\n"
             text += "\nОбновить?"
             if mb.askyesno("🆕 Доступно обновление", text):
-                check_and_update()
+                _do_update(result)
         root.after(0, _notify)
 
 threading.Thread(target=_auto_check_update, daemon=True).start()
