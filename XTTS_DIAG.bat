@@ -164,6 +164,27 @@ if "%MODE%"=="0" exit /b 0
 goto MAIN
 
 :: ==========================================
+:: ПРИНУДИТЕЛЬНОЕ ВОССТАНОВЛЕНИЕ С GITHUB
+:: Работает независимо от gui.py — качает все файлы
+:: заново, игнорируя проверку версии. Спасает, если
+:: обновление сломало запуск приложения.
+:: ==========================================
+:FORCE_UPDATE
+echo.
+echo ===== ВОССТАНОВЛЕНИЕ ФАЙЛОВ ПРИЛОЖЕНИЯ =====
+echo.
+echo Это перекачает все файлы из репозитория заново
+echo (поверх текущих), независимо от версии.
+echo.
+set /p CONFIRM=Продолжить? (y/n): 
+if /I not "%CONFIRM%"=="y" goto MAIN
+echo.
+"%PY%" -c "import sys; sys.path.insert(0, r'%BASE%'); from engine.updater import get_remote_version_info, apply_update; info = get_remote_version_info(); files = info.get('files', []); print(f'Найдено {len(files)} файлов, качаю...'); ok = apply_update(files, progress_callback=lambda i,t: print(f'  {i}/{t}')); print('✔ Готово' if ok else '⚠ Часть файлов не удалось скачать — см. лог выше')"
+echo.
+pause
+goto MAIN
+
+:: ==========================================
 :: SCORING ENGINE
 :: ==========================================
 :SCAN
