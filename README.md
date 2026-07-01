@@ -171,6 +171,8 @@ OpenAI  → ОпенЭйАй
 
 BTC: `bc1qz78u3lvagt3v886359glv57ct6rnlh506wjmdy`
 
+---
+
 ```
  Полная Структура XTTS Studio (portable + optional AI)
 
