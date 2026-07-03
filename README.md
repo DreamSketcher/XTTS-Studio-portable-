@@ -10,7 +10,7 @@
 [![RU/EN](https://img.shields.io/badge/UI-RU%20%2F%20EN-58a6ff)]()
 [![Themes](https://img.shields.io/badge/Themes-Dark%20%2F%20Light-7c3aed)]()
 
-🇷🇺 [Русская версия](./README.md)
+🇷🇺 [Русская версия](./README.ru.md)
 
 </div>
 
