@@ -1012,8 +1012,12 @@ def run_tts(
                 rewrite_negative=rewrite_negative,
             )
 
-            # Если кондуктор вернул rewrite — перестраиваем текст и чанки
-            if isinstance(conductor_result, dict) and "rewritten_text" in conductor_result:
+            # Если кондуктор вернул rewrite — перестраиваем текст и чанки.
+            # ВАЖНО: применяем rewritten_text ТОЛЬКО если rewrite_enabled=True —
+            # не полагаемся на одну лишь форму ответа conduct(), чтобы уровень 1
+            # (параметры) и уровень 2 (rewrite) оставались независимыми даже если
+            # conduct() когда-нибудь снова начнёт возвращать rewritten_text не по флагу.
+            if rewrite_enabled and isinstance(conductor_result, dict) and "rewritten_text" in conductor_result:
                 text = conductor_result["rewritten_text"]
                 send("normalized_text", None, text_msg=text)
                 chunks_before_prosody = chunker.chunk_text(text)
@@ -1026,6 +1030,10 @@ def run_tts(
                     print(f"[Conductor] Rewrite changed chunk count {len(conductor_map)}→{len(chunks)}, re-conducting")
                     from .ai_conductor import _fallback_params
                     conductor_map = _fallback_params(chunks)
+            elif isinstance(conductor_result, dict) and "chunks" in conductor_result:
+                # rewrite_enabled=False, но conduct() всё же вернул словарь —
+                # берём только параметры чанков, rewritten_text игнорируем.
+                conductor_map = conductor_result["chunks"]
             else:
                 conductor_map = conductor_result
 

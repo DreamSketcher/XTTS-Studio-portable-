@@ -318,10 +318,17 @@ def conduct(
         print(f"[Conductor] Invalid JSON from response: {e}, using default params")
         return _fallback_params(chunks)
 
-    # Если rewrite — ответ обёрнут в объект с rewritten_text
+    # Если rewrite — ответ обёрнут в объект с rewritten_text.
+    # ВАЖНО: rewritten_text принимается ТОЛЬКО если rewrite_enabled=True.
+    # Модель иногда сама решает вернуть объект с этим полем, даже если
+    # блок "ЗАДАНИЕ НА СТИЛЬ" не запрашивался — не даём этому просочиться
+    # дальше, если пользователь не включал уровень 2 явно.
     rewritten_text = None
     if isinstance(data, dict) and "chunks" in data:
-        rewritten_text = data.get("rewritten_text", "").strip() or None
+        if rewrite_enabled:
+            rewritten_text = data.get("rewritten_text", "").strip() or None
+        else:
+            print("[Conductor] Модель вернула rewritten_text при rewrite_enabled=False — игнорирую")
         data = data["chunks"]
 
     result = _validate_map(data, len(chunks))

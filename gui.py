@@ -2854,23 +2854,40 @@ styles_btn = create_button(right_opts, "🎨 Стили ▾", open_styles_menu,
 bg=Colors.BG_INPUT)
 styles_btn.pack(side="left", padx=(0, 5))
 ToolTip(styles_btn, STYLES_HINT)
-# Как часто показывать предупреждение AI Conductor (раз в N открытий окна)
-AI_CONDUCTOR_WARNING_INTERVAL = 5
+# Как часто показывать предупреждение AI Conductor (раз в N ЗАПУСКОВ приложения)
+AI_CONDUCTOR_WARNING_INTERVAL = 3
+
+# Решение "показывать предупреждение или нет" принимается один раз за сессию
+# приложения (при первом открытии окна после запуска), а не при каждом клике
+# на кнопку кондуктора — иначе счётчик open_count рос при каждом открытии
+# окна внутри одного запуска, и интервал фактически не соответствовал
+# перезапускам программы.
+_conductor_warning_session_resolved = False
+_conductor_warning_pending = False
 
 def open_ai_conductor_window():
-    s_check = load_settings()
-    dismissed_forever = s_check.get("ai_conductor_warning_dismissed", False)
-    open_count = s_check.get("ai_conductor_open_count", 0) + 1
-    s_check["ai_conductor_open_count"] = open_count
-    try:
-        with open(SETTINGS_PATH, "w", encoding="utf-8") as f:
-            json.dump(s_check, f, ensure_ascii=False, indent=2)
-    except Exception:
-        pass
-    should_warn = (not dismissed_forever) and (
-        open_count % AI_CONDUCTOR_WARNING_INTERVAL == 1
-    )
+    global _conductor_warning_session_resolved, _conductor_warning_pending
+
+    if not _conductor_warning_session_resolved:
+        s_check = load_settings()
+        dismissed_forever = s_check.get("ai_conductor_warning_dismissed", False)
+        open_count = s_check.get("ai_conductor_open_count", 0) + 1
+        s_check["ai_conductor_open_count"] = open_count
+        try:
+            with open(SETTINGS_PATH, "w", encoding="utf-8") as f:
+                json.dump(s_check, f, ensure_ascii=False, indent=2)
+        except Exception:
+            pass
+        _conductor_warning_pending = (not dismissed_forever) and (
+            open_count % AI_CONDUCTOR_WARNING_INTERVAL == 1
+        )
+        _conductor_warning_session_resolved = True
+
+    should_warn = _conductor_warning_pending
     if should_warn:
+        # Показываем не более одного раза за сессию — дальнейшие открытия
+        # окна в этом же запуске программы уже не будут триггерить предупреждение.
+        _conductor_warning_pending = False
         def _show_conductor_warning():
             dlg = tk.Toplevel(root)
             dlg.title("AI Conductor")
