@@ -23,10 +23,7 @@
       "trim_mode": "auto",
       "export_format": "wav",
       "use_gpt": false,
-      "ai_conductor_enabled": true,
-      "ai_rewrite_enabled": false,
-      "ai_rewrite_context": "",
-      "ai_rewrite_negative": ""
+      "ai_conductor_enabled": true
     },
     "Нарратив": {
       "qc_enabled": true,
@@ -41,10 +38,7 @@
       "trim_mode": "auto",
       "export_format": "wav",
       "use_gpt": false,
-      "ai_conductor_enabled": true,
-      "ai_rewrite_enabled": false,
-      "ai_rewrite_context": "",
-      "ai_rewrite_negative": ""
+      "ai_conductor_enabled": true
     },
     "Динамика": {
       "qc_enabled": true,
@@ -59,10 +53,7 @@
       "trim_mode": "auto",
       "export_format": "wav",
       "use_gpt": false,
-      "ai_conductor_enabled": true,
-      "ai_rewrite_enabled": false,
-      "ai_rewrite_context": "",
-      "ai_rewrite_negative": ""
+      "ai_conductor_enabled": true
     },
     "Экспрессия": {
       "qc_enabled": true,
@@ -77,12 +68,7 @@
       "trim_mode": "auto",
       "export_format": "wav",
       "use_gpt": false,
-      "ai_conductor_enabled": true,
-      "ai_rewrite_enabled": false,
-      "ai_rewrite_context": "",
-      "ai_rewrite_negative": ""
+      "ai_conductor_enabled": true
     }
-  },
-  "ui_theme": "light",
-  "left_panel_visible": true
+  }
 }
