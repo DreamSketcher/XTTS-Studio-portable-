@@ -72,6 +72,9 @@ _SERVICE_WORDS = {
     "as", "by", "from", "this", "that", "it", "its", "his", "her", "their",
     "not", "no", "yes", "ok", "okay", "vs", "etc", "id",
     "fast", "slow", "speed", "high", "low", "new", "old", "good", "bad",
+    "we", "you", "he", "she", "they", "them", "our", "your", "my",
+    "end", "back", "up", "down", "out", "off", "on", "now", "then",
+    "can", "will", "must", "may", "has", "had", "do", "did", "does",
 }
 
 _DIGRAPHS = [

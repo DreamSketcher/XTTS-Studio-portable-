@@ -1,0 +1,90 @@
+# -*- coding: utf-8 -*-
+"""engine/gui/theme.py — тема customtkinter и заголовок окна
+(перенесено из gui.py: ctk.set_appearance_mode / set_dark_titlebar).
+
+Дополнено поддержкой светлой темы: get_theme()/set_theme() читают и
+сохраняют выбор в settings.json, apply_theme() настраивает customtkinter
+и палитру Colors под текущую тему.
+"""
+import ctypes
+import json
+import os
+
+import customtkinter as ctk
+
+from engine.gui.colors import apply_palette
+
+_SETTINGS_PATH = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+    "settings.json",
+)
+
+_current_theme = "dark"
+
+
+def get_theme() -> str:
+    return _current_theme
+
+
+def load_saved_theme() -> str:
+    """Читает сохранённую тему из settings.json (до построения окон)."""
+    global _current_theme
+    try:
+        with open(_SETTINGS_PATH, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        theme = data.get("ui_theme")
+        if theme in ("dark", "light"):
+            _current_theme = theme
+    except Exception:
+        pass
+    return _current_theme
+
+
+def save_theme(theme: str) -> None:
+    """Сохраняет тему в settings.json (не трогая остальные ключи)."""
+    try:
+        try:
+            with open(_SETTINGS_PATH, "r", encoding="utf-8") as f:
+                data = json.load(f)
+        except Exception:
+            data = {}
+        data["ui_theme"] = theme
+        with open(_SETTINGS_PATH, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+    except Exception:
+        pass
+
+
+def set_theme(theme: str) -> None:
+    """Устанавливает тему ('dark' | 'light'): палитра + ctk + сохранение."""
+    global _current_theme
+    if theme not in ("dark", "light"):
+        return
+    _current_theme = theme
+    apply_palette(theme)
+    try:
+        ctk.set_appearance_mode("dark" if theme == "dark" else "light")
+    except Exception:
+        pass
+    save_theme(theme)
+
+
+def apply_theme():
+    """Начальная настройка темы (вызывается до создания root)."""
+    theme = load_saved_theme()
+    apply_palette(theme)
+    ctk.set_appearance_mode("dark" if theme == "dark" else "light")
+    ctk.set_default_color_theme("blue")
+
+
+def set_dark_titlebar(root):
+    """Тёмный/светлый заголовок окна (Windows) в зависимости от темы."""
+    root.update()
+    hwnd = ctypes.windll.user32.GetParent(root.winfo_id())
+    DWMWA_USE_IMMERSIVE_DARK_MODE = 20
+    ctypes.windll.dwmapi.DwmSetWindowAttribute(
+        hwnd,
+        DWMWA_USE_IMMERSIVE_DARK_MODE,
+        ctypes.byref(ctypes.c_int(1 if _current_theme == "dark" else 0)),
+        ctypes.sizeof(ctypes.c_int)
+    )
