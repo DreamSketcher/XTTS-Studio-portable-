@@ -70,5 +70,7 @@
       "use_gpt": false,
       "ai_conductor_enabled": false
     }
-  }
+  },
+  "ai_conductor_open_count": 1,
+  "ai_conductor_warning_dismissed": true
 }

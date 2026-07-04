@@ -6,58 +6,16 @@ from datetime import datetime
 from typing import Optional
 
 
-# =========================
-# SEED DICTIONARY
-# =========================
-# Эти слова пишутся в word_rules.json ОДИН РАЗ при первом запуске —
-# в категорию "builtin". После этого они живут только в JSON и
-# редактируются/удаляются через окно "📖 Словарь" как любые другие.
-# Код трогать больше не нужно — это просто стартовый набор данных.
-_SEED_DICTIONARY = {
-    "python":      "пайтон",
-    "pytorch":     "пайторч",
-    "tensorflow":  "тензорфлоу",
-    "numpy":       "нампай",
-    "pandas":      "пандас",
-    "django":      "джанго",
-    "flask":       "фласк",
-    "node":        "ноуд",
-    "nodejs":      "ноуд джей эс",
-    "github":      "гитхаб",
-    "gitlab":      "гитлаб",
-    "google":      "гугл",
-    "microsoft":   "майкрософт",
-    "nvidia":      "энвидиа",
-    "openai":      "оупен эй ай",
-    "ubuntu":      "убунту",
-    "docker":      "докер",
-    "linux":       "линукс",
-    "windows":     "виндоус",
-    "android":     "андроид",
-    "chrome":      "хром",
-    "firefox":     "файрфокс",
-    "chatgpt":     "чат джи пи ти",
-    "claude":      "клод",
-    "gemini":      "джемини",
-    "coqui":       "кокуи",
-    "xtts":        "икс ти ти эс",
-    "speaker embedding": "спикер эмбеддинг",
-    "top p":             "топ пи",
-    "top k":             "топ кей",
-    "cross correlation": "кросс корреляция",
-    "drag and drop":     "драг энд дроп",
-    "temperature":       "температура",
-    "wav":               "вав",
-    "ffmpeg":            "эфэфмпег",
-    "bat":               "бат",
-    "saas":              "саас",
-}
-
 # Приоритет категорий при сборке flat_rules: позже = выше приоритет.
-# builtin — базовые сиды (низший приоритет)
+# builtin — исторические записи из ранних версий словаря (низший приоритет)
 # auto — слова, добавленные эвристическим автодетектором
 # ai_corrected — исправления от AI Conductor
 # custom — ручные правки пользователя через окно "📖 Словарь" (высший приоритет)
+#
+# ВАЖНО: единственный источник правды — word_rules.json в корне проекта.
+# Никакого захардкоженного seed-словаря в коде больше нет: если слово
+# удалено через окно "📖 Словарь" (или прямо в JSON) — оно остаётся
+# удалённым навсегда и не пересоздаётся при следующем запуске.
 _CATEGORY_PRIORITY = ["builtin", "auto", "ai_corrected", "custom"]
 
 # Сколько последних бэкапов word_rules.json хранить локально
@@ -206,7 +164,6 @@ class WordReplacer:
         self.data = {}
         self.flat_rules = {}
         self.load()
-        self._seed_builtin_if_needed()
 
     def load(self):
         if os.path.exists(self.rules_path):
@@ -216,22 +173,6 @@ class WordReplacer:
             except Exception:
                 self.data = {}
         self._build_flat_rules()
-
-    def _seed_builtin_if_needed(self):
-        """
-        Одноразовая миграция: если категории "builtin" ещё нет в файле —
-        записываем туда стартовый набор слов. После этого они — обычные
-        записи в JSON, ничем не отличаются от auto/custom, видны и
-        редактируются в окне "📖 Словарь". Если пользователь сам удалит
-        категорию "builtin" — повторно она не создаётся (уважаем выбор).
-        """
-        if "builtin" not in self.data:
-            self.data["builtin"] = {
-                word: {"text": text, "weight": 1.0}
-                for word, text in _SEED_DICTIONARY.items()
-            }
-            self._build_flat_rules()
-            self.save()
 
     def _build_flat_rules(self):
         self.flat_rules = {}
@@ -381,11 +322,29 @@ class WordReplacer:
             # транслитерацию не применяем, чтобы не ломать переключение
             # языка в _split_by_language.
             start, end = m.span()
-            before = text[max(0, start - 20):start]
-            after = text[end:end + 20]
-            has_latin_before = re.search(r'[A-Za-z][,.]?\s*$', before) is not None
-            has_latin_after = re.search(r'^\s*[,.]?\s*[A-Za-z]', after) is not None
-            if has_latin_before or has_latin_after:
+            before = text[max(0, start - 25):start]
+            after = text[end:end + 25]
+
+            # Смотрим ТОЛЬКО на непосредственного соседа в той же фразе —
+            # если между токеном и соседним словом стоит точка (конец
+            # предложения/клаузы), сосед не считается: список сокращений вида
+            # "CPU, GPU. RAM, JSON." — это отдельные пары, а не одна фраза,
+            # и точка не должна тянуть за собой контекст следующей пары.
+            before_m = re.search(r'([A-Za-z]+)[ ,]*$', before)
+            after_m = re.match(r'^[ ,]*([A-Za-z]+)', after)
+
+            def _is_prose_word(w: Optional[str]) -> bool:
+                # Признак связной английской речи — сосед НЕ выглядит как
+                # отдельное сокращение (не весь в верхнем регистре) и/или
+                # является служебным словом (the/is/of/...). Список
+                # сокращений (CPU, GPU, JSON...) состоит из ЗАГЛАВНЫХ токенов
+                # и не даёт такого сигнала, поэтому не блокирует соседей.
+                if not w:
+                    return False
+                return (not w.isupper()) or (w.lower() in _SERVICE_WORDS)
+
+            if _is_prose_word(before_m.group(1) if before_m else None) or \
+               _is_prose_word(after_m.group(1) if after_m else None):
                 return token
 
             if _looks_like_abbrev(token):
