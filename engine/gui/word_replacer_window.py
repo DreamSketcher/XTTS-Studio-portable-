@@ -104,9 +104,9 @@ def open_word_replacer():
 
     win = tk.Toplevel(_root)
     win.title("📖 Словарь произношений")
-    win.geometry("580x480")
+    win.geometry("580x560")
     # ── Изменение размера включено; ниже минимума кнопки не помещаются ──
-    win.minsize(560, 420)
+    win.minsize(560, 480)
     win.resizable(True, True)
     win.configure(bg=colors.BG_CARD)
     win.grab_set()
@@ -114,16 +114,25 @@ def open_word_replacer():
     # ── Нижние ряды пакуются side="bottom" ПЕРВЫМИ: при нехватке высоты
     #    pack ужимает список, а кнопки/чекбокс остаются видимыми ──
     toggle_frame_wr = tk.Frame(win, bg=colors.BG_CARD)
-    toggle_frame_wr.pack(side="bottom", fill="x", padx=15, pady=(0, 15))
+    toggle_frame_wr.pack(side="bottom", fill="x", padx=15, pady=(0, 10))
 
     btn_frame_wr = tk.Frame(win, bg=colors.BG_CARD)
-    btn_frame_wr.pack(side="bottom", fill="x", padx=15, pady=(0, 8))
+    btn_frame_wr.pack(side="bottom", fill="x", padx=15, pady=(0, 6))
+
+    btn_row_top = tk.Frame(btn_frame_wr, bg=colors.BG_CARD)
+    btn_row_top.pack(side="top", fill="x", pady=(0, 4))
+
+    btn_row_bottom = tk.Frame(btn_frame_wr, bg=colors.BG_CARD)
+    btn_row_bottom.pack(side="top", fill="x")
+
+    meta_frame = tk.Frame(win, bg=colors.BG_CARD)
+    meta_frame.pack(side="bottom", fill="x", padx=15, pady=(0, 2))
 
     input_frame = tk.Frame(win, bg=colors.BG_CARD)
-    input_frame.pack(side="bottom", fill="x", padx=15, pady=10)
+    input_frame.pack(side="bottom", fill="x", padx=15, pady=(6, 6))
 
     list_frame = tk.Frame(win, bg=colors.BG_CARD)
-    list_frame.pack(fill="both", expand=True, padx=15, pady=(15, 5))
+    list_frame.pack(fill="both", expand=True, padx=15, pady=(10, 4))
 
     scrollbar = tk.Scrollbar(list_frame, bg=colors.BG_INPUT, troughcolor=colors.BG_DARK)
     scrollbar.pack(side="right", fill="y")
@@ -138,7 +147,22 @@ def open_word_replacer():
     listbox.pack(fill="both", expand=True)
     scrollbar.config(command=listbox.yview)
 
-    _selected_word = {"word": None}
+    _selected_word = {"word": None, "category": None}
+
+    # ── Метка с метаданными выбранного слова (added_at / context) ──
+    meta_label = tk.Label(
+        meta_frame, text="", bg=colors.BG_CARD, fg=colors.TEXT_DIM,
+        font=("Segoe UI", 8), anchor="w", justify="left", wraplength=540
+    )
+    meta_label.pack(fill="x")
+
+    def _category_tag(category: str) -> str:
+        return {
+            "builtin": "[встроено]",
+            "auto": "[авто]",
+            "ai_corrected": "[ai]",
+            "custom": "[ручное]",
+        }.get(category, f"[{category}]")
 
     def refresh():
         listbox.delete(0, tk.END)
@@ -147,21 +171,54 @@ def open_word_replacer():
                 continue
             for word, value in data.items():
                 text = value["text"] if isinstance(value, dict) else value
-                listbox.insert(tk.END, f"{word}  →  {text}")
+                tag = _category_tag(category)
+                listbox.insert(tk.END, f"{tag} {word}  →  {text}")
+        meta_label.config(text="")
+
+    def _find_entry(word: str):
+        """Возвращает (category, entry_dict) для слова, если оно есть."""
+        for category, data in word_replacer.data.items():
+            if category == "meta":
+                continue
+            if word in data:
+                return category, data[word]
+        return None, None
 
     def on_select(event=None):
         sel = listbox.curselection()
         if not sel:
             return
         item = listbox.get(sel[0])
-        word, text = item.split("  →  ")
+        # формат: "[tag] слово  →  замена"
+        try:
+            _, rest = item.split("] ", 1)
+        except ValueError:
+            rest = item
+        word, text = rest.split("  →  ")
         word = word.strip()
         text = text.strip()
         _selected_word["word"] = word
+
+        category, entry = _find_entry(word)
+        _selected_word["category"] = category
+
         entry_word.delete(0, tk.END)
         entry_word.insert(0, word)
         entry_replacement.delete(0, tk.END)
         entry_replacement.insert(0, text)
+
+        # Показываем метаданные, если это словарная запись (не просто строка)
+        if isinstance(entry, dict):
+            parts = []
+            if entry.get("added_at"):
+                parts.append(f"Добавлено: {entry['added_at']}")
+            if entry.get("occurrences"):
+                parts.append(f"встреч: {entry['occurrences']}")
+            if entry.get("context"):
+                parts.append(f"контекст: «{entry['context']}»")
+            meta_label.config(text="  •  ".join(parts) if parts else "")
+        else:
+            meta_label.config(text="")
 
     listbox.bind("<<ListboxSelect>>", on_select)
     refresh()
@@ -212,6 +269,7 @@ def open_word_replacer():
         entry_word.delete(0, tk.END)
         entry_replacement.delete(0, tk.END)
         _selected_word["word"] = None
+        _selected_word["category"] = None
         refresh()
 
     def save_changes():
@@ -232,33 +290,95 @@ def open_word_replacer():
         entry_word.delete(0, tk.END)
         entry_replacement.delete(0, tk.END)
         _selected_word["word"] = None
+        _selected_word["category"] = None
         refresh()
 
     def remove_rule():
         sel = listbox.curselection()
         if sel:
             item = listbox.get(sel[0])
-            word = item.split("  →  ")[0].strip()
+            try:
+                _, rest = item.split("] ", 1)
+            except ValueError:
+                rest = item
+            word = rest.split("  →  ")[0].strip()
             word_replacer.remove_rule(word)
             entry_word.delete(0, tk.END)
             entry_replacement.delete(0, tk.END)
             _selected_word["word"] = None
+            _selected_word["category"] = None
             refresh()
 
+    def reset_pronunciation():
+        """
+        Сбрасывает произношение выбранного слова: удаляет правило замены
+        полностью, слово перестаёт транслитерироваться и читается моделью
+        как есть (в своём исходном языке). Используется, когда слово
+        произносится с акцентом/искажением из-за неверной транслитерации
+        (обычно auto-записи от эвристики).
+        """
+        word = _selected_word["word"]
+        if not word:
+            messagebox.showwarning(
+                "⚠ Ничего не выбрано",
+                "Выберите слово в списке, произношение которого нужно сбросить",
+                parent=win
+            )
+            return
+
+        category = _selected_word.get("category") or word_replacer.get_category(word)
+        replacement = entry_replacement.get().strip()
+
+        confirm = messagebox.askyesno(
+            "↺ Сбросить произношение",
+            f"Сбросить произношение для «{word}»?\n\n"
+            f"Текущая замена: «{replacement}»\n\n"
+            "Слово перестанет принудительно транслитерироваться в кириллицу "
+            "и будет прочитано моделью как есть, в своём исходном языке.\n\n"
+            "Используйте это, если сейчас слышите акцент или искажение "
+            "именно на этом слове.",
+            icon="warning",
+            parent=win
+        )
+        if not confirm:
+            return
+
+        word_replacer.remove_rule(word)
+        entry_word.delete(0, tk.END)
+        entry_replacement.delete(0, tk.END)
+        _selected_word["word"] = None
+        _selected_word["category"] = None
+        refresh()
+
     # ── Кнопки: авто-ширина по тексту (width=0) — не выталкивают соседей ──
-    def _wr_btn(text, cmd, **kw):
-        b = _create_button(btn_frame_wr, text, cmd, **kw)
+    def _wr_btn(parent, text, cmd, **kw):
+        b = _create_button(parent, text, cmd, **kw)
         try:
             b.configure(width=0)
         except Exception:
             pass
+        try:
+            b.configure(padx=6, pady=2)
+        except Exception:
+            pass
         return b
 
-    _wr_btn("➕ Добавить", add_rule,
-            bg=colors.BG_INPUT).pack(side="left", padx=(0, 8))
-    _wr_btn("✏ Сохранить изменения", save_changes,
-            bg=colors.BG_INPUT).pack(side="left", padx=(0, 8))
-    _wr_btn("🗑 Удалить", remove_rule, bg=colors.BG_DANGER,
+    _wr_btn(btn_row_top, "➕ Добавить", add_rule,
+            bg=colors.BG_INPUT).pack(side="left", padx=(0, 5))
+    reset_btn = _wr_btn(btn_row_top, "↺ Сбросить произношение", reset_pronunciation,
+                         bg=colors.BG_INPUT)
+    reset_btn.pack(side="left")
+    _ToolTip(
+        reset_btn,
+        "Удаляет правило замены для выбранного слова.\n\n"
+        "Слово перестанет транслитерироваться и будет\n"
+        "прочитано моделью как есть — используйте, если\n"
+        "слышите акцент/искажение именно на этом слове."
+    )
+
+    _wr_btn(btn_row_bottom, "✏ Сохранить изменения", save_changes,
+            bg=colors.BG_INPUT).pack(side="left", padx=(0, 5))
+    _wr_btn(btn_row_bottom, "🗑 Удалить", remove_rule, bg=colors.BG_DANGER,
             fg=colors.TEXT_MAIN).pack(side="left")
 
     # ── Чекбокс «Словарь активен» — отдельный ряд, кнопки его не двигают ──

@@ -1,6 +1,8 @@
 import json
 import os
 import re
+import shutil
+from datetime import datetime
 from typing import Optional
 
 
@@ -57,6 +59,10 @@ _SEED_DICTIONARY = {
 # ai_corrected — исправления от AI Conductor
 # custom — ручные правки пользователя через окно "📖 Словарь" (высший приоритет)
 _CATEGORY_PRIORITY = ["builtin", "auto", "ai_corrected", "custom"]
+
+# Сколько последних бэкапов word_rules.json хранить локально
+# (backups/word_rules_YYYYMMDD_HHMMSS.json рядом с самим файлом правил).
+_MAX_BACKUPS = 30
 
 _LATIN_LETTER_MAP = {
     "a": "эй",  "b": "би",  "c": "си",  "d": "ди",  "e": "и",   "f": "эф",
@@ -249,7 +255,42 @@ class WordReplacer:
                 else:
                     self.flat_rules[word] = value
 
+    def _backup_dir(self):
+        d = os.path.join(os.path.dirname(os.path.abspath(self.rules_path)), "word_rules_backups")
+        os.makedirs(d, exist_ok=True)
+        return d
+
+    def _make_backup(self):
+        """
+        Перед КАЖДОЙ перезаписью word_rules.json сохраняем копию текущего
+        (ещё не изменённого) состояния файла — так, если новая автозапись
+        окажется ошибочной (как было с транслитерацией целых предложений),
+        всегда можно откатиться вручную, просто скопировав нужный бэкап
+        обратно поверх word_rules.json. Хранится последние _MAX_BACKUPS штук.
+        """
+        if not os.path.exists(self.rules_path):
+            return
+        try:
+            backup_dir = self._backup_dir()
+            ts = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+            dst = os.path.join(backup_dir, f"word_rules_{ts}.json")
+            shutil.copy2(self.rules_path, dst)
+
+            backups = sorted(
+                f for f in os.listdir(backup_dir)
+                if f.startswith("word_rules_") and f.endswith(".json")
+            )
+            while len(backups) > _MAX_BACKUPS:
+                oldest = backups.pop(0)
+                try:
+                    os.remove(os.path.join(backup_dir, oldest))
+                except Exception:
+                    pass
+        except Exception as e:
+            print(f"[WordReplacer] Backup failed (продолжаем без бэкапа): {e}")
+
     def save(self):
+        self._make_backup()
         with open(self.rules_path, "w", encoding="utf-8") as f:
             json.dump(self.data, f, ensure_ascii=False, indent=2)
 
@@ -270,18 +311,43 @@ class WordReplacer:
                 return category_name
         return None
 
-    def add_rule(self, word: str, replacement: str, category: str = "custom", weight: float = 1.0):
+    def add_rule(self, word: str, replacement: str, category: str = "custom",
+                 weight: float = 1.0, context: str = ""):
         word = word.strip()
         old_category = self.get_category(word)
+
+        existing = None
+        if old_category:
+            existing = self.data.get(old_category, {}).get(word)
+
         if old_category and old_category != category:
             del self.data[old_category][word]
 
         if category not in self.data:
             self.data[category] = {}
-        self.data[category][word] = {
+
+        now = datetime.now().isoformat(timespec="seconds")
+
+        if isinstance(existing, dict) and old_category == category:
+            # Слово уже было в этой же категории — не теряем историю,
+            # просто обновляем счётчик и текст правки.
+            occurrences = int(existing.get("occurrences", 1)) + 1
+            added_at = existing.get("added_at", now)
+        else:
+            occurrences = 1
+            added_at = now
+
+        entry = {
             "text": replacement.strip(),
-            "weight": float(weight)
+            "weight": float(weight),
+            "added_at": added_at,
+            "updated_at": now,
+            "occurrences": occurrences,
         }
+        if context:
+            entry["context"] = context[:120]
+
+        self.data[category][word] = entry
         self._build_flat_rules()
         self.save()
 
@@ -294,7 +360,7 @@ class WordReplacer:
         self._build_flat_rules()
         self.save()
 
-    def apply(self, text: str) -> str:
+    def apply(self, text: str, persist_new: bool = True) -> str:
         sorted_rules = sorted(
             self.flat_rules.items(),
             key=lambda kv: len(kv[0]),
@@ -329,7 +395,11 @@ class WordReplacer:
             else:
                 return token
 
-            self.add_rule(token, replacement, category="auto")
+            if persist_new:
+                ctx_start = max(0, start - 40)
+                ctx_end = min(len(text), end + 40)
+                context = text[ctx_start:ctx_end].strip()
+                self.add_rule(token, replacement, category="auto", context=context)
             return replacement
 
         text = re.sub(r'\b[A-Za-z][A-Za-z0-9]*\b', _abbrev_sub, text)

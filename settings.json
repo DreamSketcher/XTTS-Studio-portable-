@@ -5,7 +5,7 @@
   "use_gpt": false,
   "word_replacer_enabled": true,
   "lang_split_enabled": true,
-  "ui_language": "en",
+  "ui_language": "ru",
   "text_font_size": 13,
   "ai_conductor_enabled": false,
   "ai_conductor_context": "",
@@ -70,5 +70,6 @@
       "use_gpt": false,
       "ai_conductor_enabled": false
     }
-  }
+  },
+  "ui_theme": "light"
 }
