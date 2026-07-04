@@ -309,6 +309,19 @@ class WordReplacer:
             if token in self.flat_rules or token.lower() in self.flat_rules:
                 return self.flat_rules.get(token, self.flat_rules.get(token.lower()))
 
+            # Если слово — часть связной английской фразы (рядом ещё
+            # латинские слова через пробел/дефис), это осмысленный
+            # английский текст, а не одиночный вставленный термин —
+            # транслитерацию не применяем, чтобы не ломать переключение
+            # языка в _split_by_language.
+            start, end = m.span()
+            before = text[max(0, start - 20):start]
+            after = text[end:end + 20]
+            has_latin_before = re.search(r'[A-Za-z][,.]?\s*$', before) is not None
+            has_latin_after = re.search(r'^\s*[,.]?\s*[A-Za-z]', after) is not None
+            if has_latin_before or has_latin_after:
+                return token
+
             if _looks_like_abbrev(token):
                 replacement = _auto_transliterate_abbrev(token)
             elif _looks_like_lowercase_term(token):

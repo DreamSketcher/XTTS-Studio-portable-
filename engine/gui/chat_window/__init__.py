@@ -8,7 +8,7 @@ from tkinter import filedialog, messagebox
 import tkinter as tk
 
 import engine.gui.chat_window.state as state
-from engine.gui.chat_window.custom_widgets import CTK_AVAILABLE, CTkFrame, CTkLabel, CTkButton, TkFrame, TkLabel, TkButton, TkRawFrame
+from engine.gui.chat_window.custom_widgets import CTK_AVAILABLE, ctk, CTkFrame, CTkLabel, CTkButton, TkFrame, TkLabel, TkButton, TkRawFrame
 
 def init(root, colors, create_button_fn, get_text_fn, set_text_fn, placeholder, use_gpt_var=None):
 
@@ -505,76 +505,86 @@ def open_chat_window():
     _focus_chat_input()
 
     def on_close():
-
-        _hide_new_message_indicator()
-        _stop_generation(silent=True)
-
-
-
-
-
-
-        _stop_generation(silent=True)
-        _save_sessions()
-
         try:
-            if _widget_exists(state._search_window):
-                state._search_window.destroy()
-        except Exception:
-            pass
-        try:
-            if _widget_exists(state._settings_window):
-                state._settings_window.destroy()
-        except Exception:
-            pass
-        try:
-            if _widget_exists(state._editor_window):
-                state._editor_window.destroy()
-        except Exception:
-            pass
-
-        state._chat_window = None
-        state._search_window = None
-        state._settings_window = None
-        state._editor_window = None
-
-        state._hint_text_var = None
-        state._editor_mode = False
-        state._free_chat_mode = False
-        state._editor_preview_frame = None
-        state._editor_preview_text = None
-        state._editor_preview_content = ""
-
-        state.session_listbox = None
-        state.chat_canvas = None
-        state.chat_scrollbar = None
-        state.chat_messages_frame = None
-        state.chat_canvas_window = None
-
-        state.chat_input = None
-        state.chat_input_placeholder_label = None
-        state.chat_send_btn = None
-        state.chat_status_label = None
-        state.chat_token_label = None
-
-        state.improve_btn = None
-        state.paste_editor_btn = None
-        state.clear_btn = None
-        state.export_btn = None
-        state.settings_btn = None
-        state.new_chat_btn = None
-        state.delete_chat_btn = None
-
-        state.editor_source_text = None
-        state.editor_comment_text = None
-        state.editor_stats_label = None
-        state.editor_status_label = None
-
-        try:
-            win.destroy()
-        except Exception:
-            pass
-        
+    
+            _hide_new_message_indicator()
+            _stop_generation(silent=True)
+    
+    
+    
+    
+    
+    
+            _stop_generation(silent=True)
+            _save_sessions()
+    
+            try:
+                if _widget_exists(state._search_window):
+                    state._search_window.destroy()
+            except Exception:
+                pass
+            try:
+                if _widget_exists(state._settings_window):
+                    state._settings_window.destroy()
+            except Exception:
+                pass
+            try:
+                if _widget_exists(state._editor_window):
+                    state._editor_window.destroy()
+            except Exception:
+                pass
+    
+            state._chat_window = None
+            state._search_window = None
+            state._settings_window = None
+            state._editor_window = None
+    
+            state._hint_text_var = None
+            state._editor_mode = False
+            state._free_chat_mode = False
+            state._editor_preview_frame = None
+            state._editor_preview_text = None
+            state._editor_preview_content = ""
+    
+            state.session_listbox = None
+            state.chat_canvas = None
+            state.chat_scrollbar = None
+            state.chat_messages_frame = None
+            state.chat_canvas_window = None
+    
+            state.chat_input = None
+            state.chat_input_placeholder_label = None
+            state.chat_send_btn = None
+            state.chat_status_label = None
+            state.chat_token_label = None
+    
+            state.improve_btn = None
+            state.paste_editor_btn = None
+            state.clear_btn = None
+            state.export_btn = None
+            state.settings_btn = None
+            state.new_chat_btn = None
+            state.delete_chat_btn = None
+    
+            state.editor_source_text = None
+            state.editor_comment_text = None
+            state.editor_stats_label = None
+            state.editor_status_label = None
+    
+            try:
+                win.destroy()
+            except Exception:
+                pass
+            
+        except Exception as e:
+            import traceback
+            print('Error closing chat window:')
+            traceback.print_exc()
+        finally:
+            try:
+                win.destroy()
+            except Exception:
+                pass
     win.protocol("WM_DELETE_WINDOW", on_close)
 
     try:
