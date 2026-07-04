@@ -30,6 +30,8 @@ import urllib.error
 
 # Локализация подписей провайдеров (i18n не зависит от tkinter)
 from i18n import t as _t
+from . import local_llm_client
+
 
 
 class GroqRateLimitError(RuntimeError):
@@ -98,6 +100,14 @@ PROVIDERS = {
             "claude-3-5-haiku",
         ],
         "key_hint": "https://proxyapi.ru/cabinet/",
+    },
+    "local": {
+        "label": "Local LLM",
+        "url": "local",
+        "default_model": "llama3",
+        "fallback_model": "llama3",
+        "models": [],
+        "key_hint": "No key required",
     },
 }
 
@@ -347,6 +357,8 @@ def set_api_key(key: str, provider: str = None):
 
 def get_model(provider: str = None) -> str:
     provider = provider or get_provider()
+    if provider == "local":
+        return local_llm_client.get_local_model()
     info = get_provider_info(provider)
     val = _read_settings().get(f"model_{provider}", info["default_model"])
     return val if val else info["default_model"]
@@ -354,6 +366,9 @@ def get_model(provider: str = None) -> str:
 
 def set_model(model: str, provider: str = None):
     provider = provider or get_provider()
+    if provider == "local":
+        local_llm_client.set_local_model(model)
+        return
     _write_settings({f"model_{provider}": model})
 
 
@@ -532,6 +547,12 @@ def _call_api(messages: list, model: str = None, max_tokens: int = 2048, provide
     provider = provider or get_provider()
     info = get_provider_info(provider)
 
+    if provider == "local":
+        try:
+            return local_llm_client.call_local_llm(messages, model=model, max_tokens=max_tokens)
+        except Exception as e:
+            raise RuntimeError(f"Local LLM error: {e}")
+
     key = get_api_key(provider)
     if not key:
         raise RuntimeError(
@@ -539,6 +560,7 @@ def _call_api(messages: list, model: str = None, max_tokens: int = 2048, provide
             f"Нажмите ⚙ Настройки GPT и введите ключ.\n"
             f"{info['key_hint']}"
         )
+
 
     if not model:
         model = get_model(provider)
@@ -630,12 +652,16 @@ def _build_provider_chain() -> list:
 
     # Сначала — выбранный пользователем провайдер
     active = get_provider()
-    if get_api_key(active):
+    if active == "local":
+        chain.append("local")
+    elif get_api_key(active):
         chain.append(active)
 
     # Затем остальные встроенные
     for pid in PROVIDERS.keys():
         if pid == active:
+            continue
+        if pid == "local":
             continue
         if pid in get_hidden_providers():
             continue

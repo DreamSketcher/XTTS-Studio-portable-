@@ -1,14 +1,7 @@
 # -*- coding: utf-8 -*-
+
 """
 i18n.py — Internationalization module for XTTS Studio.
-Supports Russian (ru) and English (en) UI languages.
-The synthesis language (lang_var / lang_split_enabled) is NOT affected.
-
-Usage:
-    from i18n import t, set_language, get_language, LANGUAGES
-
-    set_language("en")
-    label_text = t("generate")  # -> "GENERATE"
 """
 
 import json
@@ -23,37 +16,30 @@ LANGUAGES = {
         "app_author": " by EXIZ10TION",
         "btn_update": "🆕 Обновить",
         "btn_ai_status": "🔌 AI статус",
-
         # ── Voice Reference Card ──
         "card_voice_ref": "🎤 Голос-референс",
         "btn_pick_ref": "📁 Выбрать",
         "ref_info": "✅ Конвертирован в WAV\n✅ Обрезан\n✅ Нормализован\n✅ Сохранён в библиотеку",
-
         # ── Voice Library ──
         "card_voice_lib": "📚 Библиотека голосов",
         "tip_pick_from_lib": "Выбрать голос из библиотеки",
         "active_voice": "🎤 Активный голос: {}",
-
         # ── Queue ──
         "card_queue": "📋 Очередь задач",
         "btn_batch": "📦 Пакетная обработка",
-
         # ── Console ──
         "console_show": "📋 Console ▼",
         "console_hide": "📋 Console ▲",
         "btn_clear_console": "🗑",
-
         # ── Right Panel / Text ──
         "card_text": "📝 Текст",
         "btn_help": "❓ Справка",
         "placeholder": "Перетащите текстовый файл или введите текст...",
-
         # ── Toolbar: File Group ──
         "group_file": "Файл",
         "btn_load": "📁 Загрузить",
         "btn_paste": "📋 Вставить",
         "btn_clear": "🗑 Очистить",
-
         # ── Toolbar: AI Group ──
         "group_ai": "AI",
         "chk_ai_edit": "✨ AI edit",
@@ -62,7 +48,6 @@ LANGUAGES = {
         "tip_ai_edit": "Улучшить текст через AI перед озвучкой",
         "tip_ai_assistant": "Открыть AI-чат-панель под редактором.\nТребует API-ключ (см. в ⚙ Настройки).",
         "tip_ai_conductor": "AI Conductor — управляет параметрами каждого чанка через AI.",
-
         # ── Toolbar: Output Group ──
         "group_output": "Вывод",
         "btn_language": "🌐 Язык генерации",
@@ -73,14 +58,12 @@ LANGUAGES = {
         "tip_dictionary": "Словарь произношений.\n\nАнглийские слова из текста автоматически\nраспознаются и добавляются — они будут\nчитаться кириллицей без артефактов.\n\nМожно добавлять и править — приоритет на пользовательское решение.",
         "tip_styles": "Открыть список стилей:\nНарратив / Динамика / Экспрессия.\nМногое зависит от референса",
         "tip_quality_default": "Режим по умолчанию.\nДвойной клик — открыть доп. параметры.",
-
         # ── Toolbar: Action Group ──
         "group_action": "Действие",
         "btn_history": "📜 История",
         "btn_audio": "🎵 Аудио",
         "btn_generate": "🚀  ГЕНЕРИРОВАТЬ",
         "btn_cancel": "⛔ ОТМЕНА",
-
         # ── Status Bar ──
         "status_init": "🔄 Инициализация модели...",
         "status_ready": "✅ Модель готова",
@@ -95,7 +78,6 @@ LANGUAGES = {
         "status_cancelling": "⛔ Отмена задачи...",
         "status_update_check": "🔄 Проверка обновлений...",
         "status_update_download": "📥 Загрузка обновления...",
-
         # ── Dialogs ──
         "dlg_done_title": "✅ Готово",
         "dlg_done_msg": "Файл сохранён:\n{}",
@@ -107,21 +89,18 @@ LANGUAGES = {
         "dlg_pick_ref_first": "Сначала выберите референс",
         "dlg_clipboard_empty": "Нет текста",
         "dlg_play_error": "Не удалось воспроизвести: {}",
-
         # ── Context Menu ──
         "ctx_copy": "Копировать",
         "ctx_paste": "Вставить",
         "ctx_cut": "Вырезать",
         "ctx_select_all": "Выделить всё",
         "ctx_clear": "Очистить",
-
         # ── Language Picker ──
         "lang_picker_title": "🌐 Язык модели",
         "lang_picker_header": "Выберите язык модели",
         "lang_auto_switch": "🔀 Авто-переключение языка",
         "lang_auto_switch_tip": "Английские слова от трёх и больше слов читаются на английском автоматически.\nОтключите если хотите поменять акцент.",
         "btn_close": "✓  Закрыть",
-
         # ── Outputs Window ──
         "win_audio_title": "🎵 Аудио файлы",
         "btn_open_folder": "📂 Открыть папку",
@@ -138,7 +117,6 @@ LANGUAGES = {
         "cache_already_empty": "Кэш уже пуст.",
         "dlg_empty": "Пусто",
         "dlg_empty_msg": "Нет файлов для удаления.",
-
         # ── History Window ──
         "win_history_title": "📜 История генераций",
         "entries_count": "{} записей",
@@ -146,10 +124,8 @@ LANGUAGES = {
         "dlg_clear_history": "Удалить всю историю генераций?",
         "history_empty": "История пуста",
         "chunks_word": "чанков",
-
         # ── Help Window ──
         "win_help_title": "❓ Справка",
-
         # ── Quality Presets ──
         "preset_high": "Высокое качество",
         "preset_narrative": "Нарратив",
@@ -158,7 +134,6 @@ LANGUAGES = {
         "preset_narrative_desc": "📖 Нарратив\nСпокойное, плавное чтение.\nМедленный темп, ровная интонация.\nИдеально для книг и озвучки текста\nНажмите чтобы открыть настройки.",
         "preset_dynamic_desc": "⚡ Динамика\nБодрый, энергичный голос.\nУскоренный темп, живые интонации.\nПодходит для рекламы и роликов\nНажмите чтобы открыть настройки.",
         "preset_expressive_desc": "🎭 Экспрессия\nМаксимально эмоциональная подача.\nЯркие интонации и выразительность.\nДля драматичных сцен и эмоций\nНажмите чтобы открыть настройки.",
-
         # ── Quality Settings Window ──
         "win_settings_title": "⚙ Настройки — {}",
         "lbl_temperature": "Temperature",
@@ -177,7 +152,6 @@ LANGUAGES = {
         "chk_qc": "🛡 Контроль качества (авто-перегенерация бракованных чанков)",
         "tip_qc": "Включает детектор повторов и валидатор длительности.\nПри браке — автоматическая перегенерация чанка (до 3 попыток).\nНемного замедляет генерацию.",
         "btn_reset": "🔄 Сбросить",
-
         # ── AI Status Window ──
         "win_ai_status_title": "🔌 AI провайдеры — статус",
         "ai_xtts_device": "🖥 XTTS модель: {}",
@@ -189,7 +163,6 @@ LANGUAGES = {
         "ai_builtin": "Встроенный",
         "ai_custom": "Кастомный",
         "ai_model_label": "Модель: {}",
-
         # ── AI Conductor Window ──
         "win_conductor_title": "🤖 AI Conductor",
         "conductor_header": "🤖 AI Conductor",
@@ -211,7 +184,6 @@ LANGUAGES = {
         "conductor_provider_none": "Провайдер: не настроен",
         "btn_save": "✓  Сохранить",
         "btn_cancel_dialog": "Отмена",
-
         # ── Updater ──
         "update_installed": "Обновление до версии {} установлено.",
         "update_changelog": "\n\nЧто изменилось:\n{}",
@@ -226,17 +198,13 @@ LANGUAGES = {
         "update_partial_title": "⚠ Частичное обновление",
         "update_no_title": "✅ Обновлений нет",
         "update_error_title": "❌ Ошибка",
-
         # ── UI Language Switch ──
         "lang_ui_label": "UI",
-
         # ── Text size slider ──
         "tip_font_size": "Размер текста в окне ввода",
-
         # ── Theme switch ──
         "tip_theme": "Переключить тему (тёмная/светлая)",
         "theme_title": "Тема",
-
         # ── AI Providers (labels / notes) ──
         "prov_groq": "Groq (нужен VPN из РФ)",
         "prov_openrouter": "OpenRouter (работает из РФ без VPN)",
@@ -255,13 +223,11 @@ LANGUAGES = {
         "prov_reason_hidden": "Скрыт пользователем",
         "prov_reason_no_key": "Пропущен — нет API-ключа",
         "prov_reason_fallback": "Доступен как fallback",
-
         # ── Misc ──
         "time_today": "сегодня {}",
         "time_yesterday": "вчера {}",
         "time_format_m_s": "{}м {}с",
         "time_format_s": "{}с",
-
         # ── AI Chat Window ──
         "chat_win_title": "💬 AI Чат — XTTS Studio",
         "chat_header": "AI Чат",
@@ -281,8 +247,7 @@ LANGUAGES = {
         "chat_hint_default": "Enter — отправить · Shift+Enter — новая строка · Ctrl+F — поиск",
         "chat_hint_editor": "Enter — отправить · Ctrl+Enter — отправить без комментария · Shift+Enter — новая строка",
         "chat_hint_editor2": "Enter — отправить · Ctrl+Enter — без комментария · ✕ — отмена",
-        "chat_editor_preview_title": "📋 Текст из редактора",
-        "chat_new_reply_notice": "↓ Новый ответ — нажмите, чтобы прокрутить",
+        "chat_hint_editor_empty": "Напишите сообщение…",
         "chat_btn_cancel": "Отмена",
         "chat_btn_ok": "ОК",
         "chat_prompt_editor_comment": "Текст из редактора:\n{}\n\nКомментарий:\n{}",
@@ -427,45 +392,52 @@ LANGUAGES = {
         "chat_mode_free_small": "режим: свободный чат",
         "chat_mode_editor_small": "режим: редактор",
         "chat_switch_mode": "сменить режим",
+        # ── Local LLM Settings ──
+        "settings_menu_api": "⚙ Настройки API",
+        "settings_menu_local": "🏠 Локальные модели",
+        "settings_menu_general": "📋 Общие",
+        "local_models_header": "Локальные LLM",
+        "local_models_desc": "Настройка взаимодействия с моделями, запущенными на вашем ПК (например, через Ollama, LM Studio).",
+        "local_model_active": "Активная локальная модель: {}",
+        "local_model_url": "URL сервера (по умолчанию http://localhost:11434/v1)",
+        "local_model_catalog_btn": "📂 Каталог локальных моделей",
+        "local_catalog_title": "Каталог локальных моделей",
+        "local_catalog_header": "Выберите модель для установки",
+        "local_model_meta_desc": "Описание: {}",
+        "local_model_meta_link": "Ссылка на скачивание",
+        "local_model_install_btn": "📥 Установить / Подключить",
+        "local_model_installed": "✅ Установлена",
     },
-
     "en": {
         # ── Header / Left Panel ──
         "app_title": "XTTS Studio",
         "app_author": " by EXIZ10TION",
         "btn_update": "🆕 Update",
         "btn_ai_status": "🔌 AI Status",
-
         # ── Voice Reference Card ──
         "card_voice_ref": "🎤 Voice Reference",
         "btn_pick_ref": "📁 Browse",
         "ref_info": "✅ Converted to WAV\n✅ Trimmed\n✅ Normalized\n✅ Saved to library",
-
         # ── Voice Library ──
         "card_voice_lib": "📚 Voice Library",
         "tip_pick_from_lib": "Pick voice from library",
         "active_voice": "🎤 Active voice: {}",
-
         # ── Queue ──
         "card_queue": "📋 Task Queue",
         "btn_batch": "📦 Batch Processing",
-
         # ── Console ──
         "console_show": "📋 Console ▼",
         "console_hide": "📋 Console ▲",
         "btn_clear_console": "🗑",
-
         # ── Right Panel / Text ──
         "card_text": "📝 Text",
         "btn_help": "❓ Help",
         "placeholder": "Drop a text file here or start typing...",
-
         # ── Toolbar: File Group ──
         "group_file": "File",
         "btn_load": "📁 Load",
         "btn_paste": "📋 Paste",
         "btn_clear": "🗑 Clear",
-
         # ── Toolbar: AI Group ──
         "group_ai": "AI",
         "chk_ai_edit": "✨ AI edit",
@@ -474,7 +446,6 @@ LANGUAGES = {
         "tip_ai_edit": "Improve text with AI before synthesis",
         "tip_ai_assistant": "Open AI chat panel below the editor.\nRequires an API key (see ⚙ Settings).",
         "tip_ai_conductor": "AI Conductor — assigns per-chunk XTTS parameters via AI.",
-
         # ── Toolbar: Output Group ──
         "group_output": "Output",
         "btn_language": "🌐 Synthesis Language",
@@ -485,14 +456,12 @@ LANGUAGES = {
         "tip_dictionary": "Pronunciation dictionary.\n\nEnglish words from the text are automatically\nrecognized and added — they will be\nread in Cyrillic without artefacts.\n\nYou can add and edit — user entries take priority.",
         "tip_styles": "Open style list:\nNarrative / Dynamic / Expressive.\nReference voice matters a lot",
         "tip_quality_default": "Default mode.\nDouble-click to open detailed settings.",
-
         # ── Toolbar: Action Group ──
         "group_action": "Action",
         "btn_history": "📜 History",
         "btn_audio": "🎵 Audio",
         "btn_generate": "🚀  GENERATE",
         "btn_cancel": "⛔ CANCEL",
-
         # ── Status Bar ──
         "status_init": "🔄 Initializing model...",
         "status_ready": "✅ Model ready",
@@ -507,7 +476,6 @@ LANGUAGES = {
         "status_cancelling": "⛔ Cancelling task...",
         "status_update_check": "🔄 Checking for updates...",
         "status_update_download": "📥 Downloading update...",
-
         # ── Dialogs ──
         "dlg_done_title": "✅ Done",
         "dlg_done_msg": "File saved:\n{}",
@@ -519,21 +487,18 @@ LANGUAGES = {
         "dlg_pick_ref_first": "Select a reference first",
         "dlg_clipboard_empty": "Clipboard is empty",
         "dlg_play_error": "Could not play: {}",
-
         # ── Context Menu ──
         "ctx_copy": "Copy",
         "ctx_paste": "Paste",
         "ctx_cut": "Cut",
         "ctx_select_all": "Select All",
         "ctx_clear": "Clear",
-
         # ── Language Picker ──
         "lang_picker_title": "🌐 Model Language",
         "lang_picker_header": "Select model language",
         "lang_auto_switch": "🔀 Auto language switch",
         "lang_auto_switch_tip": "English words (3+ words) are automatically read in English.\nDisable to change accent.",
         "btn_close": "✓  Close",
-
         # ── Outputs Window ──
         "win_audio_title": "🎵 Audio Files",
         "btn_open_folder": "📂 Open Folder",
@@ -550,7 +515,6 @@ LANGUAGES = {
         "cache_already_empty": "Cache is already empty.",
         "dlg_empty": "Empty",
         "dlg_empty_msg": "No files to delete.",
-
         # ── History Window ──
         "win_history_title": "📜 Generation History",
         "entries_count": "{} entries",
@@ -558,19 +522,16 @@ LANGUAGES = {
         "dlg_clear_history": "Delete all generation history?",
         "history_empty": "History is empty",
         "chunks_word": "chunks",
-
         # ── Help Window ──
         "win_help_title": "❓ Help",
-
         # ── Quality Presets ──
-        "preset_high": "Высокое качество",
-        "preset_narrative": "Нарратив",
-        "preset_dynamic": "Динамика",
-        "preset_expressive": "Экспрессия",
+        "preset_high": "High Quality",
+        "preset_narrative": "Narrative",
+        "preset_dynamic": "Dynamic",
+        "preset_expressive": "Expressive",
         "preset_narrative_desc": "📖 Narrative\nCalm, flowing narration.\nSlow pace, even intonation.\nIdeal for audiobooks and lectures\nClick to open settings.",
         "preset_dynamic_desc": "⚡ Dynamic\nEnergetic, lively voice.\nFast pace, vivid intonation.\nGreat for ads and videos\nClick to open settings.",
         "preset_expressive_desc": "🎭 Expressive\nMaximum emotional delivery.\nRich intonation and expression.\nFor dramatic scenes and emotions\nClick to open settings.",
-
         # ── Quality Settings Window ──
         "win_settings_title": "⚙ Settings — {}",
         "lbl_temperature": "Temperature",
@@ -589,7 +550,6 @@ LANGUAGES = {
         "chk_qc": "🛡 Quality Control (auto-regenerate bad chunks)",
         "tip_qc": "Enables repeat detector and duration validator.\nBad chunks are regenerated automatically (up to 3 attempts).\nSlightly slower generation.",
         "btn_reset": "🔄 Reset",
-
         # ── AI Status Window ──
         "win_ai_status_title": "🔌 AI Providers — Status",
         "ai_xtts_device": "🖥 XTTS model: {}",
@@ -601,7 +561,6 @@ LANGUAGES = {
         "ai_builtin": "Built-in",
         "ai_custom": "Custom",
         "ai_model_label": "Model: {}",
-
         # ── AI Conductor Window ──
         "win_conductor_title": "🤖 AI Conductor",
         "conductor_header": "🤖 AI Conductor",
@@ -623,7 +582,6 @@ LANGUAGES = {
         "conductor_provider_none": "Provider: not configured",
         "btn_save": "✓  Save",
         "btn_cancel_dialog": "Cancel",
-
         # ── Updater ──
         "update_installed": "Update to version {} installed.",
         "update_changelog": "\n\nChangelog:\n{}",
@@ -638,17 +596,13 @@ LANGUAGES = {
         "update_partial_title": "⚠ Partial Update",
         "update_no_title": "✅ No Updates",
         "update_error_title": "❌ Error",
-
         # ── UI Language Switch ──
         "lang_ui_label": "UI",
-
         # ── Text size slider ──
         "tip_font_size": "Text size in the input field",
-
         # ── Theme switch ──
         "tip_theme": "Toggle theme (dark/light)",
         "theme_title": "Theme",
-
         # ── AI Providers (labels / notes) ──
         "prov_groq": "Groq (VPN required in Russia)",
         "prov_openrouter": "OpenRouter (works in Russia without VPN)",
@@ -667,13 +621,11 @@ LANGUAGES = {
         "prov_reason_hidden": "Hidden by user",
         "prov_reason_no_key": "Skipped — no API key",
         "prov_reason_fallback": "Available as fallback",
-
         # ── Misc ──
         "time_today": "today {}",
         "time_yesterday": "yesterday {}",
-        "time_format_m_s": "{}m {}s",
-        "time_format_s": "{}s",
-
+        "time_format_m_s": "{}м {}с",
+        "time_format_s": "{}с",
         # ── AI Chat Window ──
         "chat_win_title": "💬 AI Chat — XTTS Studio",
         "chat_header": "AI Chat",
@@ -693,8 +645,7 @@ LANGUAGES = {
         "chat_hint_default": "Enter — send · Shift+Enter — new line · Ctrl+F — search",
         "chat_hint_editor": "Enter — send · Ctrl+Enter — send without comment · Shift+Enter — new line",
         "chat_hint_editor2": "Enter — send · Ctrl+Enter — without comment · ✕ — cancel",
-        "chat_editor_preview_title": "📋 Text from editor",
-        "chat_new_reply_notice": "↓ New reply — click to scroll",
+        "chat_hint_editor_empty": "Type a message…",
         "chat_btn_cancel": "Cancel",
         "chat_btn_ok": "OK",
         "chat_prompt_editor_comment": "Text from editor:\n{}\n\nComment:\n{}",
@@ -767,7 +718,7 @@ LANGUAGES = {
         "chat_inserted_to_input": "Text pasted to the input field",
         "chat_sent_to_chat": "Text sent to the chat",
         "chat_improving_fallback": "Improving text… (auto-fallback on limit)",
-        "chat_done_chars": "Done: {} → {} chars",
+        "chat_done_chars": "Done: {} → {} symv.",
         "chat_btn_send": "➤ Send",
         "chat_btn_to_input": "↪ To input field",
         "chat_btn_close_x": "✕ Close",
@@ -782,7 +733,7 @@ LANGUAGES = {
         "chat_export_err_title": "Export error",
         "chat_search_win_title": "History search",
         "chat_search_header": "Search chat history",
-        "chat_search_hint": "Enter — search · Double click / Enter — open · Esc — close · Ctrl+F — focus search field",
+        "chat_search_hint": "Enter — search · Double click / Enter — open · Esc — close · Ctrl+F — focus in search string",
         "chat_search_enter_query": "Enter a query",
         "chat_search_match_title": "Match in title: {}",
         "chat_search_found": "Found: {}",
@@ -839,15 +790,25 @@ LANGUAGES = {
         "chat_mode_free_small": "mode: free chat",
         "chat_mode_editor_small": "mode: editor",
         "chat_switch_mode": "switch mode",
+        # ── Local LLM Settings ──
+        "settings_menu_api": "⚙ API Settings",
+        "settings_menu_local": "🏠 Local Models",
+        "settings_menu_general": "📋 General",
+        "local_models_header": "Local LLMs",
+        "local_models_desc": "Configure interaction with models running on your PC (e.g., via Ollama, LM Studio).",
+        "local_model_active": "Active local model: {}",
+        "local_model_url": "Server URL (default http://localhost:11434/v1)",
+        "local_model_catalog_btn": "📂 Local Model Catalog",
+        "local_catalog_title": "Local Model Catalog",
+        "local_catalog_header": "Choose a model to install",
+        "local_model_meta_desc": "Description: {}",
+        "local_model_meta_link": "Download link",
+        "local_model_install_btn": "📥 Install / Connect",
+        "local_model_installed": "✅ Installed",
     },
 }
 
-
 def t(key: str, *args) -> str:
-    """Return translated string for *key* in the current UI language.
-    Positional arguments are forwarded to ``str.format`` if the string
-    contains ``{}`` placeholders.
-    """
     text = LANGUAGES.get(_current_lang, LANGUAGES["ru"]).get(key)
     if text is None:
         text = LANGUAGES["ru"].get(key, key)
@@ -858,21 +819,12 @@ def t(key: str, *args) -> str:
             return text
     return text
 
-
-
 def set_language(lang: str) -> None:
     global _current_lang
     if lang in LANGUAGES:
         _current_lang = lang
 
-
 def _load_saved_language() -> None:
-    """Подключение сохранённого языка интерфейса при импорте модуля.
-
-    Читает ui_language из settings.json (лежит рядом с i18n.py в корне
-    проекта), чтобы весь интерфейс — включая виджеты, создаваемые до
-    вызова apply_settings() — сразу строился на выбранном языке.
-    """
     try:
         settings_path = os.path.join(
             os.path.dirname(os.path.abspath(__file__)), "settings.json"
@@ -883,11 +835,9 @@ def _load_saved_language() -> None:
         if lang in LANGUAGES:
             set_language(lang)
     except Exception:
-        pass  # нет settings.json / повреждён — остаёмся на языке по умолчанию
-
+        pass
 
 _load_saved_language()
-
 
 def get_language() -> str:
     return _current_lang
