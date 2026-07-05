@@ -44,14 +44,16 @@ The AI module is optional and connects through any OpenAI-compatible provider.
 - Voice library with cached speaker embeddings
 - No limit on text length
 - Automatic RU/EN language switching within a single text
+- CUDA/CPU auto-detection with a CPU fallback if the graphics card isn't supported
 
 ### 🖥 Interface
-- 🌗 **Two themes:** dark and a soft light ("milk") theme — switch with one button
+- 🌗 **Themes:** dark and a soft light ("milk") theme out of the box, plus a built-in **theme constructor** — build your own color scheme, not just toggle presets
 - 🌐 **Two UI languages:** Russian and English (RU/EN), including the AI chat and provider settings
 - 📐 Adaptive toolbar — panels resize with the window
 - ◀ Collapsible left panel that remembers its position
 - 🔠 Adjustable text size in the input box (the "Aa" slider)
 - All view settings persist between sessions
+- 🔄 **Git-based updates** — pulls only the changes, no need to redownload the whole archive
 
 ### 🧠 Text processing
 - Numbers → words, automatically
@@ -165,6 +167,8 @@ Edit it with the **📖 Dictionary** button (add, change, or remove rules).
 | GPU | — | NVIDIA, 4+ GB VRAM, Compute Capability 6.0+ |
 | Speed | slower than real-time | faster than real-time |
 
+> ℹ️ The CUDA build includes universal dependencies and detects on its own whether your GPU is supported; if not (or CUDA isn't available), it automatically falls back to CPU with no extra setup.
+
 ---
 
 ## ⚠️ Important
@@ -173,6 +177,7 @@ Don't use paths with Cyrillic characters:
 
 ```
 ✔ C:\XTTS\
+✘ C:\New Folder\XTTS\
 ```
 
 ---
@@ -226,7 +231,7 @@ XTTS Studio (portable)
 │   ├── task_manager.py           ← multithreaded, cancelable task queue
 │   ├── task_models.py            ← Task model
 │   ├── batch_window.py           ← batch-processing business logic
-│   ├── updater.py                ← auto-update (check/apply/restart)
+│   ├── updater.py                ← Git-based auto-update (no re-downloading the archive), check/apply/restart
 │   ├── paths.py                  ← base project directories
 │   ├── settings_store.py         ← reads settings.json
 │   ├── history_store.py          ← generation-history storage
@@ -247,7 +252,7 @@ XTTS Studio (portable)
 │       │   ── window core ──
 │       ├── main_window.py        ← main window assembly (orchestrator)
 │       ├── layout.py             ← layout + collapsible left panel
-│       ├── theme.py              ← themes (dark / light), titlebar
+│       ├── theme.py              ← themes (dark / light) + custom theme constructor, titlebar
 │       ├── theme_manager.py      ← applying and switching the theme
 │       ├── colors.py             ← both themes' palettes
 │       ├── widgets.py            ← widget factories, CTk compatibility
@@ -331,7 +336,7 @@ XTTS Studio (portable)
 ### Generation pipeline
 - **`tts_runner.py`** — a thin entry point; the actual `run_tts()` logic lives in the **`engine/tts/`** package: normalize → word replacer → chunk → conductor → generate → merge. Lazy model loading (a thread-safe singleton), embedding and finished-chunk caching (md5), automatic silence trimming, RMS loudness normalization.
 - **`engine/tts/qc.py`** — quality control: loop detector + duration validator, automatic regeneration.
-- **`engine/tts/device.py`** — CUDA/CPU auto-detection.
+- **`engine/tts/device.py`** — CUDA/CPU auto-detection with a CPU fallback if the GPU isn't supported.
 - **`engine/tts/cache.py`** / **`export.py`** — chunk caching and WAV/MP3 export.
 - **`chunker.py`** — splits into sentences, cuts long ones, merges short ones, checks for a bad chunk start/end.
 - **`normalizer.py`** — numbers→words, abbreviations, punctuation; separate rhythm handling for Latin/Cyrillic abbreviations and CamelCase.
@@ -352,7 +357,7 @@ XTTS Studio (portable)
 
 ### Infrastructure
 - **`task_manager.py` / `task_models.py`** — a multithreaded generation queue with cancel-by-id.
-- **`updater.py`** — checking/applying updates (correct handling of filenames with spaces via URL encoding), self-restart.
+- **`updater.py`** — Git-based updates: pulls only the changes instead of redownloading the whole archive (correct URL-encoding for filenames with spaces), self-restart.
 - **`i18n.py`** — the RU/EN translation dictionary (350+ keys), auto-loads the saved language.
 
 ---
