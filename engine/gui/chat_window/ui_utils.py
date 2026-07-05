@@ -9,6 +9,7 @@ import tkinter as tk
 
 import engine.gui.chat_window.state as state
 from engine.gui.chat_window.custom_widgets import CTK_AVAILABLE, CTkFrame, CTkLabel, CTkButton, TkFrame, TkLabel, TkButton, TkRawFrame
+from i18n import t
 
 def _c(name: str) -> str:
     if state._colors is not None and hasattr(state._colors, name):
@@ -124,10 +125,10 @@ def _ask_simple_text(parent, title: str, prompt: str, initial: str = "") -> str 
         dlg.destroy()
 
     _make_button(
-        btn_row, "Отмена", cancel, bg=_c("BG_INPUT"), font_size=8, height=1, padx=8, pady=3,
+        btn_row, t("chat_btn_cancel"), cancel, bg=_c("BG_INPUT"), font_size=8, height=1, padx=8, pady=3,
     ).pack(side="right", padx=(6, 0))
     _make_button(
-        btn_row, "ОК", confirm, bg=_c("BG_ACTIVE"), font_size=8, height=1, padx=8, pady=3,
+        btn_row, t("chat_btn_ok"), confirm, bg=_c("BG_ACTIVE"), font_size=8, height=1, padx=8, pady=3,
     ).pack(side="right")
 
     entry.bind("<Return>", confirm)
@@ -292,9 +293,9 @@ def _copy_to_clipboard(text: str):
             return
         target.clipboard_clear()
         target.clipboard_append(text)
-        set_chat_status("Сообщение скопировано")
+        set_chat_status(t("chat_msg_copied"))
     except Exception as e:
-        set_chat_status(f"Не удалось скопировать: {e}")
+        set_chat_status(t("chat_err_copy", e))
 
 
 

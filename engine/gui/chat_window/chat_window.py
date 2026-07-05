@@ -7,8 +7,23 @@ from datetime import datetime
 from tkinter import filedialog, messagebox
 import tkinter as tk
 
+# ДОБАВЛЕНО: раньше окно AI-чата вообще не импортировало i18n и было
+# целиком захардкожено по-русски — переключатель языка (RU/EN) на него
+# никак не влиял, хотя в i18n.py уже давно были готовы все нужные
+# ключи "chat_*" на обоих языках. Теперь текст берётся через t(...).
+from i18n import t
+
 import engine.gui.chat_window.state as state
-from engine.gui.chat_window.custom_widgets import CTK_AVAILABLE, CTkFrame, CTkLabel, CTkButton, TkFrame, TkLabel, TkButton, TkRawFrame
+# ИСПРАВЛЕНО (БАГ №7): нижние кнопки "Улучшить"/"Из редактора"/"Очистить"
+# создаются напрямую через ctk.CTkButton(...) (см. ниже), но модуль ctk
+# нигде не импортировался — при первом реальном открытии окна чата это
+# гарантированно роняло вызов с NameError: name 'ctk' is not defined.
+# custom_widgets.py уже делает `import customtkinter as ctk` внутри себя
+# и держит его в атрибуте `ctk` пакета/модуля — переиспользуем этот же
+# объект, чтобы не плодить второй `import customtkinter` и не терять
+# единый источник истины по доступности CTk (CTK_AVAILABLE).
+from engine.gui.chat_window.custom_widgets import CTK_AVAILABLE, ctk, CTkFrame, CTkLabel, CTkButton, TkFrame, TkLabel, TkButton, TkRawFrame
+
 # ПРИМЕЧАНИЕ: colors.py — лёгкий модуль без tkinter-зависимостей (палитра +
 # функция масштаба шрифта), безопасен для прямого импорта в любом GUI-файле.
 from engine.gui.colors import scaled_font_size
@@ -44,7 +59,7 @@ def open_chat_window():
         return
 
     win = tk.Toplevel(state._root)
-    win.title("💬 AI Чат — XTTS Studio")
+    win.title(t("chat_win_title"))
     win.geometry("920x650")
     win.minsize(520, 540)
     win.resizable(True, True)
@@ -74,7 +89,7 @@ def open_chat_window():
 
     state.new_chat_btn = _make_button(
         sidebar,
-        "＋ Новый чат",
+        t("chat_btn_new_chat"),
         new_chat,
         bg=_c("BG_ACTIVE"),
         font_size=8,
@@ -86,7 +101,7 @@ def open_chat_window():
 
     state.delete_chat_btn = _make_button(
         sidebar,
-        "🗑 Удалить чат",
+        t("chat_btn_delete_chat"),
         delete_current_chat,
         bg=_c("BG_INPUT"),
         font_size=8,
@@ -98,7 +113,7 @@ def open_chat_window():
 
     TkLabel(
         sidebar,
-        text="Поиск: Ctrl+F",
+        text=t("chat_search_label"),
         bg=_c("BG_CARD"),
         fg=_c("TEXT_MUTED"),
         font=("Segoe UI", scaled_font_size(8)),
@@ -149,7 +164,7 @@ def open_chat_window():
 
     TkLabel(
         header,
-        text="AI Чат",
+        text=t("chat_header"),
         bg=_c("BG_DARK"),
         fg=_c("TEXT_MAIN"),
         font=("Segoe UI", scaled_font_size(14), "bold"),
@@ -157,7 +172,7 @@ def open_chat_window():
 
     scroll_bottom_btn = _make_button(
         header,
-        "↓ Вниз",
+        t("chat_btn_down"),
         lambda: _scroll_chat_to_bottom(immediate=True),
         bg=_c("BG_INPUT"),
         font_size=8,
@@ -169,7 +184,7 @@ def open_chat_window():
 
     state.export_btn = _make_button(
         header,
-        "⬇ Экспорт",
+        t("chat_btn_export"),
         export_current_chat,
         bg=_c("BG_INPUT"),
         font_size=8,
@@ -181,7 +196,7 @@ def open_chat_window():
 
     state.settings_btn = _make_button(
         header,
-        "⚙ Настройки",
+        t("chat_btn_settings"),
         open_gpt_settings,
         bg=_c("BG_INPUT"),
         font_size=8,
@@ -197,7 +212,7 @@ def open_chat_window():
 
     state.chat_status_label = TkLabel(
         status_row,
-        text="Готов к работе",
+        text=t("chat_ready"),
         bg=_c("BG_DARK"),
         fg=_c("TEXT_DIM"),
         font=("Segoe UI", scaled_font_size(9)),
@@ -207,7 +222,7 @@ def open_chat_window():
 
     state.chat_token_label = TkLabel(
         status_row,
-        text="Ввод: ≈0 ток. · Чат: ≈0 ток.",
+        text=t("chat_token_counter", 0, 0),
         bg=_c("BG_DARK"),
         fg=_c("TEXT_DIM"),
         font=("Segoe UI", scaled_font_size(9)),
@@ -221,7 +236,7 @@ def open_chat_window():
 
     state.improve_btn = ctk.CTkButton(
         action_row,
-        text="✨ Улучшить",
+        text=t("chat_btn_improve"),
         command=improve_text_with_gpt,
         fg_color=_c("BG_INPUT"),
         text_color=_c("TEXT_MAIN"),
@@ -235,7 +250,7 @@ def open_chat_window():
 
     state.paste_editor_btn = ctk.CTkButton(
         action_row,
-        text="📋 Из редактора",
+        text=t("chat_btn_from_editor"),
         command=paste_from_editor,
         fg_color=_c("BG_INPUT"),
         text_color=_c("TEXT_MAIN"),
@@ -249,7 +264,7 @@ def open_chat_window():
 
     state.clear_btn = ctk.CTkButton(
         action_row,
-        text="🧹 Очистить",
+        text=t("chat_btn_clear"),
         command=clear_chat_history,
         fg_color=_c("BG_INPUT"),
         text_color=_c("TEXT_MAIN"),
@@ -278,7 +293,7 @@ def open_chat_window():
     hint_row = TkRawFrame(composer_card, bg=_c("BG_CARD"))
     hint_row.pack(fill="x", padx=12, pady=(9, 5))
 
-    state._hint_text_var = tk.StringVar(value="Enter — отправить · Shift+Enter — новая строка · Ctrl+F — поиск")
+    state._hint_text_var = tk.StringVar(value=t("chat_hint_default"))
     _hint_label = TkLabel(
         hint_row,
         textvariable=state._hint_text_var,
@@ -294,20 +309,20 @@ def open_chat_window():
         state._free_chat_mode = not state._free_chat_mode
         try:
             _free_chat_btn.config(
-                text="💬 Свободный чат ✓" if state._free_chat_mode else "💬 Свободный чат",
+                text=t("chat_free_mode_on") if state._free_chat_mode else t("chat_free_mode"),
                 fg=_c("ACCENT") if state._free_chat_mode else _c("TEXT_DIM"),
             )
         except Exception:
             pass
-        set_chat_status("Режим: свободный чат" if state._free_chat_mode else "Режим: редактор текста")
+        set_chat_status(t("chat_mode_free") if state._free_chat_mode else t("chat_mode_editor"))
         _mode_label.config(
-            text="режим: свободный чат" if state._free_chat_mode else "режим: редактор",
+            text=t("chat_mode_free_small") if state._free_chat_mode else t("chat_mode_editor_small"),
             fg=_c("ACCENT") if state._free_chat_mode else _c("TEXT_MUTED"),
         )
 
     _free_chat_btn = tk.Button(
         hint_row,
-        text="💬 Свободный чат",
+        text=t("chat_free_mode"),
         command=_toggle_free_chat,
         bg=_c("BG_CARD"),
         fg=_c("TEXT_DIM"),
@@ -322,7 +337,7 @@ def open_chat_window():
     )
     _mode_label = tk.Label(
         hint_row,
-        text="сменить режим",
+        text=t("chat_switch_mode"),
         bg=_c("BG_CARD"),
         fg=_c("TEXT_MUTED"),
         font=("Segoe UI", scaled_font_size(8), "italic"),
@@ -360,7 +375,7 @@ def open_chat_window():
     state.chat_input_placeholder_label = _create_placeholder_overlay(
         input_inner,
         state.chat_input,
-        "Напишите сообщение…",
+        t("chat_placeholder_input"),
         x=13,
         y=11,
         fg=_c("TEXT_DIM"),
@@ -481,20 +496,20 @@ def open_chat_window():
             font=("Segoe UI", scaled_font_size(9)),
         )
         menu.add_command(
-            label="Вырезать",
+            label=t("ctx_cut"),
             command=lambda: state.chat_input.event_generate("<<Cut>>"),
         )
         menu.add_command(
-            label="Копировать",
+            label=t("ctx_copy"),
             command=lambda: state.chat_input.event_generate("<<Copy>>"),
         )
         menu.add_command(
-            label="Вставить",
+            label=t("ctx_paste"),
             command=lambda: _paste_clipboard_into_widget(state.chat_input),
         )
         menu.add_separator()
         menu.add_command(
-            label="Выделить всё",
+            label=t("ctx_select_all"),
             command=lambda: _select_all_widget(state.chat_input),
         )
         try:
@@ -625,6 +640,48 @@ def open_chat_window():
     except Exception:
         pass
 
+
+def reapply_language():
+    """Пересобирает окно AI-чата на текущем языке i18n (ru/en).
+
+    ДОБАВЛЕНО: раньше эта функция была ВЫЗЫВАЕМА из header_panel.py и
+    textbox.py (switch_ui_lang()), но НИГДЕ НЕ БЫЛА ОПРЕДЕЛЕНА в этом
+    модуле — вызов проваливался в try/except и молча ничего не делал.
+    Из-за этого переключение языка вообще не затрагивало окно AI-чата,
+    даже после того, как в него добавили t(...) вместо хардкода: если
+    окно уже было открыто в момент переключения языка, оно продолжало
+    показывать старый язык до полного закрытия и повторного открытия.
+
+    Простое и надёжное решение — если окно чата сейчас открыто, закрыть
+    его (как обычное закрытие через кнопку/крестик — session сохраняется
+    в on_close()) и сразу открыть заново: open_chat_window() строит все
+    виджеты заново и подхватит уже переключённый язык i18n. Если окно не
+    было открыто — ничего не делать (при следующем открытии оно и так
+    будет на новом языке, т.к. t() читает текущий язык динамически)."""
+    if not _widget_exists(state._chat_window):
+        return
+    try:
+        win_ref = state._chat_window
+        # on_close() уже сохраняет сессии и корректно чистит state.* —
+        # переиспользуем реальный протокол закрытия окна вместо ручного
+        # дублирования этой логики здесь.
+        close_handler = win_ref.protocol("WM_DELETE_WINDOW")
+        if close_handler:
+            win_ref.tk.call(close_handler)
+        else:
+            win_ref.destroy()
+    except Exception:
+        try:
+            state._chat_window.destroy()
+        except Exception:
+            pass
+        state._chat_window = None
+    # Открываем заново — все виджеты пересоздаются с текущим (уже
+    # переключённым) языком i18n.
+    try:
+        open_chat_window()
+    except Exception:
+        pass
 
 
 # Inter-module imports

@@ -9,16 +9,17 @@ import tkinter as tk
 
 import engine.gui.chat_window.state as state
 from engine.gui.chat_window.custom_widgets import CTK_AVAILABLE, CTkFrame, CTkLabel, CTkButton, TkFrame, TkLabel, TkButton, TkRawFrame
+from i18n import t
 
 def _send_to_main_editor(content: str):
     if state._set_text is None or not content.strip():
         return
     try:
         state._set_text(content.strip())
-        append_chat_message("system", f"Текст отправлен в редактор ({len(content.strip())} симв.)")
-        set_chat_status("✅ Текст отправлен в редактор TTS")
+        append_chat_message("system", t("chat_sent_to_editor_sys", len(content.strip())))
+        set_chat_status(t("chat_sent_to_editor"))
     except Exception as e:
-        set_chat_status(f"Ошибка: {e}")
+        set_chat_status(t("chat_err_generic", e))
 
 
 def _stop_generation(silent: bool = False):
@@ -38,7 +39,7 @@ def _stop_generation(silent: bool = False):
     _set_generation_ui(False)
 
     if not silent:
-        set_chat_status("Генерация остановлена")
+        set_chat_status(t("chat_generation_stopped"))
 
 
 def _set_generation_ui(running: bool):
@@ -61,8 +62,8 @@ def _set_generation_ui(running: bool):
 def improve_text_with_gpt():
     if state._use_gpt_var is not None and not state._use_gpt_var.get():
         messagebox.showwarning(
-            "AI edit выключен",
-            "Включите флажок ✨ AI edit в главном окне.",
+            t("chat_ai_edit_off_title"),
+            t("chat_ai_edit_off_msg"),
             parent=_get_app_parent() or state._root,
         )
         return
@@ -70,16 +71,16 @@ def improve_text_with_gpt():
     try:
         raw = state._get_text()
     except Exception as e:
-        messagebox.showerror("Ошибка", f"Не удалось получить текст из редактора: {e}", parent=_get_app_parent() or state._root)
+        messagebox.showerror(t("chat_err_title"), t("chat_err_get_text", e), parent=_get_app_parent() or state._root)
         return
 
     if not raw or raw == state._placeholder or not raw.strip():
-        messagebox.showwarning("Пустой текст", "Текст в редакторе пустой.", parent=_get_app_parent() or state._root)
+        messagebox.showwarning(t("chat_empty_title"), t("chat_empty_editor"), parent=_get_app_parent() or state._root)
         return
 
     _set_button_state(state.improve_btn, "disabled")
     _set_button_state(state.chat_send_btn, "disabled")
-    set_chat_status("Улучшаю текст для TTS...")
+    set_chat_status(t("chat_improving"))
 
     def _worker():
         try:
@@ -92,16 +93,16 @@ def improve_text_with_gpt():
                     state._set_text(result)
                     append_chat_message(
                         "system",
-                        f"Текст улучшен для TTS: {len(raw)} → {len(result)} символов",
+                        t("chat_improved_sys", len(raw), len(result)),
                     )
-                    set_chat_status("Текст обновлён в редакторе")
+                    set_chat_status(t("chat_text_updated"))
                 except Exception as e:
                     messagebox.showerror(
-                        "Ошибка",
-                        f"Не удалось вставить результат в редактор: {e}",
+                        t("chat_err_title"),
+                        t("chat_err_insert", e),
                         parent=_get_app_parent() or state._root,
                     )
-                    set_chat_status("Ошибка вставки результата")
+                    set_chat_status(t("chat_err_insert_status"))
                 finally:
                     _set_button_state(state.improve_btn, "normal")
                     _set_button_state(state.chat_send_btn, "normal")
@@ -109,13 +110,13 @@ def improve_text_with_gpt():
             _safe_after(0, _apply)
 
         except Exception as e:
-            msg = str(e) or "Неизвестная ошибка"
+            msg = str(e) or t("chat_unknown_error")
 
             def _show_error():
                 _set_button_state(state.improve_btn, "normal")
                 _set_button_state(state.chat_send_btn, "normal")
-                set_chat_status(f"Ошибка улучшения текста: {msg}")
-                messagebox.showerror("Ошибка AI", msg, parent=_get_app_parent() or state._root)
+                set_chat_status(t("chat_err_improve", msg))
+                messagebox.showerror(t("chat_err_ai_title"), msg, parent=_get_app_parent() or state._root)
 
             _safe_after(0, _show_error)
 
@@ -130,19 +131,19 @@ def paste_from_editor():
     except Exception:
         return
     if not text or text == state._placeholder or not text.strip():
-        set_chat_status("Редактор пуст")
+        set_chat_status(t("chat_editor_empty"))
         return
 
     state._editor_mode = True
 
     _show_editor_preview(text)
-    _update_input_placeholder_text("Добавьте комментарий… или нажмите Enter чтобы отправить как есть")
+    _update_input_placeholder_text(t("chat_placeholder_comment"))
     if state._hint_text_var is not None:
         try:
-            state._hint_text_var.set("Enter — отправить · Ctrl+Enter — без комментария · ✕ — отмена")
+            state._hint_text_var.set(t("chat_hint_editor2"))
         except Exception:
             pass
-    set_chat_status("Текст из редактора готов · добавьте комментарий или нажмите Enter")
+    set_chat_status(t("chat_editor_ready"))
 
     # Жёстко переводим фокус в поле ввода чата с несколькими попытками,
     # т.к. pack(before=...) в _show_editor_preview меняет геометрию

@@ -84,13 +84,13 @@ def open_theme_settings_dialog():
         from engine.gui.chat_window.theme_settings import open_theme_customizer
         open_theme_customizer(root, on_layout_changed=apply_layout_preset_to_all)
     except Exception:
-        # ВАЖНО: раньше здесь было "pass" без логирования — ошибка построения
-        # окна конструктора темы проглатывалась молча, и снаружи (в textbox.py)
-        # это выглядело как успешный вызов ("OK"), хотя окно не открывалось.
-        # Печатаем трейсбек, чтобы такие сбои были видны в консоли/логе.
+        # ИЗМЕНЕНО (по просьбе пользователя): трейсбек больше не печатается
+        # в консоль приложения — раньше это было временно добавлено для
+        # диагностики бага открытия окна конструктора темы (уже найден и
+        # исправлен). Ошибка по-прежнему тихо пишется в лог-файл через
+        # write_log(), чтобы при реальном сбое информация не терялась
+        # полностью, но не засоряла консоль на каждый клик.
         import traceback
-        print("[ThemeSettings] open_theme_customizer() FAILED:")
-        traceback.print_exc()
         try:
             from engine.logging_utils import write_log
             write_log(traceback.format_exc())

@@ -9,11 +9,10 @@ import tkinter as tk
 
 import engine.gui.chat_window.state as state
 from engine.gui.chat_window.custom_widgets import CTK_AVAILABLE, CTkFrame, CTkLabel, CTkButton, TkFrame, TkLabel, TkButton, TkRawFrame
+from i18n import t
 
 def _run_generation(session: dict, prompt: str):
     """Запускает воркер генерации AI-ответа. prompt — то что уходит в API."""
-
-
     if state._generation_running:
         _stop_generation(silent=True)
 
@@ -21,7 +20,6 @@ def _run_generation(session: dict, prompt: str):
 
     cancel_event = threading.Event()
     token = str(uuid.uuid4())
-
     with state._generation_lock:
         state._generation_running = True
         state._generation_token = token
@@ -29,93 +27,68 @@ def _run_generation(session: dict, prompt: str):
 
     _set_generation_ui(True)
     _show_typing()
-    set_chat_status("AI печатает...")
+    set_chat_status(t("chat_ai_typing_status"))
 
     def _worker():
         try:
             import engine.gpt_client as _gpt
-
-            system = _gpt._FREE_CHAT_SYSTEM if state._free_chat_mode else None
+            system = _gpt.FREE_CHAT_SYSTEM if state._free_chat_mode else None
             response = _gpt.chat(prompt, history=history_for_api, system=system)
-
             if response is None:
                 response = ""
             response = str(response)
-            
 
             def _apply_response():
-
-
                 if cancel_event.is_set() or token != state._generation_token:
                     return
-
                 _hide_typing()
-
                 assistant_msg = {
                     "role": "assistant",
                     "content": response,
                     "ts": _now_ts(),
                 }
-
                 s = _get_current_session()
                 s.setdefault("messages", []).append(assistant_msg)
                 _enforce_limits()
                 _save_sessions()
-
                 _add_message_bubble(assistant_msg, smooth_scroll=True, force_scroll=False)
                 _refresh_session_list()
                 _update_token_counter()
                 # Скроллим вниз только если пользователь был у дна
                 if _is_chat_near_bottom():
                     _safe_after(80, lambda: _scroll_chat_to_bottom(immediate=True) if (_widget_exists(state.chat_canvas) and _is_chat_near_bottom()) else None)
-
                 with state._generation_lock:
                     state._generation_running = False
                     state._generation_token = None
                     state._generation_cancel_event = None
-
                 _set_generation_ui(False)
-                set_chat_status("Ответ получен")
-
+                set_chat_status(t("chat_reply_received"))
             _safe_after(0, _apply_response)
-
         except Exception as e:
             import engine.gpt_client as _gpt
             is_unavailable = isinstance(e, getattr(_gpt, "AIUnavailable", ()))
-            msg = str(e) or "Неизвестная ошибка"
-
+            msg = str(e) or t("chat_unknown_error")
             def _show_error():
-
-
                 if cancel_event.is_set() or token != state._generation_token:
                     return
-
                 _hide_typing()
-
                 with state._generation_lock:
                     state._generation_running = False
                     state._generation_token = None
                     state._generation_cancel_event = None
-
                 _set_generation_ui(False)
-
                 if is_unavailable:
                     # ИИ временно недоступен (сеть или вся цепочка провайдеров) —
                     # это не баг, без messagebox, только статус.
-                    set_chat_status("ИИ временно недоступен. Попробуйте позже.")
+                    set_chat_status(t("chat_ai_unavailable"))
                 else:
-                    set_chat_status(f"Ошибка AI: {msg}")
-                    messagebox.showerror("Ошибка AI", msg, parent=_get_app_parent() or state._root)
-
+                    set_chat_status(t("chat_err_ai_status", msg))
+                    messagebox.showerror(t("chat_err_ai_title"), msg, parent=_get_app_parent() or state._root)
             _safe_after(0, _show_error)
-
         finally:
             def _final_cleanup():
-
-
                 if token == state._generation_token and not cancel_event.is_set():
                     return
-
                 if cancel_event.is_set():
                     _hide_typing()
                     with state._generation_lock:
@@ -124,12 +97,9 @@ def _run_generation(session: dict, prompt: str):
                             state._generation_token = None
                             state._generation_cancel_event = None
                     _set_generation_ui(False)
-
             _safe_after(0, _final_cleanup)
 
     threading.Thread(target=_worker, daemon=True).start()
-
-
 
 # Inter-module imports
 from engine.gui.chat_window.engine.utils import _now_ts, _now_full, _approx_tokens, _ai_display_name, _build_editor_compose_prompt

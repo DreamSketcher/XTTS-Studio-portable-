@@ -9,8 +9,23 @@ except Exception:
     ctk = None
 
 if CTK_AVAILABLE:
-    ctk.set_appearance_mode("dark")
-    ctk.set_default_color_theme("blue")
+    # ИСПРАВЛЕНО (БАГ №6, КРИТИЧНЫЙ): раньше здесь было жёстко зашито
+    #     ctk.set_appearance_mode("dark")
+    #     ctk.set_default_color_theme("blue")
+    # Этот код выполняется один раз при ПЕРВОМ импорте custom_widgets.py —
+    # а импортируется он транзитивно из chat_panel.py -> chat_window (пакет)
+    # -> custom_widgets, что происходит при каждом старте приложения, даже
+    # если пользователь никогда не открывал окно AI-чата. main_window.py
+    # вызывает apply_theme() (единственный источник истины по теме,
+    # engine/gui/theme.py) РАНЬШЕ, чем chat_panel.setup(...) — то есть
+    # правильная тема (например Light) успевала примениться, а потом
+    # немедленно затиралась обратно на Dark в момент этого импорта.
+    # Внешне это выглядело как "тема сама переключается на тёмную", и
+    # особенно заметно было при переключении языка (reapply_language()
+    # пересоздаёт окно чата, что первым триггерило повторный эффект) —
+    # хотя реальная причина не связана с языком вообще. Теперь единственный
+    # источник истины по теме — engine/gui/theme.py: apply_theme().
+    pass
 
     class CTkFrame(ctk.CTkFrame):
         def __init__(self, *args, bg=None, highlightthickness=None, highlightbackground=None, bd=None, cursor=None, padx=None, pady=None, **kwargs):

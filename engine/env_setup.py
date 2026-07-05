@@ -162,3 +162,75 @@ def install_llama_cpp(progress_cb=None) -> dict:
 
     emit("✅ Готово — llama-cpp-python собран и работает на этом CPU.")
     return status
+
+def detect_gpu() -> dict:
+    """
+    {"vendor": "nvidia" | "amd" | "intel" | "unknown",
+     "name": str,
+     "cuda_version": str | None}   # только для vendor == "nvidia"
+
+    Порядок проверки: сначала nvidia-smi (ставится вместе с драйвером NVIDIA,
+    отдельно ничего просить не надо). Если его нет — смотрим на любой
+    видеоадаптер через WMI (PowerShell CIM), там же выцепляем AMD/Intel.
+    Если ничего не нашли — считаем "unknown", это ведёт к CPU-варианту.
+    """
+    result = {"vendor": "unknown", "name": "не определено", "cuda_version": None}
+
+    # ── NVIDIA ──────────────────────────────────────────────────────────────
+    try:
+        proc = subprocess.run(
+            ["nvidia-smi"],
+            capture_output=True, text=True, timeout=10,
+        )
+        if proc.returncode == 0 and proc.stdout:
+            out = proc.stdout
+            result["vendor"] = "nvidia"
+
+            # Имя карты: строка вида "| N%   xx°C  ...  NVIDIA GeForce RTX 3060 ..."
+            for line in out.splitlines():
+                if "NVIDIA" in line and ("GeForce" in line or "RTX" in line or "GTX" in line or "Quadro" in line or "Tesla" in line):
+                    parts = [p.strip() for p in line.split("|") if p.strip()]
+                    if len(parts) >= 2:
+                        result["name"] = parts[1].split("  ")[0].strip()
+                    break
+
+            # Версия CUDA: строка вида "CUDA Version: 12.4"
+            for line in out.splitlines():
+                if "CUDA Version" in line:
+                    try:
+                        result["cuda_version"] = line.split("CUDA Version:")[1].strip().split()[0].rstrip("|").strip()
+                    except Exception:
+                        pass
+                    break
+
+            return result
+    except FileNotFoundError:
+        pass  # nvidia-smi отсутствует — не NVIDIA-система (или драйвер не установлен)
+    except Exception:
+        pass
+
+    # ── AMD / Intel через WMI ────────────────────────────────────────────────
+    try:
+        proc = subprocess.run(
+            ["powershell", "-NoProfile", "-Command",
+             "Get-CimInstance Win32_VideoController | Select-Object -ExpandProperty Name"],
+            capture_output=True, text=True, timeout=15,
+        )
+        if proc.returncode == 0 and proc.stdout:
+            names = [n.strip() for n in proc.stdout.splitlines() if n.strip()]
+            for name in names:
+                low = name.lower()
+                if "amd" in low or "radeon" in low:
+                    result["vendor"] = "amd"
+                    result["name"] = name
+                    return result
+                if "intel" in low:
+                    result["vendor"] = "intel"
+                    result["name"] = name
+                    return result
+            if names:
+                result["name"] = names[0]
+    except Exception:
+        pass
+
+    return result

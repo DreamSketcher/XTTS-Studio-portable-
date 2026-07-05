@@ -9,6 +9,10 @@ import tkinter as tk
 
 import engine.gui.chat_window.state as state
 from engine.gui.chat_window.custom_widgets import CTK_AVAILABLE, CTkFrame, CTkLabel, CTkButton, TkFrame, TkLabel, TkButton, TkRawFrame
+# i18n: дефолтное название сессии "Новый чат" и сообщение об ошибке сохранения
+# истории показываются пользователю (в списке сессий / статус-баре), поэтому
+# должны переключаться вместе с языком интерфейса, а не быть захардкожены.
+from i18n import t
 
 def _load_sessions():
 
@@ -31,7 +35,7 @@ def _load_sessions():
                         continue
 
                     sid = str(s.get("id") or uuid.uuid4())
-                    title = str(s.get("title") or "Новый чат")
+                    title = str(s.get("title") or t("chat_new_chat_title"))
                     created = str(s.get("created") or _now_full())
 
                     messages = []
@@ -74,7 +78,7 @@ def _save_sessions():
             json.dump(data, f, ensure_ascii=False, indent=2)
         os.replace(tmp_path, state.HISTORY_FILE)
     except Exception as e:
-        set_chat_status(f"Не удалось сохранить историю: {e}")
+        set_chat_status(t("chat_err_save_history", e))
 
 
 def _enforce_limits():
@@ -92,7 +96,7 @@ def _enforce_limits():
 def _create_session_dict() -> dict:
     return {
         "id": str(uuid.uuid4()),
-        "title": "Новый чат",
+        "title": t("chat_new_chat_title"),
         "created": _now_full(),
         "messages": [],
     }
@@ -118,7 +122,7 @@ def _get_current_session() -> dict:
 
 
 def _update_session_title_if_needed(session: dict):
-    if session.get("title") and session.get("title") != "Новый чат":
+    if session.get("title") and session.get("title") != t("chat_new_chat_title"):
         return
 
     for m in session.get("messages", []):

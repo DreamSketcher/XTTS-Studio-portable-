@@ -2,6 +2,7 @@
   "version": "1.0.10",
   "files": [
     "XTTS Studio.exe",
+    "blank_icon.ico",
     "engine/__init__.py",
     "engine/ai_conductor.py",
     "engine/audio_backend.py",
@@ -31,6 +32,7 @@
     "engine/gui/chat_window/chat_typing.py",
     "engine/gui/chat_window/chat_window.py",
     "engine/gui/chat_window/custom_widgets.py",
+    "engine/gui/chat_window/engine/__init__.py",
     "engine/gui/chat_window/engine/generation.py",
     "engine/gui/chat_window/engine/sessions.py",
     "engine/gui/chat_window/engine/utils.py",
@@ -60,7 +62,6 @@
     "engine/gui/textbox.py",
     "engine/gui/theme.py",
     "engine/gui/theme_manager.py",
-    "engine/gui/theme_settings.py",
     "engine/gui/toolbar.py",
     "engine/gui/tooltip.py",
     "engine/gui/updates.py",

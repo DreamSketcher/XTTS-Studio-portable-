@@ -9,6 +9,11 @@ import tkinter as tk
 
 import engine.gui.chat_window.state as state
 from engine.gui.chat_window.custom_widgets import CTK_AVAILABLE, CTkFrame, CTkLabel, CTkButton, TkFrame, TkLabel, TkButton, TkRawFrame
+# i18n: собранный prompt "Текст из редактора: ... Комментарий: ..." попадает
+# и в буфер ввода чата, и на экран (chat_display_with_comment) — должен
+# переключаться вместе с языком интерфейса. Используем готовый ключ
+# chat_prompt_editor_comment (уже был в i18n.py, RU/EN синхронны).
+from i18n import t
 
 def _now_ts() -> str:
     return datetime.now().strftime("%H:%M")
@@ -42,7 +47,7 @@ def _build_editor_compose_prompt(source_text: str, comment_text: str) -> str:
     comment = (comment_text or "").strip()
 
     if source and comment:
-        return f"Текст из редактора:\n{source}\n\nКомментарий:\n{comment}"
+        return t("chat_prompt_editor_comment", source, comment)
     if source:
         return source
     return comment

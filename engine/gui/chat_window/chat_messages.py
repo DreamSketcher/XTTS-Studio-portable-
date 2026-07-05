@@ -9,6 +9,7 @@ import tkinter as tk
 
 import engine.gui.chat_window.state as state
 from engine.gui.chat_window.custom_widgets import CTK_AVAILABLE, CTkFrame, CTkLabel, CTkButton, TkFrame, TkLabel, TkButton, TkRawFrame
+from i18n import t
 
 def _add_message_bubble(message: dict, smooth_scroll: bool = True, force_scroll: bool = False):
     if not _widget_exists(state.chat_messages_frame):
@@ -61,12 +62,12 @@ def _add_message_bubble(message: dict, smooth_scroll: bool = True, force_scroll:
     meta = tk.Frame(bubble, bg=bubble_bg)
     meta.pack(fill="x")
 
-    author = "Вы" if is_user else _ai_display_name()
+    author = t("chat_author_you") if is_user else _ai_display_name()
     meta_fg = "#dbeafe" if is_user else _c("TEXT_DIM")
 
     tk.Label(
         meta,
-        text=f"{author} · {ts} · ≈{tokens} ток.",
+        text=t("chat_meta_format", author, ts, tokens),
         bg=bubble_bg,
         fg=meta_fg,
         font=("Segoe UI", 8),
@@ -357,7 +358,7 @@ def _select_bubble(bubble_frame, content: str, base_bg: str):
             pass
         state._selected_bubble_frame = None
         state._selected_bubble_content = ""
-        set_chat_status("Выбор снят")
+        set_chat_status(t("chat_selection_cleared"))
         return
 
     # Подсвечиваем новый выбранный пузырь акцентной рамкой
@@ -368,7 +369,7 @@ def _select_bubble(bubble_frame, content: str, base_bg: str):
 
     state._selected_bubble_frame = bubble_frame
     state._selected_bubble_content = content
-    set_chat_status("Сообщение выбрано · нажмите «→» на нём, чтобы отправить в редактор")
+    set_chat_status(t("chat_msg_selected"))
 
 
 def _on_bubble_text_click(event):
@@ -410,16 +411,16 @@ def _show_bubble_context_menu(event, content: str, text_widget=None):
         font=("Segoe UI", 9),
     )
     menu.add_command(
-        label="📋 Копировать",
+        label=t("chat_ctx_copy"),
         command=lambda: _copy_to_clipboard(_get_sel_or_full()),
     )
     menu.add_separator()
     menu.add_command(
-        label="📝 В редактор TTS",
+        label=t("chat_ctx_to_editor"),
         command=lambda: _send_to_main_editor(_get_sel_or_full()),
     )
     menu.add_command(
-        label="↩ В поле ввода чата",
+        label=t("chat_ctx_to_input"),
         command=lambda: _insert_prompt_into_chat_input(_get_sel_or_full()),
     )
     try:
@@ -498,7 +499,7 @@ def _add_empty_state():
 
     TkLabel(
         box,
-        text="Новый чат",
+        text=t("chat_new_chat_title"),
         bg=_c("BG_DARK"),
         fg=_c("TEXT_MAIN"),
         font=("Segoe UI", 16, "bold"),
@@ -506,7 +507,7 @@ def _add_empty_state():
 
     TkLabel(
         box,
-        text="Спросите AI о тексте, дикторе, TTS или улучшите текст для озвучки.",
+        text=t("chat_welcome"),
         bg=_c("BG_DARK"),
         fg=_c("TEXT_DIM"),
         font=("Segoe UI", 10),

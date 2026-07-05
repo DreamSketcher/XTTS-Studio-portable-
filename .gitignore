@@ -17,6 +17,7 @@ word_rules.json
 XTTS_DIAG.bat
 word_rules_backups/
 tools/
+ProjectAnalyzer.ps1
 # =========================
 # PYTHON
 # =========================

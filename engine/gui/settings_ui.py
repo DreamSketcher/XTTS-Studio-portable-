@@ -38,7 +38,7 @@ def save_settings(extra=None):
         "word_replacer_enabled": word_replacer_enabled.get(),
         "lang_split_enabled": lang_split_enabled.get(),
         "ui_language": ui_lang_var.get(),
-        "text_font_size": _textbox._text_font_size["v"],
+        "text_font_size": _textbox.text_font_size["v"],
         "ai_conductor_enabled": any(
             params.get("ai_conductor_enabled", tk.BooleanVar()).get()
             for params in quality_params.values()
@@ -59,11 +59,41 @@ def save_settings(extra=None):
     }
     if extra:
         data.update(extra)
+    # ИСПРАВЛЕНО (БАГ №8, КРИТИЧНЫЙ — "смена языка/др. настроек сбрасывает
+    # тему после перезапуска"): раньше эта функция строила словарь `data`
+    # С НУЛЯ и полностью ПЕРЕЗАПИСЫВАЛА settings.json, стирая любые ключи,
+    # которые сама не знает — в частности "ui_theme", который пишет ТОЛЬКО
+    # engine/gui/theme.py: save_theme() (в отдельном месте, с собственным
+    # read-modify-write). save_settings() вызывается очень часто — явно из
+    # switch_ui_lang() и через tk.Variable.trace_add("write", ...) на
+    # lang_var/quality_var/use_gpt/... в main_window.py — то есть почти
+    # любое действие пользователя (включая переключение языка) тихо
+    # стирало "ui_theme" из файла. Эффект был НЕ мгновенным (в памяти
+    # тема оставалась верной, ctk.set_appearance_mode() не трогался),
+    # поэтому проявлялся только на СЛЕДУЮЩЕМ запуске приложения — theme.py:
+    # load_saved_theme() не находил "ui_theme" в файле и откатывался на
+    # дефолт "dark". Раньше выглядело так, будто "смена языка меняет
+    # тему" — на самом деле она портила файл настроек, а эффект был виден
+    # только после перезапуска.
+    # Решение — read-modify-write вместо overwrite: сначала читаем то, что
+    # уже лежит в settings.json (если файл валиден), сливаем поверх новые
+    # значения из `data`, и только затем сохраняем объединённый словарь.
+    # Так любые ключи, которыми управляют другие модули (ui_theme из
+    # theme.py, возможные будущие ключи других панелей), не теряются.
     try:
+        try:
+            with open(SETTINGS_PATH, "r", encoding="utf-8") as f:
+                existing = json.load(f)
+            if not isinstance(existing, dict):
+                existing = {}
+        except Exception:
+            existing = {}
+        existing.update(data)
         with open(SETTINGS_PATH, "w", encoding="utf-8") as f:
-            json.dump(data, f, ensure_ascii=False, indent=2)
+            json.dump(existing, f, ensure_ascii=False, indent=2)
     except Exception:
         pass
+
 
 
 def apply_settings(data):

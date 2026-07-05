@@ -9,6 +9,7 @@ import tkinter as tk
 
 import engine.gui.chat_window.state as state
 from engine.gui.chat_window.custom_widgets import CTK_AVAILABLE, CTkFrame, CTkLabel, CTkButton, TkFrame, TkLabel, TkButton, TkRawFrame
+from i18n import t
 
 def _focus_chat_input():
     if _widget_exists(state.chat_input):
@@ -25,12 +26,12 @@ def _reset_editor_mode():
     lbl = getattr(state.chat_input, "_placeholder_label", None) if _widget_exists(state.chat_input) else None
     if _widget_exists(lbl):
         try:
-            lbl.config(text="Напишите сообщение…")
+            lbl.config(text=t("chat_placeholder_input"))
         except Exception:
             pass
     if state._hint_text_var is not None:
         try:
-            state._hint_text_var.set("Enter — отправить · Shift+Enter — новая строка · Ctrl+F — поиск")
+            state._hint_text_var.set(t("chat_hint_default"))
         except Exception:
             pass
 
@@ -112,7 +113,7 @@ def _update_token_counter(event=None):
     chat_tokens = sum(_approx_tokens(m.get("content", "")) for m in session.get("messages", []))
 
     try:
-        state.chat_token_label.config(text=f"Ввод: ≈{input_tokens} ток. · Чат: ≈{chat_tokens} ток.")
+        state.chat_token_label.config(text=t("chat_token_counter", input_tokens, chat_tokens))
     except Exception:
         pass
 
@@ -184,7 +185,7 @@ def _submit_prompt(prompt: str, *, clear_input: bool = False):
             _clear_input_text()
 
         if comment:
-            display_content = f"{src}\n\nКомментарий:\n{comment}"
+            display_content = t("chat_display_with_comment", src, comment)
         else:
             display_content = src
 
@@ -261,7 +262,7 @@ def _insert_prompt_into_chat_input(prompt: str):
         _update_token_counter()
         _sync_text_placeholder(state.chat_input)
     except Exception as e:
-        set_chat_status(f"Ошибка вставки: {e}")
+        set_chat_status(t("chat_err_paste", e))
 
 
 

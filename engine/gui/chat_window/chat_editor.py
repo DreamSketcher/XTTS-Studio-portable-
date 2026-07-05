@@ -9,6 +9,7 @@ import tkinter as tk
 
 import engine.gui.chat_window.state as state
 from engine.gui.chat_window.custom_widgets import CTK_AVAILABLE, CTkFrame, CTkLabel, CTkButton, TkFrame, TkLabel, TkButton, TkRawFrame
+from i18n import t
 
 def _show_editor_preview(text: str):
 
@@ -40,7 +41,7 @@ def _show_editor_preview(text: str):
 
     tk.Label(
         header,
-        text="📋 Текст из редактора",
+        text="📋 " + t("chat_editor_source_label"),
         bg=_c("BG_CARD"),
         fg=_c("ACCENT"),
         font=("Segoe UI", 8, "bold"),
@@ -119,8 +120,8 @@ def open_editor_text_window(event=None):
 
     if state._get_text is None or state._set_text is None:
         messagebox.showerror(
-            "Ошибка",
-            "Функции доступа к редактору не инициализированы.",
+            t("chat_err_title"),
+            t("chat_err_no_editor_fns"),
             parent=_get_app_parent() or state._root,
         )
         return "break"
@@ -132,17 +133,17 @@ def open_editor_text_window(event=None):
     try:
         text = state._get_text()
     except Exception as e:
-        messagebox.showerror("Ошибка", f"Не удалось получить текст из редактора: {e}", parent=_get_app_parent() or state._root)
+        messagebox.showerror(t("chat_err_title"), t("chat_err_get_text", e), parent=_get_app_parent() or state._root)
         return "break"
 
     if not text or text == state._placeholder or not text.strip():
-        messagebox.showwarning("Пустой текст", "В редакторе нет текста.", parent=_get_app_parent() or state._root)
+        messagebox.showwarning(t("chat_empty_title"), t("chat_no_text_in_editor"), parent=_get_app_parent() or state._root)
         return "break"
 
     win = tk.Toplevel(_get_app_parent() or state._root)
     _set_dark_titlebar(win)
     state._editor_window = win
-    win.title("📋 Текст из редактора")
+    win.title("📋 " + t("chat_editor_source_label"))
     win.geometry("900x720")
     win.minsize(700, 560)
     win.resizable(True, True)
@@ -154,7 +155,7 @@ def open_editor_text_window(event=None):
 
     TkLabel(
         main,
-        text="Текст из редактора",
+        text=t("chat_editor_source_label"),
         bg=_c("BG_DARK"),
         fg=_c("TEXT_MAIN"),
         font=("Segoe UI", 14, "bold"),
@@ -163,7 +164,7 @@ def open_editor_text_window(event=None):
 
     TkLabel(
         main,
-        text="Выделите фрагмент сверху и нажмите «В редактор». Ниже можно написать комментарий для AI.",
+        text=t("chat_editor_hint"),
         bg=_c("BG_DARK"),
         fg=_c("TEXT_DIM"),
         font=("Segoe UI", 9),
@@ -173,7 +174,7 @@ def open_editor_text_window(event=None):
 
     TkLabel(
         main,
-        text="Enter — отправить и закрыть · Shift+Enter — новая строка · Ctrl+Enter — отправить и закрыть · Ctrl+Shift+Enter — вставить в поле ввода · Ctrl+F — поиск",
+        text=t("chat_editor_win_hint"),
         bg=_c("BG_DARK"),
         fg=_c("TEXT_MUTED"),
         font=("Segoe UI", 8),
@@ -205,7 +206,7 @@ def open_editor_text_window(event=None):
 
     TkLabel(
         src_header,
-        text="Источник",
+        text=t("chat_source_label"),
         bg=_c("BG_CARD"),
         fg=_c("TEXT_MAIN"),
         font=("Segoe UI", 10, "bold"),
@@ -217,14 +218,14 @@ def open_editor_text_window(event=None):
         try:
             src = state._get_text()
             if not src or src == state._placeholder or not src.strip():
-                messagebox.showwarning("Пустой текст", "В редакторе нет текста.", parent=win)
+                messagebox.showwarning(t("chat_empty_title"), t("chat_no_text_in_editor"), parent=win)
                 return
             state.editor_source_text.delete("1.0", tk.END)
             state.editor_source_text.insert("1.0", src)
             _update_editor_stats()
-            set_chat_status("Источник обновлён из редактора")
+            set_chat_status(t("chat_source_updated"))
         except Exception as e:
-            messagebox.showerror("Ошибка", f"Не удалось обновить текст: {e}", parent=win)
+            messagebox.showerror(t("chat_err_title"), t("chat_err_update_text", e), parent=win)
 
     def copy_source():
         selected = _get_selected_or_all_text(state.editor_source_text)
@@ -237,14 +238,14 @@ def open_editor_text_window(event=None):
             return
         selected = _get_selected_or_all_text(state.editor_source_text).strip()
         if not selected:
-            messagebox.showwarning("Пустое выделение", "Выделите фрагмент текста в верхнем окне.", parent=win)
+            messagebox.showwarning(t("chat_empty_selection_title"), t("chat_empty_selection_msg"), parent=win)
             return
         try:
             state._set_text(selected)
-            append_chat_message("system", f"Редактор перезаписан выделенным фрагментом ({len(selected)} символов)")
-            set_chat_status("Редактор перезаписан выделением")
+            append_chat_message("system", t("chat_editor_overwritten_sys", len(selected)))
+            set_chat_status(t("chat_editor_overwritten"))
         except Exception as e:
-            messagebox.showerror("Ошибка", f"Не удалось перезаписать редактор: {e}", parent=win)
+            messagebox.showerror(t("chat_err_title"), t("chat_err_overwrite", e), parent=win)
 
     src_btn_row = TkFrame(src_header, bg=_c("BG_CARD"))
     src_btn_row.pack(side="right")
@@ -275,7 +276,7 @@ def open_editor_text_window(event=None):
 
     _make_button(
         src_btn_row,
-        "↩ В редактор",
+        t("chat_btn_to_editor"),
         overwrite_editor_from_selection,
         bg=_c("BG_ACTIVE"),
         font_size=8,
@@ -284,12 +285,10 @@ def open_editor_text_window(event=None):
         pady=2,
     ).pack(side="left")
 
-    source_body = TkRawFrame(source_card, bg=_c("BORDER"),
-                          highlightthickness=1, highlightbackground=_c("BORDER"))
-    source_inner = TkRawFrame(source_body, bg=_c("BG_INPUT"))
-    comment_body = TkRawFrame(comment_send_row, bg=_c("BORDER"),
-                            highlightthickness=1, highlightbackground=_c("BORDER"))
-    comment_inner = TkRawFrame(comment_body, bg=_c("BG_INPUT"))
+    source_body = TkFrame(source_card, bg=_c("BORDER"), padx=1, pady=1)
+    source_body.pack(fill="both", expand=True, padx=12, pady=(0, 10))
+    source_inner = TkFrame(source_body, bg=_c("BG_INPUT"))
+    source_inner.pack(fill="both", expand=True)
 
     src_scroll = tk.Scrollbar(source_inner)
     src_scroll.pack(side="right", fill="y")
@@ -327,7 +326,7 @@ def open_editor_text_window(event=None):
 
     TkLabel(
         comment_header,
-        text="Комментарий к тексту",
+        text=t("chat_comment_label"),
         bg=_c("BG_CARD"),
         fg=_c("TEXT_MAIN"),
         font=("Segoe UI", 10, "bold"),
@@ -335,7 +334,7 @@ def open_editor_text_window(event=None):
 
     TkLabel(
         comment_header,
-        text="Что сделать с текстом?",
+        text=t("chat_what_to_do"),
         bg=_c("BG_CARD"),
         fg=_c("TEXT_DIM"),
         font=("Segoe UI", 8),
@@ -375,7 +374,7 @@ def open_editor_text_window(event=None):
     _create_placeholder_overlay(
         comment_inner,
         state.editor_comment_text,
-        "Комментарий к тексту…",
+        t("chat_comment_placeholder"),
         x=13,
         y=11,
         fg=_c("TEXT_DIM"),
@@ -395,7 +394,7 @@ def open_editor_text_window(event=None):
 
     state.editor_stats_label = TkLabel(
         info_row,
-        text="Источник: 0 симв. · Комментарий: 0 симв. · Итого: 0 симв.",
+        text=t("chat_stats_format", 0, 0, 0),
         bg=_c("BG_DARK"),
         fg=_c("TEXT_DIM"),
         font=("Segoe UI", 8),
@@ -405,7 +404,7 @@ def open_editor_text_window(event=None):
 
     state.editor_status_label = TkLabel(
         info_row,
-        text="Enter — отправить и закрыть · Esc — закрыть",
+        text=t("chat_editor_hint3"),
         bg=_c("BG_DARK"),
         fg=_c("TEXT_MUTED"),
         font=("Segoe UI", 8),
@@ -437,19 +436,19 @@ def open_editor_text_window(event=None):
     def insert_into_chat_input():
         prompt = build_prompt()
         if not prompt.strip():
-            messagebox.showwarning("Пустой текст", "Источник и комментарий пустые.", parent=win)
+            messagebox.showwarning(t("chat_empty_title"), t("chat_source_comment_empty"), parent=win)
             return "break"
         _insert_prompt_into_chat_input(prompt)
-        set_chat_status("Текст вставлен в поле ввода")
+        set_chat_status(t("chat_inserted_to_input"))
         return "break"
 
     def send_to_chat(close_after: bool = True):
         prompt = build_prompt()
         if not prompt.strip():
-            messagebox.showwarning("Пустой текст", "Источник и комментарий пустые.", parent=win)
+            messagebox.showwarning(t("chat_empty_title"), t("chat_source_comment_empty"), parent=win)
             return "break"
         send_chat_message(prompt)
-        set_chat_status("Текст отправлен в чат")
+        set_chat_status(t("chat_sent_to_chat"))
         if close_after:
             close_editor()
         return "break"
@@ -470,13 +469,13 @@ def open_editor_text_window(event=None):
         """Улучшить текст из source через improve_for_tts (с авто-fallback на слабую модель)."""
         src = _get_widget_text(state.editor_source_text).strip()
         if not src:
-            messagebox.showwarning("Пустой текст", "Нет текста в верхнем окне.", parent=win)
+            messagebox.showwarning(t("chat_empty_title"), t("chat_no_text_top"), parent=win)
             return
 
         _set_button_state(improve_editor_btn, "disabled")
         if _widget_exists(state.editor_status_label):
             try:
-                state.editor_status_label.config(text="Улучшаю текст… (авто-fallback при лимите)")
+                state.editor_status_label.config(text=t("chat_improving_fallback"))
             except Exception:
                 pass
 
@@ -494,7 +493,7 @@ def open_editor_text_window(event=None):
                     if _widget_exists(state.editor_status_label):
                         try:
                             state.editor_status_label.config(
-                                text=f"Готово: {len(src)} → {len(result or '')} симв."
+                                text=t("chat_done_chars", len(src), len(result or ''))
                             )
                         except Exception:
                             pass
@@ -502,16 +501,16 @@ def open_editor_text_window(event=None):
                 _safe_after(0, _apply)
 
             except Exception as e:
-                msg = str(e) or "Неизвестная ошибка"
+                msg = str(e) or t("chat_unknown_error")
 
                 def _show_err():
                     _set_button_state(improve_editor_btn, "normal")
                     if _widget_exists(state.editor_status_label):
                         try:
-                            state.editor_status_label.config(text=f"Ошибка: {msg[:80]}")
+                            state.editor_status_label.config(text=t("chat_err_generic", msg[:80]))
                         except Exception:
                             pass
-                    messagebox.showerror("Ошибка AI", msg, parent=win)
+                    messagebox.showerror(t("chat_err_ai_title"), msg, parent=win)
 
                 _safe_after(0, _show_err)
 
@@ -519,7 +518,7 @@ def open_editor_text_window(event=None):
 
     improve_editor_btn = _make_button(
         btn_row,
-        "✨ Улучшить",
+        t("chat_btn_improve"),
         improve_source_text,
         bg=_c("BG_INPUT"),
         font_size=8,
@@ -531,7 +530,7 @@ def open_editor_text_window(event=None):
 
     _make_button(
         btn_row,
-        "➤ Отправить",
+        t("chat_btn_send"),
         lambda: send_to_chat(True),
         bg=_c("BG_ACTIVE"),
         font_size=8,
@@ -542,7 +541,7 @@ def open_editor_text_window(event=None):
 
     _make_button(
         btn_row,
-        "↪ В поле ввода",
+        t("chat_btn_to_input"),
         insert_into_chat_input,
         bg=_c("BG_INPUT"),
         font_size=8,
@@ -553,7 +552,7 @@ def open_editor_text_window(event=None):
 
     _make_button(
         btn_row,
-        "✕ Закрыть",
+        t("chat_btn_close_x"),
         close_editor,
         bg=_c("BG_INPUT"),
         font_size=8,
@@ -569,8 +568,10 @@ def open_editor_text_window(event=None):
         cmt = _get_widget_text(state.editor_comment_text)
         total = len((src or "").strip()) + len((cmt or "").strip())
         try:
+            # Формат вынесен в i18n (chat_stats_format), т.к. строка целиком
+            # показывается пользователю и должна переключаться вместе с языком.
             state.editor_stats_label.config(
-                text=f"Источник: {len(src)} симв. · Комментарий: {len(cmt)} симв. · Итого: {total} симв."
+                text=t("chat_stats_format", len(src), len(cmt), total)
             )
         except Exception:
             pass

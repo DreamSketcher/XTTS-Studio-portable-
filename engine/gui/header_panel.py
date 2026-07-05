@@ -41,7 +41,19 @@ def switch_ui_lang():
     new_lang = "en" if current == "ru" else "ru"
     ui_lang_var.set(new_lang)
     set_language(new_lang)
-    save_settings()
+    # ИСПРАВЛЕНО: раньше save_settings() вызывался без try/except — если он
+    # падал (реальная причина: опечатка _textbox._text_font_size вместо
+    # _textbox.text_font_size в settings_ui.py, уже исправлена отдельно),
+    # исключение прерывало switch_ui_lang() целиком, и всё, что ниже
+    # (обновление AI-подписей, chat_window.reapply_language(), финальный
+    # messagebox) не выполнялось — снаружи это выглядело как "кнопка
+    # перестала работать", хотя язык де-факто переключался в памяти.
+    # Оборачиваем в try/except по аналогии с остальными вызовами в этой
+    # функции, чтобы один сбой сохранения не ломал остальную логику.
+    try:
+        save_settings()
+    except Exception:
+        pass
     # Подписи AI-провайдеров вычисляются при импорте gpt_client —
     # обновляем их под новый язык сразу
     try:

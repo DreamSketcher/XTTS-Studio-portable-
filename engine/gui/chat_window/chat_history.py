@@ -9,6 +9,7 @@ import tkinter as tk
 
 import engine.gui.chat_window.state as state
 from engine.gui.chat_window.custom_widgets import CTK_AVAILABLE, CTkFrame, CTkLabel, CTkButton, TkFrame, TkLabel, TkButton, TkRawFrame
+from i18n import t
 
 def _refresh_session_list():
     if not _widget_exists(state.session_listbox):
@@ -18,7 +19,7 @@ def _refresh_session_list():
         state.session_listbox.delete(0, tk.END)
 
         for s in state._sessions:
-            title = s.get("title") or "Новый чат"
+            title = s.get("title") or t("chat_new_chat_title")
             count = len(s.get("messages", []))
             marker = "• " if s.get("id") == state._current_session_id else "  "
             label = f"{marker}{title}"
@@ -54,9 +55,9 @@ def _on_session_select(event=None):
         state._current_session_id = state._sessions[idx]["id"]
         _render_current_session()
         _refresh_session_list()
-        set_chat_status("Сессия загружена")
+        set_chat_status(t("chat_session_loaded"))
     except Exception as e:
-        set_chat_status(f"Ошибка переключения сессии: {e}")
+        set_chat_status(t("chat_err_switch_session", e))
 
 
 def new_chat():
@@ -73,7 +74,7 @@ def new_chat():
 
     _render_current_session()
     _refresh_session_list()
-    set_chat_status("Создан новый чат")
+    set_chat_status(t("chat_created_new"))
     _focus_chat_input()
 
 
@@ -81,11 +82,11 @@ def delete_current_chat():
 
 
     session = _get_current_session()
-    title = session.get("title") or "Новый чат"
+    title = session.get("title") or t("chat_new_chat_title")
 
     if not messagebox.askyesno(
-        "Удалить чат",
-        f"Удалить чат «{title}» без возможности восстановления?",
+        t("chat_delete_title"),
+        t("chat_delete_msg", title),
         parent=_get_app_parent() or state._root,
     ):
         return
@@ -104,7 +105,7 @@ def delete_current_chat():
     _save_sessions()
     _render_current_session()
     _refresh_session_list()
-    set_chat_status("Чат удалён")
+    set_chat_status(t("chat_deleted"))
     _focus_chat_input()
 
 
@@ -112,18 +113,18 @@ def clear_chat_history():
     session = _get_current_session()
 
     if not messagebox.askyesno(
-        "Очистить чат",
-        "Очистить сообщения текущего чата?",
+        t("chat_clear_title"),
+        t("chat_clear_msg"),
         parent=_get_app_parent() or state._root,
     ):
         return
 
     session["messages"] = []
-    session["title"] = "Новый чат"
+    session["title"] = t("chat_new_chat_title")
     _save_sessions()
     _render_current_session()
     _refresh_session_list()
-    set_chat_status("История текущего чата очищена")
+    set_chat_status(t("chat_clear_done"))
 
 
 

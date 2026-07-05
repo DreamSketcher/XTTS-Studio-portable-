@@ -9,6 +9,7 @@ import tkinter as tk
 
 import engine.gui.chat_window.state as state
 from engine.gui.chat_window.custom_widgets import CTK_AVAILABLE, CTkFrame, CTkLabel, CTkButton, TkFrame, TkLabel, TkButton, TkRawFrame
+from i18n import t
 
 def open_search(event=None):
 
@@ -33,7 +34,7 @@ def open_search(event=None):
     win = tk.Toplevel(state._chat_window)
     _set_dark_titlebar(win)
     state._search_window = win
-    win.title("Поиск по истории")
+    win.title(t("chat_search_win_title"))
     win.geometry("560x430")
     win.minsize(420, 300)
     win.configure(bg=_c("BG_DARK"))
@@ -42,7 +43,7 @@ def open_search(event=None):
 
     TkLabel(
         win,
-        text="Поиск по истории чатов",
+        text=t("chat_search_header"),
         bg=_c("BG_DARK"),
         fg=_c("TEXT_MAIN"),
         font=("Segoe UI", 12, "bold"),
@@ -50,7 +51,7 @@ def open_search(event=None):
 
     TkLabel(
         win,
-        text="Enter — поиск · Double click / Enter — открыть · Esc — закрыть · Ctrl+F — фокус в строке поиска",
+        text=t("chat_search_hint"),
         bg=_c("BG_DARK"),
         fg=_c("TEXT_MUTED"),
         font=("Segoe UI", 8),
@@ -92,7 +93,7 @@ def open_search(event=None):
 
     status = TkLabel(
         win,
-        text="Введите запрос",
+        text=t("chat_search_enter_query"),
         bg=_c("BG_DARK"),
         fg=_c("TEXT_DIM"),
         font=("Segoe UI", 9),
@@ -110,21 +111,21 @@ def open_search(event=None):
         state._search_results = []
 
         if not query:
-            status.config(text="Введите запрос")
+            status.config(text=t("chat_search_enter_query"))
             return "break"
 
         for s in state._sessions:
-            title = s.get("title", "Новый чат")
+            title = s.get("title", t("chat_new_chat_title"))
             for idx, m in enumerate(s.get("messages", [])):
                 content = m.get("content", "")
-                role = "Вы" if m.get("role") == "user" else "AI"
+                role = t("chat_author_you") if m.get("role") == "user" else "AI"
                 content_l = content.lower()
                 title_l = title.lower()
 
                 if query in content_l or query in title_l:
                     snippet = content.replace("\n", " ").strip()
                     if not snippet:
-                        snippet = f"Совпадение в названии: {title}"
+                        snippet = t("chat_search_match_title", title)
                     elif len(snippet) > 90:
                         pos = max(0, snippet.lower().find(query) - 20)
                         snippet = snippet[pos:pos + 90]
@@ -132,7 +133,7 @@ def open_search(event=None):
                     results.insert(tk.END, label)
                     state._search_results.append((s.get("id"), idx))
 
-        status.config(text=f"Найдено: {len(state._search_results)}")
+        status.config(text=t("chat_search_found", len(state._search_results)))
         return "break"
 
     def open_result(event=None):
@@ -153,7 +154,7 @@ def open_search(event=None):
         state._current_session_id = sid
         _render_current_session()
         _refresh_session_list()
-        set_chat_status("Открыт чат из результатов поиска")
+        set_chat_status(t("chat_search_opened"))
         _show_window(state._chat_window)
         close_search()
         return "break"

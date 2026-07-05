@@ -9,13 +9,14 @@ import tkinter as tk
 
 import engine.gui.chat_window.state as state
 from engine.gui.chat_window.custom_widgets import CTK_AVAILABLE, CTkFrame, CTkLabel, CTkButton, TkFrame, TkLabel, TkButton, TkRawFrame
+from i18n import t
 
 def export_current_chat():
     session = _get_current_session()
     messages = session.get("messages", [])
 
     if not messages:
-        messagebox.showinfo("Экспорт", "В текущем чате нет сообщений.", parent=_get_app_parent() or state._root)
+        messagebox.showinfo(t("chat_export_title"), t("chat_export_empty"), parent=_get_app_parent() or state._root)
         return
 
     safe_title = "".join(
@@ -29,7 +30,7 @@ def export_current_chat():
 
     path = filedialog.asksaveasfilename(
         parent=_get_app_parent() or state._root,
-        title="Экспорт текущего чата",
+        title=t("chat_export_dialog_title"),
         defaultextension=".txt",
         initialfile=default_name,
         filetypes=[("Text files", "*.txt"), ("All files", "*.*")],
@@ -41,7 +42,7 @@ def export_current_chat():
     try:
         lines = [
             "XTTS Studio AI Chat",
-            f"Title: {session.get('title', 'Новый чат')}",
+            f"Title: {session.get('title', t('chat_new_chat_title'))}",
             f"Created: {session.get('created', '')}",
             "",
             "-" * 60,
@@ -51,9 +52,9 @@ def export_current_chat():
         for m in messages:
             role = m.get("role", "assistant")
             role_name = {
-                "user": "Вы",
+                "user": t("chat_author_you"),
                 "assistant": "AI",
-                "system": "Система",
+                "system": t("chat_role_system"),
             }.get(role, role)
             ts = m.get("ts", "")
             content = m.get("content", "")
@@ -64,11 +65,11 @@ def export_current_chat():
         with open(path, "w", encoding="utf-8") as f:
             f.write("\n".join(lines))
 
-        set_chat_status(f"Чат экспортирован: {os.path.basename(path)}")
+        set_chat_status(t("chat_exported", os.path.basename(path)))
 
     except Exception as e:
-        messagebox.showerror("Ошибка экспорта", str(e), parent=_get_app_parent() or state._root)
-        set_chat_status("Ошибка экспорта")
+        messagebox.showerror(t("chat_export_err_title"), str(e), parent=_get_app_parent() or state._root)
+        set_chat_status(t("chat_export_err_title"))
 
 
 
