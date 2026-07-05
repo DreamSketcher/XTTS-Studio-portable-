@@ -12,7 +12,7 @@ import customtkinter as ctk
 from i18n import t
 
 from engine.settings_store import load_settings
-from engine.gui.colors import Colors
+from engine.gui.colors import Colors, scaled_font_size
 from engine.gui.tooltip import ToolTip
 from engine.gui.widgets import (CompatCTkFrame, CompatCTkLabel,
                                 CompatCTkButton, create_button)
@@ -83,7 +83,7 @@ def build_toolbar(text_card):
                              border_width=1, border_color=Colors.BORDER)
         # Group label
         CompatCTkLabel(grp, text=label_text, fg=Colors.TEXT_DIM, bg=bg_color,
-                       font=ctk.CTkFont(family="Segoe UI", size=10),
+                       font=ctk.CTkFont(family="Segoe UI", size=scaled_font_size(10)),
                        anchor="w").pack(fill="x", padx=6, pady=(3, 0))
         inner = CompatCTkFrame(grp, fg_color=bg_color, corner_radius=0)
         inner.pack(fill="x", padx=4, pady=(0, 4))
@@ -174,7 +174,7 @@ def build_toolbar(text_card):
         hover_color=Colors.BG_HOVER,
         border_width=0,
         corner_radius=10,
-        font=ctk.CTkFont(family="Segoe UI", size=_TB_FONT_SIZE + 2, weight="normal"),
+        font=ctk.CTkFont(family="Segoe UI", size=scaled_font_size(_TB_FONT_SIZE + 2), weight="normal"),
         height=28,
         width=0  # FIX: авто-ширина по тексту (см. _tb_button)
     )

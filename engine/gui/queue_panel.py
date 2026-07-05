@@ -5,7 +5,7 @@ import tkinter as tk
 
 from i18n import t
 
-from engine.gui.colors import Colors
+from engine.gui.colors import Colors, scaled_font_size
 from engine.gui.widgets import create_card, create_button
 from engine.gui.batch_panel import open_batch_window
 
@@ -64,14 +64,14 @@ def build_queue_card(left_panel):
         text=t("card_queue"),
         bg=Colors.BG_CARD,
         fg=Colors.TEXT_MAIN,
-        font=("Segoe UI", 9, "bold"),
+        font=("Segoe UI", scaled_font_size(9), "bold"),
         anchor="w"
     ).pack(fill="x", padx=10, pady=(7, 3))
     queue_listbox = tk.Listbox(
         queue_card, height=7,
         bg=Colors.BG_INPUT, fg=Colors.TEXT_MAIN,
         selectbackground=Colors.ACCENT, selectforeground=Colors.TEXT_MAIN,
-        relief="flat", highlightthickness=0, font=("Consolas", 8),
+        relief="flat", highlightthickness=0, font=("Consolas", scaled_font_size(8)),
         activestyle="none", exportselection=False
     )
     queue_listbox.pack(fill="x", padx=10, pady=(0, 4))

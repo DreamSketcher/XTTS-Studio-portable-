@@ -99,6 +99,14 @@ PROVIDERS = {
         ],
         "key_hint": "https://proxyapi.ru/cabinet/",
     },
+    "local": {
+        "label": "Локальная модель",
+        "url": None,
+        "default_model": "",
+        "fallback_model": "",
+        "models": [],
+        "key_hint": "",
+    },
 }
 
 DEFAULT_PROVIDER = "groq"
@@ -530,6 +538,17 @@ def apply_key_from_library(key_id: str) -> dict:
 
 def _call_api(messages: list, model: str = None, max_tokens: int = 2048, provider: str = None) -> str:
     provider = provider or get_provider()
+
+    if provider == "local":
+        from engine import local_llm_client
+        model = model or get_model(provider)
+        try:
+            return local_llm_client.call_local_llm(messages, model=model, max_tokens=max_tokens)
+        except RuntimeError as e:
+            # Сервер локальной модели недоступен/не запущен — трактуем как
+            # сетевую ошибку, чтобы _call_with_chain корректно перешёл дальше.
+            raise GroqNetworkError(str(e))
+
     info = get_provider_info(provider)
 
     key = get_api_key(provider)
@@ -625,12 +644,24 @@ class AIUnavailable(RuntimeError):
     pass
 
 
+def _provider_available(pid: str) -> bool:
+    """Есть ли у провайдера всё нужное для вызова: API-ключ (обычные)
+    или выбранная модель (local — своя проверка, без ключа)."""
+    if pid == "local":
+        try:
+            from engine import local_llm_client
+            return local_llm_client.get_active_model() is not None
+        except Exception:
+            return False
+    return bool(get_api_key(pid))
+
+
 def _build_provider_chain() -> list:
     chain = []
 
     # Сначала — выбранный пользователем провайдер
     active = get_provider()
-    if get_api_key(active):
+    if _provider_available(active):
         chain.append(active)
 
     # Затем остальные встроенные
@@ -639,7 +670,7 @@ def _build_provider_chain() -> list:
             continue
         if pid in get_hidden_providers():
             continue
-        if get_api_key(pid):
+        if _provider_available(pid):
             chain.append(pid)
 
     # Затем кастомные
@@ -647,7 +678,7 @@ def _build_provider_chain() -> list:
         pid = p.get("id")
         if pid == active:
             continue
-        if get_api_key(pid):
+        if _provider_available(pid):
             chain.append(pid)
 
     return chain

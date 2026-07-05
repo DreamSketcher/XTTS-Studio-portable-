@@ -20,6 +20,13 @@ import tkinter as tk
 from tkinter import filedialog, messagebox
 
 from engine.task_models import Task
+# ПРИМЕЧАНИЕ: colors.py — не тот "gui.py" (старый монолит), про который
+# говорит комментарий выше ("окно не импортирует ничего из gui.py напрямую").
+# Это отдельный лёгкий модуль без каких-либо tkinter-зависимостей (просто
+# данные палитры + функция масштаба шрифта), поэтому прямой импорт отсюда
+# не нарушает архитектурный принцип файла — сам Colors по-прежнему
+# приходит через init(), как и раньше.
+from engine.gui.colors import scaled_font_size
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -95,7 +102,7 @@ def open_batch_window():
         if not _files:
             tk.Label(scroll_inner, text="Выберите папку или файлы ",
                      bg=colors.BG_DARK, fg=colors.TEXT_DIM,
-                     font=("Segoe UI", 11)).pack(pady=60)
+                     font=("Segoe UI", scaled_font_size(11))).pack(pady=60)
             count_lbl.config(text="0 файлов")
             btn_run.config(state="disabled")
             return
@@ -108,14 +115,14 @@ def open_batch_window():
             row.pack(fill="x", padx=8, pady=2)
             tk.Label(row, text=f"{i+1}.", width=3,
                      bg=colors.BG_CARD, fg=colors.TEXT_DIM,
-                     font=("Consolas", 9)).pack(side="left", padx=(6, 2), pady=6)
+                     font=("Consolas", scaled_font_size(9))).pack(side="left", padx=(6, 2), pady=6)
             tk.Label(row, text=os.path.basename(src), anchor="w",
                      bg=colors.BG_CARD, fg=colors.TEXT_MAIN,
-                     font=("Segoe UI", 9)).pack(side="left", fill="x",
+                     font=("Segoe UI", scaled_font_size(9))).pack(side="left", fill="x",
                                                  expand=True, pady=6)
             tk.Label(row, textvariable=sv, width=14, anchor="e",
                      bg=colors.BG_CARD, fg=colors.TEXT_DIM,
-                     font=("Consolas", 8)).pack(side="right", padx=8)
+                     font=("Consolas", scaled_font_size(8))).pack(side="right", padx=8)
         count_lbl.config(text=f"{len(_files)} файлов")
         btn_run.config(state="normal")
 
@@ -240,7 +247,7 @@ def open_batch_window():
                       bg=colors.BG_INPUT, fg=colors.TEXT_MAIN,
                       activebackground=colors.BG_HOVER,
                       activeforeground=colors.TEXT_MAIN,
-                      relief="flat", bd=0, font=("Segoe UI", 9),
+                      relief="flat", bd=0, font=("Segoe UI", scaled_font_size(9)),
                       padx=10, pady=4, cursor="hand2")
         b.bind("<Enter>", lambda e: b.config(bg=colors.BG_HOVER))
         b.bind("<Leave>", lambda e: b.config(bg=colors.BG_INPUT))
@@ -252,7 +259,7 @@ def open_batch_window():
     btn_files.pack(side="left", padx=(0, 4))
     count_lbl = tk.Label(toolbar, text="0 файлов",
                          bg=colors.BG_CARD, fg=colors.TEXT_DIM,
-                         font=("Segoe UI", 9))
+                         font=("Segoe UI", scaled_font_size(9)))
     count_lbl.pack(side="left", padx=8)
 
     # текущий голос — справа в тулбаре
@@ -271,9 +278,9 @@ def open_batch_window():
     _update_batch_voice()
 
     tk.Label(toolbar, text="Голос:", bg=colors.BG_CARD, fg=colors.TEXT_DIM,
-             font=("Segoe UI", 8)).pack(side="right", padx=(0, 2))
+             font=("Segoe UI", scaled_font_size(8))).pack(side="right", padx=(0, 2))
     tk.Label(toolbar, textvariable=_batch_voice_var, bg=colors.BG_CARD,
-             fg=colors.ACCENT, font=("Segoe UI", 8),
+             fg=colors.ACCENT, font=("Segoe UI", scaled_font_size(8)),
              width=18, anchor="e").pack(side="right", padx=(0, 10))
 
     tk.Frame(win, bg=colors.BORDER, height=1).pack(fill="x")
@@ -308,16 +315,16 @@ def open_batch_window():
     bottom = tk.Frame(win, bg=colors.BG_CARD, pady=8)
     bottom.pack(fill="x", side="bottom")
     tk.Label(bottom, text="Пресет:", bg=colors.BG_CARD, fg=colors.TEXT_DIM,
-             font=("Segoe UI", 9)).pack(side="left", padx=(12, 4))
+             font=("Segoe UI", scaled_font_size(9))).pack(side="left", padx=(12, 4))
     tk.Label(bottom, textvariable=_quality_var, bg=colors.BG_CARD,
              fg=colors.TEXT_MAIN,
-             font=("Segoe UI", 9, "bold")).pack(side="left")
+             font=("Segoe UI", scaled_font_size(9), "bold")).pack(side="left")
     btn_run = tk.Button(
         bottom, text="🚀 Запустить пакет",
         command=_run_batch,
         bg=colors.BG_ACTIVE, fg=colors.TEXT_MAIN,
         activebackground="#2ea043", activeforeground=colors.TEXT_MAIN,
-        relief="flat", bd=0, font=("Segoe UI", 10, "bold"),
+        relief="flat", bd=0, font=("Segoe UI", scaled_font_size(10), "bold"),
         padx=18, pady=5, cursor="hand2", state="disabled"
     )
     btn_run.pack(side="right", padx=12)

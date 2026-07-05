@@ -8,7 +8,7 @@ from tkinter import messagebox
 from i18n import t
 
 from engine.history_store import HISTORY_PATH
-from engine.gui.colors import Colors
+from engine.gui.colors import Colors, scaled_font_size
 from engine.gui.textbox import set_textbox_content
 
 # Внедряется из main_window: root
@@ -36,7 +36,7 @@ def open_history():
     toolbar = tk.Frame(win, bg=Colors.BG_CARD, pady=6)
     toolbar.pack(fill="x")
     lbl_count = tk.Label(toolbar, text=t("entries_count", len(history)),
-                         bg=Colors.BG_CARD, fg=Colors.TEXT_DIM, font=("Segoe UI", 9))
+                         bg=Colors.BG_CARD, fg=Colors.TEXT_DIM, font=("Segoe UI", scaled_font_size(9)))
     lbl_count.pack(side="left", padx=12)
     def clear_history():
         if not messagebox.askyesno(t("ctx_clear"), t("dlg_clear_history"), parent=win):
@@ -55,7 +55,7 @@ def open_history():
         toolbar, text=t("btn_clear_history"), command=clear_history,
         bg=Colors.BG_INPUT, fg=Colors.TEXT_ERROR,
         activebackground=Colors.BG_DANGER, activeforeground=Colors.TEXT_MAIN,
-        relief="flat", bd=0, font=("Segoe UI", 9), padx=10, pady=4, cursor="hand2"
+        relief="flat", bd=0, font=("Segoe UI", scaled_font_size(9)), padx=10, pady=4, cursor="hand2"
     ).pack(side="right", padx=10)
     tk.Frame(win, bg=Colors.BORDER, height=1).pack(fill="x")
     list_outer = tk.Frame(win, bg=Colors.BG_DARK)
@@ -89,14 +89,14 @@ def open_history():
         left.pack(side="left", padx=12, pady=8)
         tk.Label(left, text=entry.get("date", ""),
                  bg=Colors.BG_CARD, fg=Colors.ACCENT,
-                 font=("Segoe UI", 8)).pack(anchor="w")
+                 font=("Segoe UI", scaled_font_size(8))).pack(anchor="w")
         tk.Label(left, text=f"🎤 {entry.get('voice', '?')}  ·  ⭐ {entry.get('quality', '?')}  ·  {entry.get('chunks', 0)} {t('chunks_word')}",
                  bg=Colors.BG_CARD, fg=Colors.TEXT_DIM,
-                 font=("Segoe UI", 8)).pack(anchor="w", pady=(2, 0))
+                 font=("Segoe UI", scaled_font_size(8))).pack(anchor="w", pady=(2, 0))
         text_preview = entry.get("text", "").replace("\n", " ")
         tk.Label(card, text=text_preview,
                  bg=Colors.BG_CARD, fg=Colors.TEXT_MAIN,
-                 font=("Segoe UI", 9), anchor="w",
+                 font=("Segoe UI", scaled_font_size(9)), anchor="w",
                  wraplength=480, justify="left").pack(side="left", fill="x",
                                                       expand=True, pady=8)
         def _reuse(t_text=entry.get("text", "")):
@@ -105,7 +105,7 @@ def open_history():
         tk.Button(
             card, text="↩ ", command=_reuse,
             bg=Colors.BG_INPUT, fg=Colors.TEXT_MAIN,
-            relief="flat", bd=0, font=("Segoe UI", 11),
+            relief="flat", bd=0, font=("Segoe UI", scaled_font_size(11)),
             padx=8, pady=4, cursor="hand2",
             activebackground=Colors.BG_HOVER
         ).pack(side="right", padx=8)
@@ -116,4 +116,4 @@ def open_history():
     if not history:
         tk.Label(scroll_inner, text=t("history_empty"),
                  bg=Colors.BG_DARK, fg=Colors.TEXT_DIM,
-                 font=("Segoe UI", 10)).pack(pady=40)
+                 font=("Segoe UI", scaled_font_size(10))).pack(pady=40)

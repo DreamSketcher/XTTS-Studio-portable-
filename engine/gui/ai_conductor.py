@@ -8,7 +8,7 @@ import tkinter as tk
 from i18n import t
 
 from engine.settings_store import SETTINGS_PATH, load_settings
-from engine.gui.colors import Colors
+from engine.gui.colors import Colors, scaled_font_size
 from engine.gui.widgets import create_button
 
 # Внедряются из main_window: root, quality_params, save_settings
@@ -19,16 +19,15 @@ save_settings = None
 # Кнопка 🤖 AI (создаётся в engine.gui.toolbar и внедряется сюда)
 ai_btn = None
 
-
 def init(**deps):
     """Внедрение зависимостей из engine.gui.main_window (имена совпадают с
     именами глобальных переменных исходного gui.py)."""
     globals().update(deps)
 
-
 AI_CONDUCTOR_WARNING_INTERVAL = 3
 _conductor_warning_session_resolved = False
 _conductor_warning_pending = False
+
 def open_ai_conductor_window():
     global _conductor_warning_session_resolved, _conductor_warning_pending
     if not _conductor_warning_session_resolved:
@@ -45,6 +44,7 @@ def open_ai_conductor_window():
             open_count % AI_CONDUCTOR_WARNING_INTERVAL == 1
         )
         _conductor_warning_session_resolved = True
+
     should_warn = _conductor_warning_pending
     if should_warn:
         _conductor_warning_pending = False
@@ -56,18 +56,18 @@ def open_ai_conductor_window():
             dlg.grab_set()
             tk.Label(dlg, text=t("conductor_experimental"),
                      bg=Colors.BG_CARD, fg="#d29922",
-                     font=("Segoe UI", 12, "bold")).pack(padx=24, pady=(20, 8))
+                     font=("Segoe UI", scaled_font_size(12), "bold")).pack(padx=24, pady=(20, 8))
             tk.Label(dlg,
                      text=t("conductor_warning_text"),
                      bg=Colors.BG_CARD, fg=Colors.TEXT_MAIN,
-                     font=("Segoe UI", 9), justify="center").pack(padx=24, pady=(0, 16))
+                     font=("Segoe UI", scaled_font_size(9)), justify="center").pack(padx=24, pady=(0, 16))
             dont_show_var = tk.BooleanVar(value=False)
             tk.Checkbutton(dlg, text=t("conductor_dont_show"),
                            variable=dont_show_var,
                            bg=Colors.BG_CARD, fg=Colors.TEXT_DIM,
                            selectcolor=Colors.BG_INPUT,
                            activebackground=Colors.BG_CARD,
-                           font=("Segoe UI", 9),
+                           font=("Segoe UI", scaled_font_size(9)),
                            cursor="hand2").pack(pady=(0, 12))
             def _close_warning():
                 if dont_show_var.get():
@@ -86,11 +86,13 @@ def open_ai_conductor_window():
             dlg.protocol("WM_DELETE_WINDOW", _close_warning)
         _show_conductor_warning()
         return
+
     win = tk.Toplevel(root)
     win.title(t("win_conductor_title"))
     win.resizable(False, False)
     win.configure(bg=Colors.BG_CARD)
     win.grab_set()
+
     # Состояние
     ai_enabled_var = tk.BooleanVar(value=False)
     ai_preset_var = tk.StringVar(value="Все пресеты")
@@ -99,14 +101,16 @@ def open_ai_conductor_window():
     ai_enabled_var.set(s.get("ai_conductor_enabled", False))
     ai_preset_var.set(s.get("ai_conductor_preset", "Все пресеты"))
     ai_rewrite_var.set(s.get("ai_rewrite_enabled", False))
+
     # Заголовок
     tk.Label(win, text=t("conductor_header"), bg=Colors.BG_CARD, fg=Colors.TEXT_MAIN,
-             font=("Segoe UI", 13, "bold")).pack(padx=20, pady=(18, 4))
+             font=("Segoe UI", scaled_font_size(13), "bold")).pack(padx=20, pady=(18, 4))
     tk.Label(win,
              text=t("conductor_desc"),
              bg=Colors.BG_CARD, fg=Colors.TEXT_DIM,
-             font=("Segoe UI", 9), justify="left").pack(padx=20, pady=(0, 6))
+             font=("Segoe UI", scaled_font_size(9)), justify="left").pack(padx=20, pady=(0, 6))
     tk.Frame(win, bg=Colors.BORDER, height=1).pack(fill="x", padx=20, pady=(0, 12))
+
     # Включить/выключить
     enable_row = tk.Frame(win, bg=Colors.BG_CARD)
     enable_row.pack(fill="x", padx=20, pady=(0, 10))
@@ -125,17 +129,20 @@ def open_ai_conductor_window():
         activebackground=Colors.BG_HOVER,
         activeforeground=Colors.TEXT_MAIN,
         relief="flat", bd=0,
-        font=("Segoe UI", 10, "bold"),
+        font=("Segoe UI", scaled_font_size(10), "bold"),
         cursor="hand2", padx=12, pady=5
     )
     toggle_btn_cond.pack(side="left")
+
     # Применять к пресету
     preset_row = tk.Frame(win, bg=Colors.BG_CARD)
     preset_row.pack(fill="x", padx=20, pady=(0, 6))
     tk.Label(preset_row, text=t("conductor_apply_to"), bg=Colors.BG_CARD,
-             fg=Colors.TEXT_MAIN, font=("Segoe UI", 9)).pack(side="left", padx=(0, 10))
+             fg=Colors.TEXT_MAIN, font=("Segoe UI", scaled_font_size(9))).pack(side="left", padx=(0, 10))
+
     tk.Frame(win, bg=Colors.BORDER, height=1).pack(fill="x", padx=20, pady=(10, 10))
     tk.Frame(win, bg=Colors.BORDER, height=1).pack(fill="x", padx=20, pady=(10, 10))
+
     # --- Уровень 2: Стиль текста ---
     rewrite_row = tk.Frame(win, bg=Colors.BG_CARD)
     rewrite_row.pack(fill="x", padx=20, pady=(0, 6))
@@ -156,22 +163,22 @@ def open_ai_conductor_window():
         activebackground=Colors.BG_HOVER,
         activeforeground=Colors.TEXT_MAIN,
         relief="flat", bd=0,
-        font=("Segoe UI", 10, "bold"),
+        font=("Segoe UI", scaled_font_size(10), "bold"),
         cursor="hand2", padx=12, pady=5
     )
     rewrite_btn.pack(side="left")
     tk.Label(win,
              text=t("conductor_rewrite_desc"),
              bg=Colors.BG_CARD, fg=Colors.TEXT_DIM,
-             font=("Segoe UI", 8), justify="left").pack(fill="x", padx=20, pady=(4, 6))
+             font=("Segoe UI", scaled_font_size(8)), justify="left").pack(fill="x", padx=20, pady=(4, 6))
     tk.Label(win, text=t("conductor_style_prompt"),
              bg=Colors.BG_CARD, fg=Colors.TEXT_MAIN,
-             font=("Segoe UI", 9), anchor="w").pack(fill="x", padx=20, pady=(0, 4))
+             font=("Segoe UI", scaled_font_size(9)), anchor="w").pack(fill="x", padx=20, pady=(0, 4))
     rewrite_text = tk.Text(
         win, height=4, width=48,
         bg=Colors.BG_INPUT, fg=Colors.TEXT_MAIN,
         insertbackground=Colors.TEXT_MAIN,
-        relief="flat", font=("Segoe UI", 9),
+        relief="flat", font=("Segoe UI", scaled_font_size(9)),
         highlightthickness=1, highlightbackground=Colors.BORDER,
         padx=8, pady=6, wrap="word"
     )
@@ -181,14 +188,15 @@ def open_ai_conductor_window():
         rewrite_text.insert("1.0", _saved_rewrite)
     if not ai_rewrite_var.get():
         rewrite_text.config(state="disabled")
+
     tk.Label(win, text=t("conductor_negative_prompt"),
              bg=Colors.BG_CARD, fg=Colors.TEXT_MAIN,
-             font=("Segoe UI", 9), anchor="w").pack(fill="x", padx=20, pady=(6, 4))
+             font=("Segoe UI", scaled_font_size(9)), anchor="w").pack(fill="x", padx=20, pady=(6, 4))
     rewrite_negative_text = tk.Text(
         win, height=2, width=48,
         bg=Colors.BG_INPUT, fg=Colors.TEXT_MAIN,
         insertbackground=Colors.TEXT_MAIN,
-        relief="flat", font=("Segoe UI", 9),
+        relief="flat", font=("Segoe UI", scaled_font_size(9)),
         highlightthickness=1, highlightbackground=Colors.BORDER,
         padx=8, pady=6, wrap="word"
     )
@@ -198,6 +206,7 @@ def open_ai_conductor_window():
         rewrite_negative_text.insert("1.0", _saved_rewrite_negative)
     if not ai_rewrite_var.get():
         rewrite_negative_text.config(state="disabled")
+
     preset_options = [t("conductor_all_presets")] + list(quality_params.keys())
     for opt in preset_options:
         tk.Radiobutton(
@@ -205,9 +214,11 @@ def open_ai_conductor_window():
             bg=Colors.BG_CARD, fg=Colors.TEXT_MAIN,
             selectcolor=Colors.BG_INPUT,
             activebackground=Colors.BG_CARD,
-            font=("Segoe UI", 9), cursor="hand2"
+            font=("Segoe UI", scaled_font_size(9)), cursor="hand2"
         ).pack(side="left", padx=(0, 8))
+
     tk.Frame(win, bg=Colors.BORDER, height=1).pack(fill="x", padx=20, pady=(10, 10))
+
     # Инфо о провайдере
     try:
         from engine.gpt_client import get_provider, get_model, PROVIDERS
@@ -218,7 +229,8 @@ def open_ai_conductor_window():
     except Exception:
         info_text = t("conductor_provider_none")
     tk.Label(win, text=info_text, bg=Colors.BG_CARD, fg=Colors.TEXT_DIM,
-             font=("Consolas", 8), justify="left").pack(padx=20, pady=(0, 12), anchor="w")
+             font=("Consolas", scaled_font_size(8)), justify="left").pack(padx=20, pady=(0, 12), anchor="w")
+
     # Кнопки
     btn_row = tk.Frame(win, bg=Colors.BG_CARD)
     btn_row.pack(fill="x", padx=20, pady=(0, 18))
@@ -248,8 +260,8 @@ def open_ai_conductor_window():
     create_button(btn_row, t("btn_save"), save_and_close, bg=Colors.BG_ACTIVE).pack(side="left", padx=(0, 10))
     create_button(btn_row, t("btn_cancel_dialog"), win.destroy, bg=Colors.BG_INPUT).pack(side="left")
 
-
 _ai_pulse_active = {"v": False, "state": False}
+
 def _ai_pulse_tick():
     if not _ai_pulse_active["v"]:
         return
@@ -259,6 +271,7 @@ def _ai_pulse_tick():
         fg=Colors.TEXT_MAIN
     )
     _ai_pulse_active["after_id"] = root.after(600, _ai_pulse_tick)
+
 def set_ai_pulse(active: bool):
     global _ai_pulse_active
     if not active:

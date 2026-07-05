@@ -2,7 +2,7 @@
 """engine/gui/tooltip.py — всплывающие подсказки (перенесено из gui.py: class ToolTip)."""
 import tkinter as tk
 
-from engine.gui.colors import Colors
+from engine.gui.colors import Colors, scaled_font_size
 
 class ToolTip:
     def __init__(self, widget, text: str):
@@ -30,7 +30,7 @@ class ToolTip:
             borderwidth=0,
             padx=10,
             pady=7,
-            font=("Segoe UI", 9),
+            font=("Segoe UI", scaled_font_size(9)),
             wraplength=280
         ).pack()
     def hide(self, event=None):

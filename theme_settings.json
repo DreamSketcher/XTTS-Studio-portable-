@@ -1,0 +1,63 @@
+{
+  "layout_hint_shown": true,
+  "custom_colors": {
+    "dark": {},
+    "light": {
+      "BG_CARD": "#f4ecd9",
+      "TEXT_ERROR": "#e6626b"
+    }
+  },
+  "font_base_size": 10,
+  "layout_preset": "classic",
+  "presets": {
+    "classic": {
+      "left_panel_width": 260,
+      "padding_main_x": 8,
+      "padding_main_y": 14,
+      "panel_spacing": 2,
+      "toggle_strip_width": 22,
+      "right_panel_left_pad": 8,
+      "textbox_padx": 10,
+      "textbox_pady": 7,
+      "toolbar_rows": 2,
+      "toolbar_button_size": 32,
+      "console_height": 140,
+      "statusbar_height": 24,
+      "item_spacing": 8,
+      "padding_inner": 5
+    },
+    "compact": {
+      "left_panel_width": 220,
+      "padding_main_x": 4,
+      "padding_main_y": 8,
+      "panel_spacing": 2,
+      "toggle_strip_width": 18,
+      "right_panel_left_pad": 4,
+      "textbox_padx": 6,
+      "textbox_pady": 4,
+      "toolbar_rows": 1,
+      "toolbar_button_size": 26,
+      "console_height": 100,
+      "statusbar_height": 20,
+      "item_spacing": 4,
+      "padding_inner": 3
+    },
+    "wide": {
+      "left_panel_width": 380,
+      "padding_main_x": 12,
+      "padding_main_y": 18,
+      "panel_spacing": 4,
+      "toggle_strip_width": 24,
+      "right_panel_left_pad": 10,
+      "textbox_padx": 14,
+      "textbox_pady": 10,
+      "toolbar_rows": 2,
+      "toolbar_button_size": 36,
+      "console_height": 180,
+      "statusbar_height": 28,
+      "item_spacing": 10,
+      "padding_inner": 8
+    }
+  },
+  "layout": "classic"
+}

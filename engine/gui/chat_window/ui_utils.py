@@ -15,6 +15,7 @@ def _c(name: str) -> str:
         return getattr(state._colors, name)
     return state._FALLBACK_COLORS.get(name, "#ffffff")
 
+
 def _safe_after(delay: int, callback):
     try:
         if state._root is not None:
@@ -23,17 +24,16 @@ def _safe_after(delay: int, callback):
         return None
     return None
 
+
 def _widget_exists(widget) -> bool:
     try:
         return widget is not None and bool(widget.winfo_exists())
     except Exception:
         return False
 
+
 def _set_dark_titlebar(win):
     try:
-        # Remove default Tkinter icon
-        win.iconbitmap('blank_icon.ico')
-        
         import ctypes
         win.update()
         hwnd = ctypes.windll.user32.GetParent(win.winfo_id())
@@ -51,10 +51,12 @@ def _set_dark_titlebar(win):
     except Exception:
         pass
 
+
 def _get_app_parent():
     if _widget_exists(state._chat_window):
         return state._chat_window
     return state._root
+
 
 def _show_window(win) -> bool:
     if not _widget_exists(win):
@@ -73,12 +75,19 @@ def _show_window(win) -> bool:
         pass
     return True
 
+
 def _call_and_break(func, *args, **kwargs):
     func(*args, **kwargs)
     return "break"
 
+
 def _ask_simple_text(parent, title: str, prompt: str, initial: str = "") -> str | None:
+    """
+    Лёгкое модальное окно с одним полем ввода. Возвращает строку или None при отмене.
+    Не использует tkinter.simpledialog, чтобы выдержать общую тёмную тему окон.
+    """
     result = {"value": None}
+
     dlg = tk.Toplevel(parent)
     _set_dark_titlebar(dlg)
     dlg.title(title)
@@ -87,6 +96,7 @@ def _ask_simple_text(parent, title: str, prompt: str, initial: str = "") -> str 
     dlg.transient(parent)
     dlg.grab_set()
     
+
     TkLabel(
         dlg, text=prompt, bg=_c("BG_CARD"), fg=_c("TEXT_MAIN"),
         font=("Segoe UI", 9), wraplength=320, justify="left",
@@ -123,9 +133,12 @@ def _ask_simple_text(parent, title: str, prompt: str, initial: str = "") -> str 
     entry.bind("<Return>", confirm)
     dlg.bind("<Escape>", cancel)
     dlg.protocol("WM_DELETE_WINDOW", cancel)
+
     entry.focus_set()
     dlg.wait_window()
+
     return result["value"]
+
 
 def _make_button(parent, text: str, command=None, **kwargs):
     if state._create_button is not None:
@@ -142,6 +155,8 @@ def _make_button(parent, text: str, command=None, **kwargs):
                 continue
             except Exception:
                 break
+    # fallback — создаём TkButton напрямую
+    ...
 
     bg = kwargs.get("bg", _c("BG_CARD"))
     fg = kwargs.get("fg", _c("TEXT_MAIN"))
@@ -173,6 +188,7 @@ def _make_button(parent, text: str, command=None, **kwargs):
             pass
     return btn
 
+
 def _set_button_text(button, text: str):
     if not _widget_exists(button):
         return
@@ -184,6 +200,7 @@ def _set_button_text(button, text: str):
         except Exception:
             pass
 
+
 def _set_button_state(button, state: str):
     if not _widget_exists(button):
         return
@@ -191,6 +208,7 @@ def _set_button_state(button, state: str):
         button.config(state=state)
     except Exception:
         pass
+
 
 def _is_descendant(widget, ancestor) -> bool:
     try:
@@ -201,6 +219,7 @@ def _is_descendant(widget, ancestor) -> bool:
     except Exception:
         return False
     return False
+
 
 def _get_widget_text(widget) -> str:
     if not _widget_exists(widget):
@@ -213,6 +232,7 @@ def _get_widget_text(widget) -> str:
     except Exception:
         return ""
     return ""
+
 
 def _select_all_widget(widget):
     if not _widget_exists(widget):
@@ -231,13 +251,16 @@ def _select_all_widget(widget):
         pass
     return "break"
 
+
 def _paste_clipboard_into_widget(widget):
     if not _widget_exists(widget):
         return "break"
+
     try:
         text = (_get_app_parent() or state._root).clipboard_get()
     except Exception:
         return "break"
+
     try:
         if isinstance(widget, tk.Text):
             try:
@@ -253,11 +276,14 @@ def _paste_clipboard_into_widget(widget):
             widget.insert(tk.INSERT, text)
     except Exception:
         pass
+
     try:
         widget.event_generate("<<Modified>>")
     except Exception:
         pass
+
     return "break"
+
 
 def _copy_to_clipboard(text: str):
     try:
@@ -266,6 +292,26 @@ def _copy_to_clipboard(text: str):
             return
         target.clipboard_clear()
         target.clipboard_append(text)
-        # Note: set_chat_status needs to be defined or imported
+        set_chat_status("Сообщение скопировано")
     except Exception as e:
-        print(f"Clipboard error: {e}")
+        set_chat_status(f"Не удалось скопировать: {e}")
+
+
+
+# Inter-module imports
+from engine.gui.chat_window.engine.utils import _now_ts, _now_full, _approx_tokens, _ai_display_name, _build_editor_compose_prompt
+from engine.gui.chat_window.engine.sessions import _load_sessions, _save_sessions, _enforce_limits, _create_session_dict, _get_current_session, _update_session_title_if_needed, _messages_for_api
+from engine.gui.chat_window.engine.generation import _run_generation
+from engine.gui.chat_window.hotkeys import _event_has_ctrl, _event_has_shift, _match_hotkey, _on_ctrl_keypress, _handle_text_ctrl, _handle_window_ctrl, _bind_window_hotkeys, _bind_text_hotkeys
+from engine.gui.chat_window.placeholders import _create_placeholder_overlay, _sync_text_placeholder, _refresh_placeholder_state, _update_input_placeholder_text
+from engine.gui.chat_window.chat_scroll import _is_chat_near_bottom, _scroll_chat_to_bottom, _show_new_message_indicator, _hide_new_message_indicator, _scroll_to_new_message, _chat_mousewheel
+from engine.gui.chat_window.chat_history import _refresh_session_list, _on_session_select, new_chat, delete_current_chat, clear_chat_history
+from engine.gui.chat_window.chat_messages import _add_message_bubble, _add_system_message, _resize_bubble_text, content_lines_estimate, _lighten_color, _selected_bubble_frame_get, _select_bubble, _on_bubble_text_click, _show_bubble_context_menu, _update_wraplengths, _render_current_session, _add_empty_state, _destroy_empty_state_if_any, _clear_messages_ui
+from engine.gui.chat_window.chat_input import _focus_chat_input, _reset_editor_mode, _input_has_placeholder, _set_input_placeholder, _clear_input_placeholder, _get_input_text, _clear_input_text, _resize_input, _update_token_counter, _paste_into_input, _on_input_focus_in, _on_input_focus_out, _on_input_key_release, _on_enter, _submit_prompt, send_chat_message, _insert_prompt_into_chat_input
+from engine.gui.chat_window.chat_typing import _show_typing, _animate_typing, _hide_typing
+from engine.gui.chat_window.chat_actions import _send_to_main_editor, _stop_generation, _set_generation_ui, improve_text_with_gpt, paste_from_editor, set_chat_status, append_chat_message
+from engine.gui.chat_window.chat_export import export_current_chat
+from engine.gui.chat_window.chat_search import open_search
+from engine.gui.chat_window.chat_settings import open_gpt_settings
+from engine.gui.chat_window.chat_editor import _show_editor_preview, _hide_editor_preview, open_editor_text_window, _get_selected_or_all_text, _show_editor_window
+from engine.gui.chat_window import init, open_chat_window

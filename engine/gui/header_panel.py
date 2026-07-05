@@ -7,7 +7,7 @@ from tkinter import messagebox
 
 from i18n import t, set_language
 
-from engine.gui.colors import Colors
+from engine.gui.colors import Colors, scaled_font_size
 from engine.gui.tooltip import ToolTip
 from engine.gui.widgets import CompatCTkFrame, create_button
 from engine.gui.updates import check_and_update
@@ -76,14 +76,14 @@ def build_header(left_panel):
         text=t("app_title"),
         bg=Colors.BG_DARK,
         fg=Colors.TEXT_MAIN,
-        font=("Segoe UI", 16, "bold")
+        font=("Segoe UI", scaled_font_size(16), "bold")
     ).pack(side="left", padx=(4, 0))
     tk.Label(
         header_frame,
         text=t("app_author"),
         bg=Colors.BG_DARK,
         fg=Colors.TEXT_DIM,
-        font=("Segoe UI", 9)
+        font=("Segoe UI", scaled_font_size(9))
     ).pack(anchor="w")
     header_btn_row = tk.Frame(header_frame, bg=Colors.BG_DARK)
     header_btn_row.pack(anchor="w", pady=(4, 0))

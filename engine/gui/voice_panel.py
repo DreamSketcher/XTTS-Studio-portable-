@@ -9,7 +9,7 @@ import pygame
 
 from i18n import t
 
-from engine.gui.colors import Colors
+from engine.gui.colors import Colors, scaled_font_size
 from engine.gui.tooltip import ToolTip
 from engine.gui.widgets import create_card, create_button, create_entry
 from engine.gui.statusbar import set_status
@@ -98,7 +98,7 @@ def build_voice_cards(left_panel):
     ref_btn_row.pack(fill="x", padx=10, pady=(0, 7))
     create_button(ref_btn_row, t("btn_pick_ref"), pick_reference, bg=Colors.BG_INPUT).pack(side="left")
     tk.Label(ref_card, text=t("ref_info"),
-             bg=Colors.BG_CARD, fg=Colors.TEXT_DIM, font=("Consolas", 8), justify="left", anchor="w"
+             bg=Colors.BG_CARD, fg=Colors.TEXT_DIM, font=("Consolas", scaled_font_size(8)), justify="left", anchor="w"
              ).pack(fill="x", padx=10, pady=(3, 7))
     # Voice library
     voice_card = create_card(left_panel, "")
@@ -108,7 +108,7 @@ def build_voice_cards(left_panel):
     tk.Label(
         voice_header, text=t("card_voice_lib"),
         bg=Colors.BG_CARD, fg=Colors.TEXT_MAIN,
-        font=("Segoe UI", 9, "bold"), anchor="w"
+        font=("Segoe UI", scaled_font_size(9), "bold"), anchor="w"
     ).pack(side="left")
     def _voice_display_name() -> str:
         p = ref_var.get().strip()
@@ -125,7 +125,7 @@ def build_voice_cards(left_panel):
     tk.Label(
         voice_header, textvariable=_voice_label_var,
         bg=Colors.BG_CARD, fg=Colors.TEXT_DIM,
-        font=("Segoe UI", 7), anchor="e",
+        font=("Segoe UI", scaled_font_size(7)), anchor="e",
         width=16
     ).pack(side="right")
     tk.Frame(voice_card, bg=Colors.BORDER, height=1).pack(fill="x", padx=10, pady=(0, 4))
@@ -141,7 +141,7 @@ def build_voice_cards(left_panel):
         bg=Colors.BG_INPUT, fg=Colors.TEXT_MAIN,
         selectbackground=Colors.ACCENT, selectforeground=Colors.TEXT_MAIN,
         relief="flat", highlightthickness=0,
-        font=("Segoe UI", 9),
+        font=("Segoe UI", scaled_font_size(9)),
         activestyle="none", exportselection=False
     )
     voice_listbox.pack(fill="both")

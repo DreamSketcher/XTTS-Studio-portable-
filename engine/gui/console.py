@@ -7,7 +7,7 @@ import tkinter as tk
 
 from i18n import t
 
-from engine.gui.colors import Colors
+from engine.gui.colors import Colors, scaled_font_size
 from engine.gui.widgets import create_card
 
 # Внедряются из main_window: root, console_visible
@@ -120,7 +120,7 @@ def build_console_card(left_panel, queue_card):
         console_header, text=t("console_show"), command=toggle_console,
         bg=Colors.BG_INPUT, fg=Colors.TEXT_MAIN,
         activebackground=Colors.BG_HOVER, activeforeground=Colors.TEXT_MAIN,
-        relief="flat", borderwidth=0, font=("Segoe UI", 8),
+        relief="flat", borderwidth=0, font=("Segoe UI", scaled_font_size(8)),
         cursor="hand2", padx=5, pady=1
     )
     toggle_btn.bind("<Enter>", lambda e: toggle_btn.config(bg=Colors.BG_HOVER))
@@ -130,7 +130,7 @@ def build_console_card(left_panel, queue_card):
         console_header, text="🗑", command=clear_console,
         bg=Colors.BG_INPUT, fg=Colors.TEXT_MAIN,
         activebackground=Colors.BG_HOVER, activeforeground=Colors.TEXT_MAIN,
-        relief="flat", borderwidth=0, font=("Segoe UI", 8),
+        relief="flat", borderwidth=0, font=("Segoe UI", scaled_font_size(8)),
         cursor="hand2", padx=5, pady=1
     )
     _clr_btn.bind("<Enter>", lambda e: _clr_btn.config(bg=Colors.BG_HOVER))
@@ -141,7 +141,7 @@ def build_console_card(left_panel, queue_card):
     console_text = tk.Text(
         console_inner, height=12,
         bg=Colors.BG_DARK, fg=Colors.TEXT_MAIN,
-        font=("Consolas", 9,), state="normal", wrap="word", cursor="arrow",
+        font=("Consolas", scaled_font_size(9)), state="normal", wrap="word", cursor="arrow",
         relief="flat", highlightthickness=1, highlightbackground=Colors.BORDER,
         padx=10, pady=10
     )

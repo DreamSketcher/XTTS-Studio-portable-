@@ -9,6 +9,7 @@
     "engine/chat_window.py",
     "engine/chunker.py",
     "engine/de_esser.py",
+    "engine/env_setup.py",
     "engine/gpt_client.py",
     "engine/gui/__init__.py",
     "engine/gui/ai_conductor.py",
@@ -68,6 +69,7 @@
     "engine/gui/word_replacer_panel.py",
     "engine/gui/word_replacer_window.py",
     "engine/history_store.py",
+    "engine/local_env_section.py",
     "engine/local_llm_client.py",
     "engine/logging_utils.py",
     "engine/normalizer.py",
@@ -94,7 +96,8 @@
     "engine/word_replacer_window.py",
     "gui.py",
     "i18n.py",
-    "settings.json"
+    "settings.json",
+    "theme_settings.json"
   ],
   "changelog": "- Полностью переработана архитектура проекта\n- Новый модульный интерфейс\n- Добавлена локализация RU/EN с живым переключением\n- Добавлены светлая и тёмная темы\n- Добавлена выдвижная боковая панель\n- Добавлен регулятор размера текста\n- Улучшена диагностика запуска XTTS_DIAG.bat\n- Переработано окно настроек AI-провайдера\n- Улучшен AI Fallback\n- Улучшен детектор слов\n- Исправлены ошибки и проведена оптимизация"
 }

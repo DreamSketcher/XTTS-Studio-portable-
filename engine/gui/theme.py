@@ -12,7 +12,7 @@ import os
 
 import customtkinter as ctk
 
-from engine.gui.colors import apply_palette
+from engine.gui.colors import apply_palette, load_font_scale_from_settings
 
 _SETTINGS_PATH = os.path.join(
     os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
@@ -73,6 +73,12 @@ def apply_theme():
     """Начальная настройка темы (вызывается до создания root)."""
     theme = load_saved_theme()
     apply_palette(theme)
+    # Загружаем сохранённый базовый размер шрифта интерфейса (не относится
+    # к textbox-редактору — у него свой отдельный механизм). Делается здесь,
+    # рядом с apply_palette(), т.к. оба должны быть готовы ДО построения
+    # первого окна — иначе первая партия виджетов отрисуется с дефолтным
+    # размером шрифта, а не с пользовательским.
+    load_font_scale_from_settings()
     ctk.set_appearance_mode("dark" if theme == "dark" else "light")
     ctk.set_default_color_theme("blue")
 

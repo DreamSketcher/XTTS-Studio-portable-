@@ -577,9 +577,7 @@ def open_chat_window():
                 pass
             
         except Exception as e:
-            import traceback
-            print('Error closing chat window:')
-            traceback.print_exc()
+            print(f'Error closing chat window: {e}')
         finally:
             try:
                 win.destroy()

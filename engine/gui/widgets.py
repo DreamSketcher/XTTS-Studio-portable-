@@ -5,7 +5,7 @@ import tkinter as tk
 
 import customtkinter as ctk
 
-from engine.gui.colors import Colors
+from engine.gui.colors import Colors, scaled_font_size
 
 class CompatCTkButton(ctk.CTkButton):
     def __init__(self, *args, bg=None, fg=None, activebackground=None,
@@ -86,7 +86,7 @@ def create_card(parent, title="", bg=None, padx=10, pady=10):
             text=title,
             bg=bg,
             fg=Colors.TEXT_MAIN,
-            font=("Segoe UI", 11, "bold"),
+            font=("Segoe UI", scaled_font_size(11), "bold"),
             anchor="w"
         ).pack(fill="x", padx=padx, pady=(pady, 5))
     return card
@@ -109,7 +109,13 @@ def create_button(parent, text, command, bg=None, fg=None,
         hover_color=active_bg,
         border_width=0,
         corner_radius=10,
-        font=ctk.CTkFont(family="Segoe UI", size=font_size + 2, weight="bold" if is_bold else "normal"),
+        # ИСПРАВЛЕНО: font_size здесь — центральная фабрика кнопок для
+        # практически всех панелей проекта (toolbar/панели вызывают
+        # create_button() с собственным font_size). Раньше size=font_size+2
+        # не учитывал пользовательский масштаб шрифта из Конструктора темы —
+        # теперь оборачиваем в scaled_font_size(), одна правка масштабирует
+        # шрифт кнопок сразу во всём приложении.
+        font=ctk.CTkFont(family="Segoe UI", size=scaled_font_size(font_size + 2), weight="bold" if is_bold else "normal"),
         height=max(28, int(height * 28) if height else 28)
     )
     if width:
@@ -127,7 +133,7 @@ def create_entry(parent, textvariable, bg=None, fg=None):
         bg=bg, fg=fg,
         insertbackground=Colors.TEXT_MAIN,
         relief="flat", borderwidth=0,
-        font=("Segoe UI", 10),
+        font=("Segoe UI", scaled_font_size(10)),
         highlightthickness=1,
         highlightbackground=Colors.BORDER,
         highlightcolor=Colors.ACCENT

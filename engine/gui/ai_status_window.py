@@ -4,7 +4,7 @@ import tkinter as tk
 
 from i18n import t
 
-from engine.gui.colors import Colors
+from engine.gui.colors import Colors, scaled_font_size
 from engine.gui.widgets import create_button
 
 # Внедряется из main_window: root
@@ -35,21 +35,21 @@ def open_ai_status_window():
     header.pack(fill="x")
     tk.Label(
         header, text=t("ai_xtts_device", device_str),
-        bg=Colors.BG_CARD, fg=Colors.TEXT_DIM, font=("Segoe UI", 9)
+        bg=Colors.BG_CARD, fg=Colors.TEXT_DIM, font=("Segoe UI", scaled_font_size(9))
     ).pack(anchor="w", padx=14)
     active_info = next((p for p in diag["providers"] if p["id"] == diag["active"]), None)
     active_label = active_info["label"] if active_info else diag["active"]
     active_key_ok = active_info["has_key"] if active_info else False
     tk.Label(
         header, text=t("ai_active_provider", active_label),
-        bg=Colors.BG_CARD, fg=Colors.TEXT_MAIN, font=("Segoe UI", 11, "bold")
+        bg=Colors.BG_CARD, fg=Colors.TEXT_MAIN, font=("Segoe UI", scaled_font_size(11), "bold")
     ).pack(anchor="w", padx=14, pady=(4, 0))
     tk.Label(
         header,
         text=(t("ai_key_set") if active_key_ok else t("ai_key_missing")),
         bg=Colors.BG_CARD,
         fg=Colors.TEXT_SUCCESS if active_key_ok else Colors.TEXT_ERROR,
-        font=("Segoe UI", 9)
+        font=("Segoe UI", scaled_font_size(9))
     ).pack(anchor="w", padx=14, pady=(2, 0))
     if diag["chain_order"]:
         chain_labels = []
@@ -61,7 +61,7 @@ def open_ai_status_window():
         chain_text = t("ai_fallback_empty")
     tk.Label(
         header, text=t("ai_fallback_order", chain_text),
-        bg=Colors.BG_CARD, fg=Colors.ACCENT, font=("Segoe UI", 9),
+        bg=Colors.BG_CARD, fg=Colors.ACCENT, font=("Segoe UI", scaled_font_size(9)),
         wraplength=520, justify="left"
     ).pack(anchor="w", padx=14, pady=(6, 10))
     tk.Frame(win, bg=Colors.BORDER, height=1).pack(fill="x")
@@ -98,17 +98,17 @@ def open_ai_status_window():
         top_row = tk.Frame(card, bg=Colors.BG_CARD)
         top_row.pack(fill="x", padx=10, pady=(8, 2))
         tk.Label(top_row, text=f"{icon} {entry['label']}", bg=Colors.BG_CARD,
-                 fg=Colors.TEXT_MAIN, font=("Segoe UI", 10, "bold"),
+                 fg=Colors.TEXT_MAIN, font=("Segoe UI", scaled_font_size(10), "bold"),
                  anchor="w").pack(side="left")
         tk.Label(top_row, text=t("ai_builtin") if entry["builtin"] else t("ai_custom"),
                  bg=Colors.BG_CARD, fg=Colors.TEXT_DIM,
-                 font=("Segoe UI", 8), anchor="e").pack(side="right")
+                 font=("Segoe UI", scaled_font_size(8)), anchor="e").pack(side="right")
         tk.Label(card, text=entry["reason"], bg=Colors.BG_CARD, fg=color,
-                 font=("Segoe UI", 9), anchor="w", justify="left",
+                 font=("Segoe UI", scaled_font_size(9)), anchor="w", justify="left",
                  wraplength=480).pack(fill="x", padx=10, pady=(0, 2))
         if entry["model"]:
             tk.Label(card, text=t("ai_model_label", entry['model']), bg=Colors.BG_CARD,
-                     fg=Colors.TEXT_DIM, font=("Consolas", 8),
+                     fg=Colors.TEXT_DIM, font=("Consolas", scaled_font_size(8)),
                      anchor="w").pack(fill="x", padx=10, pady=(0, 8))
         else:
             tk.Frame(card, bg=Colors.BG_CARD, height=4).pack()

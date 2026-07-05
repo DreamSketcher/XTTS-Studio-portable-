@@ -88,11 +88,119 @@ class Colors:
     pass
 
 
+# ── Глобальный масштаб размера шрифта ──
+# Пользователь выбирает БАЗОВЫЙ размер (в pt) через слайдер в Конструкторе
+# темы. Все места в проекте, где сейчас захардкожен конкретный размер
+# шрифта (font=("Segoe UI", N, ...)), должны при построении окна
+# вызывать scaled_font_size(N) вместо голого N — тогда N масштабируется
+# пропорционально относительно исходного "дизайнерского" размера
+# BASE_FONT_SIZE_DEFAULT (10pt — это historically самый частый размер
+# текста в проекте, см. fonts.size_main в theme_manager.DEFAULT_THEME).
+#
+# Пример: пользователь поставил базовый размер 14 (вместо 10) — тогда
+# scale = 14/10 = 1.4, и любой хардкод font=(..., 9) отрисуется как
+# round(9*1.4) = 13pt, font=(..., 16) — как round(16*1.4) = 22pt и т.д.
+# Так сохраняется визуальная иерархия (заголовки крупнее подписей) при
+# любом выбранном базовом размере.
+#
+# ИСКЛЮЧЕНИЕ (по требованию): основное текстовое поле ввода/редактор
+# (engine/gui/textbox.py, виджет text_box) НЕ участвует в этом
+# масштабировании — у него уже есть собственный независимый механизм
+# размера шрифта (text_font_size, FONT_SIZE_MIN/MAX, слайдер "Aa").
+BASE_FONT_SIZE_DEFAULT = 10
+MIN_SCALED_FONT_SIZE = 6
+MAX_SCALED_FONT_SIZE = 48
+
+_font_scale_state = {"base_size": BASE_FONT_SIZE_DEFAULT}
+
+
+def get_font_base_size() -> int:
+    """Текущий выбранный пользователем базовый размер шрифта (pt)."""
+    return _font_scale_state["base_size"]
+
+
+def get_font_scale() -> float:
+    """Коэффициент масштаба = текущий_базовый / дефолтный_базовый (10pt)."""
+    return _font_scale_state["base_size"] / BASE_FONT_SIZE_DEFAULT
+
+
+def set_font_base_size(base_size: int) -> None:
+    """Устанавливает новый базовый размер шрифта (без сохранения в JSON —
+    сохранение делает theme_manager.set_font_base_size(), эта функция
+    только держит значение в памяти для scaled_font_size())."""
+    try:
+        base_size = int(base_size)
+    except Exception:
+        return
+    base_size = max(6, min(24, base_size))
+    _font_scale_state["base_size"] = base_size
+
+
+def scaled_font_size(design_size: int) -> int:
+    """Возвращает design_size, промасштабированный текущим коэффициентом
+    (см. get_font_scale()), округлённый и ограниченный разумными
+    пределами (MIN/MAX_SCALED_FONT_SIZE), чтобы экстремальные пользовательские
+    значения не ломали раскладку окон (слишком мелкий/огромный шрифт)."""
+    try:
+        scale = get_font_scale()
+        result = round(design_size * scale)
+        return max(MIN_SCALED_FONT_SIZE, min(MAX_SCALED_FONT_SIZE, result))
+    except Exception:
+        return design_size
+
+
+def load_font_scale_from_settings() -> None:
+    """Читает сохранённый базовый размер шрифта из theme_settings.json
+    (через theme_manager) и применяет его к текущему состоянию масштаба.
+    Вызывается при старте приложения (apply_theme() в theme.py) — аналогично
+    apply_palette(). try/except — сбой чтения не должен ронять приложение,
+    в худшем случае останется дефолтный размер (без масштабирования)."""
+    try:
+        from engine.gui import theme_manager
+        base_size = theme_manager.get_font_base_size()
+        set_font_base_size(base_size)
+    except Exception:
+        pass
+
+
+
 def apply_palette(theme: str = "dark") -> None:
-    """Мутирует атрибуты Colors под выбранную тему ('dark' | 'light')."""
+    """Мутирует атрибуты Colors под выбранную тему ('dark' | 'light').
+
+    ДОПОЛНЕНО: после применения встроенной палитры (DARK_PALETTE/
+    LIGHT_PALETTE) поверх неё накладываются пользовательские
+    переопределения из theme_settings.json (theme_manager.get_custom_colors),
+    если они есть. Это делает окно "Конструктор темы" реально влияющим на
+    внешний вид приложения — до этой правки секция цветов в конструкторе
+    темы сохраняла значения в JSON, которые никто и никогда не читал
+    обратно в Colors (см. историю комментариев в theme_manager.py).
+
+    Импорт theme_manager делается ЛОКАЛЬНО внутри функции (а не в начале
+    файла), чтобы избежать циклического импорта: theme_manager.py в этом
+    проекте ни на что из engine.gui не ссылается, но colors.py — базовый
+    модуль, который должен оставаться независимым от остального GUI на
+    уровне импортов верхнего файла (стиль проекта: engine/ = 0 импортов
+    tkinter, colors.py — один из первых модулей, что импортируется).
+    """
     palette = PALETTES.get(theme, DARK_PALETTE)
     for key, value in palette.items():
         setattr(Colors, key, value)
+
+    # Наложение пользовательских переопределений (см. docstring выше).
+    # try/except — чтобы сбой чтения JSON никогда не мешал запуску
+    # приложения: в худшем случае просто останется встроенная палитра.
+    try:
+        from engine.gui import theme_manager
+        custom = theme_manager.get_custom_colors(theme)
+        for key, value in custom.items():
+            # Применяем только к уже существующим атрибутам палитры —
+            # опечатка в имени ключа (или устаревший ключ из старой
+            # версии конструктора темы) не создаст "мусорный" атрибут
+            # Colors, который нигде не используется.
+            if hasattr(Colors, key):
+                setattr(Colors, key, value)
+    except Exception:
+        pass
 
 
 # Инициализация по умолчанию — тёмная (как в исходном gui.py)

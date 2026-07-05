@@ -9,6 +9,9 @@ import tkinter as tk
 
 import engine.gui.chat_window.state as state
 from engine.gui.chat_window.custom_widgets import CTK_AVAILABLE, CTkFrame, CTkLabel, CTkButton, TkFrame, TkLabel, TkButton, TkRawFrame
+# ПРИМЕЧАНИЕ: colors.py — лёгкий модуль без tkinter-зависимостей (палитра +
+# функция масштаба шрифта), безопасен для прямого импорта в любом GUI-файле.
+from engine.gui.colors import scaled_font_size
 
 def init(root, colors, create_button_fn, get_text_fn, set_text_fn, placeholder, use_gpt_var=None):
 
@@ -65,7 +68,7 @@ def open_chat_window():
         text="XTTS AI",
         bg=_c("BG_CARD"),
         fg=_c("TEXT_MAIN"),
-        font=("Segoe UI", 13, "bold"),
+        font=("Segoe UI", scaled_font_size(13), "bold"),
         anchor="w",
     ).pack(fill="x", padx=12, pady=(14, 8))
 
@@ -98,12 +101,25 @@ def open_chat_window():
         text="Поиск: Ctrl+F",
         bg=_c("BG_CARD"),
         fg=_c("TEXT_MUTED"),
-        font=("Segoe UI", 8),
+        font=("Segoe UI", scaled_font_size(8)),
         anchor="w",
     ).pack(fill="x", padx=12, pady=(0, 8))
 
-    list_outer = TkFrame(sidebar, bg=_c("BORDER"), padx=1, pady=1)
-    list_outer.pack(fill="both", expand=True, padx=10, pady=(0, 10))
+    # ИСПРАВЛЕНО: TkFrame(..., padx=1, pady=1, ...) не создавал видимой
+    # тонкой рамки (тот же баг, что был найден в theme_settings.py —
+    # CTkFrame/TkRawFrame в custom_widgets.py принимают padx/pady, но либо
+    # тихо игнорируют их (CTkFrame), либо явно вырезают через kwargs.pop()
+    # (TkRawFrame) — см. подробный комментарий там). Раньше list_outer
+    # должен был показывать 1px рамку цвета BORDER вокруг списка чатов
+    # (bg=BORDER снаружи + Listbox без отступа внутри вплотную), но эффект
+    # рамки полностью терялся. Решение — тот же паттерн внешний/внутренний
+    # контейнер: внешний только красит фон в BORDER, внутренний через
+    # pack(padx=1, pady=1) реально создаёт отступ в 1px, из-за которого
+    # видна тонкая полоска цвета BORDER по периметру.
+    list_outer_border = TkFrame(sidebar, bg=_c("BORDER"))
+    list_outer_border.pack(fill="both", expand=True, padx=10, pady=(0, 10))
+    list_outer = TkFrame(list_outer_border, bg=_c("BORDER"))
+    list_outer.pack(fill="both", expand=True, padx=1, pady=1)
 
     list_scroll = tk.Scrollbar(list_outer)
     list_scroll.pack(side="right", fill="y")
@@ -117,7 +133,7 @@ def open_chat_window():
         activestyle="none",
         relief="flat",
         highlightthickness=0,
-        font=("Segoe UI", 9),
+        font=("Segoe UI", scaled_font_size(9)),
         yscrollcommand=list_scroll.set,
     )
     state.session_listbox.pack(fill="both", expand=True)
@@ -136,7 +152,7 @@ def open_chat_window():
         text="AI Чат",
         bg=_c("BG_DARK"),
         fg=_c("TEXT_MAIN"),
-        font=("Segoe UI", 14, "bold"),
+        font=("Segoe UI", scaled_font_size(14), "bold"),
     ).pack(side="left")
 
     scroll_bottom_btn = _make_button(
@@ -184,7 +200,7 @@ def open_chat_window():
         text="Готов к работе",
         bg=_c("BG_DARK"),
         fg=_c("TEXT_DIM"),
-        font=("Segoe UI", 9),
+        font=("Segoe UI", scaled_font_size(9)),
         anchor="w",
     )
     state.chat_status_label.pack(side="left", fill="x", expand=True)
@@ -194,7 +210,7 @@ def open_chat_window():
         text="Ввод: ≈0 ток. · Чат: ≈0 ток.",
         bg=_c("BG_DARK"),
         fg=_c("TEXT_DIM"),
-        font=("Segoe UI", 9),
+        font=("Segoe UI", scaled_font_size(9)),
         anchor="e",
     )
     state.chat_token_label.pack(side="right")
@@ -212,7 +228,7 @@ def open_chat_window():
         hover_color=_c("BORDER"),
         corner_radius=10,
         height=40,
-        font=("Segoe UI", 13),
+        font=("Segoe UI", scaled_font_size(13)),
         cursor="hand2",
     )
     state.improve_btn.pack(side="left", fill="x", expand=True, padx=(0, 5))
@@ -226,7 +242,7 @@ def open_chat_window():
         hover_color=_c("BORDER"),
         corner_radius=10,
         height=40,
-        font=("Segoe UI", 13),
+        font=("Segoe UI", scaled_font_size(13)),
         cursor="hand2",
     )
     state.paste_editor_btn.pack(side="left", fill="x", expand=True, padx=(0, 5))
@@ -240,7 +256,7 @@ def open_chat_window():
         hover_color=_c("BORDER"),
         corner_radius=10,
         height=40,
-        font=("Segoe UI", 13),
+        font=("Segoe UI", scaled_font_size(13)),
         cursor="hand2",
     )
     state.clear_btn.pack(side="left", fill="x", expand=True)
@@ -268,7 +284,7 @@ def open_chat_window():
         textvariable=state._hint_text_var,
         bg=_c("BG_CARD"),
         fg=_c("TEXT_DIM"),
-        font=("Segoe UI", 11),
+        font=("Segoe UI", scaled_font_size(11)),
         anchor="w",
     )
     _hint_label.pack(side="left", fill="x", expand=True)
@@ -299,7 +315,7 @@ def open_chat_window():
         activeforeground=_c("ACCENT"),
         relief="flat",
         bd=0,
-        font=("Segoe UI", 8),
+        font=("Segoe UI", scaled_font_size(8)),
         cursor="hand2",
         padx=6,
         pady=0,
@@ -309,7 +325,7 @@ def open_chat_window():
         text="сменить режим",
         bg=_c("BG_CARD"),
         fg=_c("TEXT_MUTED"),
-        font=("Segoe UI", 8, "italic"),
+        font=("Segoe UI", scaled_font_size(8), "italic"),
     )
     _mode_label.pack(side="right", padx=(0, 6))
     _free_chat_btn.pack(side="right")
@@ -333,7 +349,7 @@ def open_chat_window():
         insertbackground=_c("TEXT_MAIN"),
         relief="flat",
         highlightthickness=0,
-        font=("Segoe UI", 10),
+        font=("Segoe UI", scaled_font_size(10)),
         padx=10,
         pady=10,
         undo=True,
@@ -349,7 +365,7 @@ def open_chat_window():
         y=11,
         fg=_c("TEXT_DIM"),
         bg=_c("BG_INPUT"),
-        font=("Segoe UI", 9, "italic"),
+        font=("Segoe UI", scaled_font_size(9), "italic"),
     )
 
     state.chat_send_btn = tk.Button(
@@ -363,7 +379,7 @@ def open_chat_window():
         relief="flat",
         bd=0,
         cursor="hand2",
-        font=("Segoe UI", 12, "bold"),
+        font=("Segoe UI", scaled_font_size(12), "bold"),
         width=5,
         padx=8,
         pady=4,
@@ -371,8 +387,15 @@ def open_chat_window():
     state.chat_send_btn.pack(side="right")
 
     # Messages scrollable canvas — после всех bottom элементов, займёт оставшееся место
-    canvas_outer = TkRawFrame(right, bg=_c("BORDER"), padx=1, pady=1)
-    canvas_outer.pack(side="top", fill="both", expand=True, padx=14, pady=(0, 8))
+    # ИСПРАВЛЕНО: тот же баг, что у list_outer выше — TkRawFrame(...,
+    # padx=1, pady=1) явно вырезает эти параметры через kwargs.pop() в
+    # custom_widgets.py, поэтому 1px рамка цвета BORDER вокруг области
+    # сообщений чата не отображалась. Внешний/внутренний контейнер чинит
+    # это так же, как и для list_outer.
+    canvas_outer_border = TkRawFrame(right, bg=_c("BORDER"))
+    canvas_outer_border.pack(side="top", fill="both", expand=True, padx=14, pady=(0, 8))
+    canvas_outer = TkRawFrame(canvas_outer_border, bg=_c("BORDER"))
+    canvas_outer.pack(fill="both", expand=True, padx=1, pady=1)
 
     state.chat_scrollbar = tk.Scrollbar(canvas_outer)
     state.chat_scrollbar.pack(side="right", fill="y")
@@ -387,7 +410,19 @@ def open_chat_window():
     state.chat_canvas.pack(side="left", fill="both", expand=True)
     state.chat_scrollbar.config(command=state.chat_canvas.yview)
 
-    state.chat_messages_frame = TkFrame(state.chat_canvas, bg=_c("BG_DARK"), pady=50)
+    # ИСПРАВЛЕНО: pady=50 у TkFrame(...) не создавал реального отступа —
+    # тот же баг с CTkFrame/TkRawFrame, что и у list_outer/canvas_outer
+    # выше (padx/pady либо тихо игнорируются, либо явно вырезаются в
+    # custom_widgets.py). Раньше это должно было давать 50px "воздуха"
+    # снизу под последним сообщением чата, чтобы оно не прилипало к краю
+    # видимой области при прокрутке. Так как chat_messages_frame не
+    # упаковывается через pack() в родителя (он вставлен как окно canvas
+    # через create_window — паттерн "внешний/внутренний pack-контейнер"
+    # здесь неприменим), отступ добавлен иначе — расширением scrollregion
+    # на CHAT_BOTTOM_PADDING пикселей ниже реального содержимого, см.
+    # on_frame_configure() ниже.
+    CHAT_BOTTOM_PADDING = 50
+    state.chat_messages_frame = TkFrame(state.chat_canvas, bg=_c("BG_DARK"))
     state.chat_canvas_window = state.chat_canvas.create_window(
         (0, 0),
         window=state.chat_messages_frame,
@@ -397,7 +432,15 @@ def open_chat_window():
 
     def on_frame_configure(event=None):
         try:
-            state.chat_canvas.configure(scrollregion=state.chat_canvas.bbox("all"))
+            bbox = state.chat_canvas.bbox("all")
+            if bbox:
+                # Расширяем scrollregion вниз на CHAT_BOTTOM_PADDING px —
+                # см. пояснение у CHAT_BOTTOM_PADDING выше (замена
+                # несработавшего pady=50 у chat_messages_frame).
+                x0, y0, x1, y1 = bbox
+                state.chat_canvas.configure(scrollregion=(x0, y0, x1, y1 + CHAT_BOTTOM_PADDING))
+            else:
+                state.chat_canvas.configure(scrollregion=bbox)
         except Exception:
             pass
 
@@ -435,7 +478,7 @@ def open_chat_window():
             activebackground=_c("BORDER"),
             activeforeground=_c("TEXT_MAIN"),
             relief="flat", borderwidth=1,
-            font=("Segoe UI", 9),
+            font=("Segoe UI", scaled_font_size(9)),
         )
         menu.add_command(
             label="Вырезать",

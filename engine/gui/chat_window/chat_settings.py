@@ -374,43 +374,42 @@ def open_gpt_settings(event=None):
             anchor="w", wraplength=500,
         ).pack(anchor="w", pady=(0, 20))
 
-        # Server URL
-        url_frame = TkFrame(container, bg=_c("BG_CARD"))
-        url_frame.pack(fill="x", pady=(0, 15))
-        TkLabel(url_frame, text=t("local_model_url"), bg=_c("BG_CARD"), fg=_c("TEXT_MAIN"), font=("Segoe UI", 11), anchor="w").pack(fill="x", pady=(0, 4))
-        url_var = tk.StringVar(value=local_llm_client.get_local_url())
-        url_entry = tk.Entry(url_frame, textvariable=url_var, bg=_c("BG_INPUT"), fg=_c("TEXT_MAIN"), insertbackground=_c("TEXT_MAIN"), relief="flat", highlightthickness=1, highlightbackground=_c("BORDER"), highlightcolor=_c("ACCENT"), font=("Consolas", 11))
-        url_entry.pack(side="left", fill="x", expand=True, ipady=5)
-        _bind_text_hotkeys(url_entry)
+        # Installed models list
         
-        def save_url():
-            local_llm_client.set_local_url(url_var.get())
-            status_lbl.config(text="💾 Сохранено", fg=_c("TEXT_SUCCESS"))
-        
-        _make_button(url_frame, "💾", save_url, bg=_c("BG_INPUT"), font_size=11, height=1, width=5, padx=4, pady=2).pack(side="right", padx=(6, 0))
+        # Installed models list
+        list_frame = TkFrame(container, bg=_c("BG_CARD"))
+        list_frame.pack(fill="x", pady=(0, 15))
+        TkLabel(list_frame, text=t("local_model_active"), bg=_c("BG_CARD"), fg=_c("TEXT_MAIN"), font=("Segoe UI", 11), anchor="w").pack(fill="x", pady=(0, 6))
 
-        # Active Model
-        model_frame = TkFrame(container, bg=_c("BG_CARD"))
-        model_frame.pack(fill="x", pady=(0, 15))
-        TkLabel(model_frame, text=t("local_model_active"), bg=_c("BG_CARD"), fg=_c("TEXT_MAIN"), font=("Segoe UI", 11), anchor="w").pack(fill="x", pady=(0, 4))
-        
-        current_local = local_llm_client.get_local_model()
-        model_var = tk.StringVar(value=current_local)
-        model_entry = tk.Entry(model_frame, textvariable=model_var, bg=_c("BG_INPUT"), fg=_c("TEXT_MAIN"), insertbackground=_c("TEXT_MAIN"), relief="flat", highlightthickness=1, highlightbackground=_c("BORDER"), highlightcolor=_c("ACCENT"), font=("Consolas", 11))
-        model_entry.pack(side="left", fill="x", expand=True, ipady=5)
-        _bind_text_hotkeys(model_entry)
+        installed = local_llm_client.list_installed_models()
+        active_id = local_llm_client.get_active_model_id()
 
-        def save_model():
-            model_name = model_var.get().strip()
-            if model_name:
-                local_llm_client.set_local_model(model_name)
-                gpt_client.set_model(model_name, "local")
-                gpt_client.set_provider("local")
-                status_lbl.config(text="💾 Сохранено и активировано", fg=_c("TEXT_SUCCESS"))
-            else:
-                status_lbl.config(text="Ошибка: пустое имя", fg=_c("TEXT_ERROR"))
+        status_lbl = TkLabel(container, text="", bg=_c("BG_CARD"), fg=_c("TEXT_DIM"), font=("Segoe UI", 11), anchor="w")
 
-        _make_button(model_frame, "💾", save_model, bg=_c("BG_INPUT"), font_size=11, height=1, width=5, padx=4, pady=2).pack(side="right", padx=(6, 0))
+        if not installed:
+            TkLabel(list_frame, text="Установленных моделей нет. Добавьте .gguf через «Из папки».", bg=_c("BG_CARD"), fg=_c("TEXT_DIM"), font=("Segoe UI", 11), anchor="w").pack(fill="x")
+        else:
+            for m in installed:
+                row = TkFrame(list_frame, bg=_c("BG_CARD"))
+                row.pack(fill="x", pady=2)
+                is_active = m.get("id") == active_id
+                dot = "🟢" if is_active else "⚪"
+                TkLabel(row, text=f"{dot} {m.get('label', m.get('filename', '?'))}", bg=_c("BG_CARD"), fg=_c("TEXT_MAIN"), font=("Segoe UI", 11), anchor="w").pack(side="left", fill="x", expand=True)
+
+                def _activate(mid=m.get("id")):
+                    local_llm_client.set_active_model_id(mid)
+                    gpt_client.set_model(mid, "local")
+                    gpt_client.set_provider("local")
+                    status_lbl.config(text="💾 Активировано", fg=_c("TEXT_SUCCESS"))
+                    show_page_with_style("local")
+
+                def _remove(mid=m.get("id"), lbl=m.get("label", "")):
+                    if messagebox.askyesno("Удалить модель", f"Удалить «{lbl}» из списка? Файл в /models/ останется на диске.", parent=win):
+                        local_llm_client.remove_model(mid)
+                        show_page_with_style("local")
+                if not is_active:
+                    _make_button(row, "✓ Активировать", _activate, bg=_c("BG_ACTIVE"), font_size=10, height=1, padx=6, pady=2).pack(side="right", padx=(4, 0))
+                _make_button(row, "🗑", _remove, bg=_c("BG_INPUT"), font_size=10, height=1, width=3, padx=4, pady=2).pack(side="right")
 
         # Catalog Button
         _make_button(
@@ -419,7 +418,6 @@ def open_gpt_settings(event=None):
             bg=_c("BG_ACTIVE"), font_size=11, height=1, padx=12, pady=6
         ).pack(anchor="w", pady=(10, 0))
 
-        status_lbl = TkLabel(container, text="", bg=_c("BG_CARD"), fg=_c("TEXT_DIM"), font=("Segoe UI", 11), anchor="w")
         status_lbl.pack(fill="x", pady=(10, 0))
 
     # ── General Page implementation ─────────────────────────────────────────────
@@ -551,11 +549,11 @@ def open_gpt_settings(event=None):
         def install():
             sel = lb.curselection()
             if not sel: return
-            m = catalog[sel[0]]
-            local_llm_client.set_local_model(m['id'])
-            gpt_client.set_model(m['id'], "local")
-            gpt_client.set_provider("local")
-            dlg.destroy(); build_local_page()
+            messagebox.showinfo(
+                "Скачивание пока недоступно",
+                "Загрузка моделей из встроенного каталога появится позже. Пока используйте «📁 Из папки».",
+                parent=dlg,
+            )
 
         def select_from_folder():
             file_path = filedialog.askopenfilename(
@@ -565,11 +563,12 @@ def open_gpt_settings(event=None):
             if file_path:
                 if messagebox.askyesno("Перемещение модели", "Выбранный файл модели будет перемещен в папку проекта /models/. Продолжить?", parent=dlg):
                     try:
-                        new_name = local_llm_client.move_model_file(file_path)
-                        local_llm_client.set_local_model(new_name)
-                        gpt_client.set_model(new_name, "local")
+                        entry = local_llm_client.move_model_file(file_path)
+                        local_llm_client.set_active_model_id(entry["id"])
+                        gpt_client.set_model(entry["id"], "local")
                         gpt_client.set_provider("local")
-                        dlg.destroy(); build_local_page()
+                        messagebox.showinfo("Модель добавлена", f"«{entry['label']}» перенесена в /models/ и активирована.", parent=dlg)
+                        dlg.destroy(); show_page_with_style("local")
                     except Exception as e:
                         messagebox.showerror("Ошибка", str(e), parent=dlg)
 

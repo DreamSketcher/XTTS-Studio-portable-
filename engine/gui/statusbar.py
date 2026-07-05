@@ -5,7 +5,7 @@ import tkinter as tk
 
 import customtkinter as ctk
 
-from engine.gui.colors import Colors
+from engine.gui.colors import Colors, scaled_font_size
 
 # Внедряются из main_window: root, status_var, stage_var, progress_value
 root = None
@@ -51,4 +51,4 @@ def build_statusbar(right_panel):
     progress_bar.pack(fill="x", padx=10, pady=(10, 5))
     progress_bar.set(0)
     tk.Label(status_frame, textvariable=status_var, anchor="w", bg=Colors.BG_CARD,
-             fg=Colors.TEXT_MAIN, font=("Segoe UI", 11)).pack(fill="x", padx=10, pady=(0, 10))
+             fg=Colors.TEXT_MAIN, font=("Segoe UI", scaled_font_size(11))).pack(fill="x", padx=10, pady=(0, 10))

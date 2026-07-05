@@ -7,7 +7,7 @@ import customtkinter as ctk
 
 from i18n import t
 
-from engine.gui.colors import Colors
+from engine.gui.colors import Colors, scaled_font_size
 from engine.gui.tooltip import ToolTip
 from engine.gui.widgets import create_button
 
@@ -135,45 +135,45 @@ def open_quality_settings(preset_name):
         row = tk.Frame(win, bg=Colors.BG_CARD)
         row.pack(fill="x", padx=15, pady=5)
         lbl = tk.Label(row, text=label, width=20, anchor="w",
-                       bg=Colors.BG_CARD, fg=Colors.TEXT_MAIN, font=("Segoe UI", 10))
+                       bg=Colors.BG_CARD, fg=Colors.TEXT_MAIN, font=("Segoe UI", scaled_font_size(10)))
         lbl.pack(side="left")
         ToolTip(lbl, hint)
         scale = tk.Scale(
             row, variable=params[key], from_=from_, to=to, resolution=res,
             orient="horizontal", length=240,
             bg=Colors.BG_CARD, fg=Colors.TEXT_MAIN, troughcolor=Colors.BG_INPUT,
-            highlightthickness=0, sliderrelief="flat", sliderlength=20, font=("Segoe UI", 9)
+            highlightthickness=0, sliderrelief="flat", sliderlength=20, font=("Segoe UI", scaled_font_size(9))
         )
         scale.pack(side="left", padx=(10, 5))
         tk.Label(row, textvariable=params[key], width=6,
-                 bg=Colors.BG_CARD, fg=Colors.ACCENT, font=("Consolas", 9)).pack(side="left")
+                 bg=Colors.BG_CARD, fg=Colors.ACCENT, font=("Consolas", scaled_font_size(9))).pack(side="left")
         if key == "trim_ms":
             trim_scale = scale
     mode_row = tk.Frame(win, bg=Colors.BG_CARD)
     mode_row.pack(fill="x", padx=15, pady=5)
     trim_lbl = tk.Label(mode_row, text=t("lbl_trim_mode"), width=20, anchor="w",
-                        bg=Colors.BG_CARD, fg=Colors.TEXT_MAIN, font=("Segoe UI", 10))
+                        bg=Colors.BG_CARD, fg=Colors.TEXT_MAIN, font=("Segoe UI", scaled_font_size(10)))
     trim_lbl.pack(side="left")
     ToolTip(trim_lbl, "Авто / Ручной / Выкл")
     tk.Radiobutton(mode_row, text=t("trim_auto"), variable=params["trim_mode"], value="auto",
                    bg=Colors.BG_CARD, fg=Colors.TEXT_MAIN, selectcolor=Colors.BG_CARD,
-                   activebackground=Colors.BG_CARD, font=("Segoe UI", 9)).pack(side="left", padx=5)
+                   activebackground=Colors.BG_CARD, font=("Segoe UI", scaled_font_size(9))).pack(side="left", padx=5)
     tk.Radiobutton(mode_row, text=t("trim_manual"), variable=params["trim_mode"], value="manual",
                    bg=Colors.BG_CARD, fg=Colors.TEXT_MAIN, selectcolor=Colors.BG_CARD,
-                   activebackground=Colors.BG_CARD, font=("Segoe UI", 9)).pack(side="left", padx=5)
+                   activebackground=Colors.BG_CARD, font=("Segoe UI", scaled_font_size(9))).pack(side="left", padx=5)
     tk.Radiobutton(mode_row, text=t("trim_off"), variable=params["trim_mode"], value="off",
                    bg=Colors.BG_CARD, fg=Colors.TEXT_MAIN, selectcolor=Colors.BG_CARD,
-                   activebackground=Colors.BG_CARD, font=("Segoe UI", 9)).pack(side="left")
+                   activebackground=Colors.BG_CARD, font=("Segoe UI", scaled_font_size(9))).pack(side="left")
     fmt_row = tk.Frame(win, bg=Colors.BG_CARD)
     fmt_row.pack(fill="x", padx=15, pady=(5, 0))
     tk.Label(fmt_row, text=t("lbl_export_format"), width=20, anchor="w",
-             bg=Colors.BG_CARD, fg=Colors.TEXT_MAIN, font=("Segoe UI", 10)).pack(side="left")
+             bg=Colors.BG_CARD, fg=Colors.TEXT_MAIN, font=("Segoe UI", scaled_font_size(10))).pack(side="left")
     tk.Radiobutton(fmt_row, text="WAV", variable=params["export_format"], value="wav",
                    bg=Colors.BG_CARD, fg=Colors.TEXT_MAIN, selectcolor=Colors.BG_CARD,
-                   activebackground=Colors.BG_CARD, font=("Segoe UI", 9)).pack(side="left", padx=5)
+                   activebackground=Colors.BG_CARD, font=("Segoe UI", scaled_font_size(9))).pack(side="left", padx=5)
     tk.Radiobutton(fmt_row, text="MP3 192k", variable=params["export_format"], value="mp3",
                    bg=Colors.BG_CARD, fg=Colors.TEXT_MAIN, selectcolor=Colors.BG_CARD,
-                   activebackground=Colors.BG_CARD, font=("Segoe UI", 9)).pack(side="left", padx=5)
+                   activebackground=Colors.BG_CARD, font=("Segoe UI", scaled_font_size(9))).pack(side="left", padx=5)
     def update_trim_state(*args):
         if trim_scale:
             try:
@@ -209,7 +209,7 @@ def open_quality_settings(preset_name):
     qc_cb = ctk.CTkCheckBox(
         qc_row, text=t("chk_qc"),
         variable=params["qc_enabled"], fg_color=Colors.BG_ACTIVE, hover_color=Colors.BG_HOVER,
-        border_color=Colors.BORDER, text_color=Colors.TEXT_MAIN, font=("Segoe UI", 9)
+        border_color=Colors.BORDER, text_color=Colors.TEXT_MAIN, font=("Segoe UI", scaled_font_size(9))
     )
     qc_cb.pack(side="left")
     ToolTip(qc_cb, t("tip_qc"))

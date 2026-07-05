@@ -7,7 +7,7 @@ import customtkinter as ctk
 
 from i18n import t
 
-from engine.gui.colors import Colors
+from engine.gui.colors import Colors, scaled_font_size
 from engine.gui.tooltip import ToolTip
 
 # Внедряются из main_window: root, lang_var, lang_split_enabled, save_settings
@@ -38,7 +38,7 @@ def pick_language():
         ("KO", "ko"), ("JA", "ja"), ("HI", "hi"),
     ]
     tk.Label(win, text=t("lang_picker_header"), bg=Colors.BG_CARD, fg=Colors.TEXT_MAIN,
-             font=("Segoe UI", 12, "bold")).pack(pady=(15, 10))
+             font=("Segoe UI", scaled_font_size(12), "bold")).pack(pady=(15, 10))
     grid = tk.Frame(win, bg=Colors.BG_CARD)
     grid.pack(padx=15, pady=(0, 15))
     for i, (label, value) in enumerate(langs):
@@ -47,7 +47,7 @@ def pick_language():
             indicatoron=False, width=6,
             bg=Colors.BG_INPUT, fg=Colors.TEXT_MAIN,
             selectcolor=Colors.ACCENT, activebackground=Colors.BG_HOVER,
-            font=("Segoe UI", 9, "bold"), relief="flat", cursor="hand2"
+            font=("Segoe UI", scaled_font_size(9), "bold"), relief="flat", cursor="hand2"
         ).grid(row=i // 6, column=i % 6, padx=3, pady=3)
     tk.Frame(win, bg=Colors.BG_CARD, height=1).pack(fill="x", padx=15, pady=(5, 0))
     split_row = tk.Frame(win, bg=Colors.BG_CARD)
@@ -56,14 +56,14 @@ def pick_language():
         split_row, text=t("lang_auto_switch"), variable=lang_split_enabled,
         fg_color=Colors.BG_ACTIVE, hover_color=Colors.BG_HOVER,
         border_color=Colors.BORDER, text_color=Colors.TEXT_MAIN,
-        font=("Segoe UI", 9)
+        font=("Segoe UI", scaled_font_size(9))
     )
     cb.pack(side="left")
     ToolTip(cb, t("lang_auto_switch_tip"))
     tk.Button(
         win, text=t("btn_close"), command=lambda: [win.destroy(), save_settings()],
         bg=Colors.BG_ACTIVE, fg=Colors.TEXT_MAIN, relief="flat",
-        font=("Segoe UI", 10, "bold"), cursor="hand2", padx=20, pady=5
+        font=("Segoe UI", scaled_font_size(10), "bold"), cursor="hand2", padx=20, pady=5
     ).pack(pady=(0, 15))
 
 
@@ -80,13 +80,13 @@ def show_help():
     scrollbar.pack(side="right", fill="y")
     text = tk.Text(
         frame, wrap="word", yscrollcommand=scrollbar.set,
-        font=("Consolas", 12), bg=Colors.BG_DARK, fg=Colors.TEXT_MAIN,
+        font=("Consolas", scaled_font_size(12)), bg=Colors.BG_DARK, fg=Colors.TEXT_MAIN,
         padx=15, pady=15, state="normal", relief="flat", highlightthickness=0
     )
     text.pack(fill="both", expand=True)
     scrollbar.config(command=text.yview)
-    text.tag_configure("header", foreground=Colors.ACCENT, font=("Consolas", 11))
-    text.tag_configure("symbol", foreground="#ffd600", font=("Consolas", 9))
+    text.tag_configure("header", foreground=Colors.ACCENT, font=("Consolas", scaled_font_size(11)))
+    text.tag_configure("symbol", foreground="#ffd600", font=("Consolas", scaled_font_size(9)))
     text.tag_configure("good", foreground=Colors.TEXT_SUCCESS)
     text.tag_configure("bad", foreground=Colors.TEXT_ERROR)
     text.tag_configure("normal", foreground=Colors.TEXT_MAIN)

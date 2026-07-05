@@ -32,19 +32,86 @@ from engine.gui import (helpers, statusbar, console, textbox, player,
                         chat_panel, batch_panel, word_replacer_panel,
                         toolbar)
 
+# Layout preset support
+from engine.gui import theme_manager
+from engine.gui.layout import apply_layout_preset as layout_apply_preset
+
 root = None
 task_manager = None
 voice_manager = None
 quality_params = None
+_current_layout_preset = {}
+
+
+def apply_layout_preset_to_all(preset: dict):
+    """Live-применение пресета ко всем панелям.
+    Вызывается из Конструктора темы.
+    Возвращает True если что-то применилось.
+    """
+    global _current_layout_preset
+    _current_layout_preset = preset.copy()
+    applied = False
+
+    # 1. layout.py (toggle_strip и т.п.)
+    try:
+        if layout_apply_preset(preset):
+            applied = True
+    except Exception:
+        pass
+
+    # 2. Проходим по всем GUI-модулям, если у них есть apply_layout()
+    for mod in (header_panel, voice_panel, player, queue_panel, console,
+                textbox, toolbar, statusbar):
+        func = getattr(mod, "apply_layout", None)
+        if callable(func):
+            try:
+                if func(preset):
+                    applied = True
+            except Exception:
+                pass
+
+    try:
+        if root:
+            root.update_idletasks()
+    except Exception:
+        pass
+    return applied
+
+
+def open_theme_settings_dialog():
+    """Открывает Конструктор темы с callback live-apply."""
+    try:
+        from engine.gui.chat_window.theme_settings import open_theme_customizer
+        open_theme_customizer(root, on_layout_changed=apply_layout_preset_to_all)
+    except Exception:
+        # ВАЖНО: раньше здесь было "pass" без логирования — ошибка построения
+        # окна конструктора темы проглатывалась молча, и снаружи (в textbox.py)
+        # это выглядело как успешный вызов ("OK"), хотя окно не открывалось.
+        # Печатаем трейсбек, чтобы такие сбои были видны в консоли/логе.
+        import traceback
+        print("[ThemeSettings] open_theme_customizer() FAILED:")
+        traceback.print_exc()
+        try:
+            from engine.logging_utils import write_log
+            write_log(traceback.format_exc())
+        except Exception:
+            pass
 
 
 def create_main_window():
     """Создаёт и полностью собирает главное окно. Возвращает root
     (mainloop() запускает вызывающая сторона — gui.py)."""
-    global root, task_manager, voice_manager, quality_params
+    global root, task_manager, voice_manager, quality_params, _current_layout_preset
 
     # ── CUSTOMTKINTER THEME (как в gui.py: до создания root) ──
     apply_theme()
+
+    # ── THEME MANAGER: загрузка темы + layout пресета ──
+    try:
+        theme_manager.load_theme()
+        _current_layout_preset = theme_manager.load_layout_preset()
+    except Exception:
+        _current_layout_preset = {}
 
     # ── ROOT (перенесено из gui.py, секция ROOT) ──
     root = TkinterDnD.Tk()
@@ -61,7 +128,8 @@ def create_main_window():
     root.configure(bg=Colors.BG_DARK)
 
     # ── LAYOUT (градиент + панели) ──
-    main_container, left_panel, right_panel = build_layout(root)
+    # Передаём пресет раскладки вместо хардкода
+    main_container, left_panel, right_panel = build_layout(root, preset=_current_layout_preset)
 
     # ── CONSOLE REDIRECT (как в gui.py: сразу после layout) ──
     console.install()
@@ -103,8 +171,11 @@ def create_main_window():
     output_window.init(root=root, PYGAME_OK=PYGAME_OK)
     ai_status_window.init(root=root)
     updates.init(root=root)
-    textbox.init(root=root, use_gpt=use_gpt, _textbox_updated=_textbox_updated,
-                 clean_path=clean_path, show_help=dialogs.show_help)
+    # Передаём в textbox callback открытия конструктора темы + текущий layout_preset
+    textbox.init(root=root, use_gpt=use_gpt, textbox_updated=_textbox_updated,
+                 clean_path=clean_path, show_help=dialogs.show_help,
+                 on_open_theme_settings=open_theme_settings_dialog,
+                 layout_preset=_current_layout_preset)
 
     # ── QUALITY PARAMS (перенесено из gui.py, секция QUALITY PARAMS) ──
     presets.init(root=root, use_gpt=use_gpt)
@@ -156,6 +227,13 @@ def create_main_window():
     word_replacer_panel.setup(root, word_replacer_enabled, save_settings)
 
     # ── LEFT PANEL (порядок как в gui.py) ──
+    # Если модули поддерживают apply_layout — применяем пресет до build
+    for mod in (header_panel, voice_panel, queue_panel, console):
+        func = getattr(mod, "apply_layout", None)
+        if callable(func):
+            try: func(_current_layout_preset)
+            except Exception: pass
+
     header_panel.build_header(left_panel)
     voice_panel.build_voice_cards(left_panel)
     queue_panel.build_queue_card(left_panel)
@@ -167,6 +245,13 @@ def create_main_window():
     # Статусбар строится ПЕРВЫМ (side="bottom"): при нехватке высоты pack
     # обрезает виджеты, упакованные последними, — так текст статуса
     # («Инициализация модели…» и т.п.) больше не «съедается» окном.
+    # Применяем layout к правым панелям
+    for mod in (statusbar, textbox, toolbar):
+        func = getattr(mod, "apply_layout", None)
+        if callable(func):
+            try: func(_current_layout_preset)
+            except Exception: pass
+
     statusbar.build_statusbar(right_panel)
     textbox.build_text_card(right_panel)
     toolbar.build_toolbar(textbox.text_card)

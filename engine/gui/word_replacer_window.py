@@ -32,6 +32,13 @@ except Exception:
     CTK_AVAILABLE = False
     ctk = None
 
+# ПРИМЕЧАНИЕ: colors.py — не тот "gui.py" (старый монолит), про который
+# говорит docstring выше ("окно не импортирует ничего из gui.py напрямую").
+# Отдельный лёгкий модуль без tkinter-зависимостей (палитра + масштаб
+# шрифта), поэтому прямой импорт не нарушает архитектурный принцип файла —
+# сам Colors по-прежнему приходит через init(), как и раньше.
+from engine.gui.colors import scaled_font_size
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Dependency injection
 # ─────────────────────────────────────────────────────────────────────────────
@@ -83,7 +90,7 @@ class _ToolTip:
             borderwidth=0,
             padx=10,
             pady=7,
-            font=("Segoe UI", 9),
+            font=("Segoe UI", scaled_font_size(9)),
             wraplength=280
         ).pack()
 
@@ -139,7 +146,7 @@ def open_word_replacer():
 
     listbox = tk.Listbox(
         list_frame, yscrollcommand=scrollbar.set,
-        font=("Consolas", 12), selectmode="single",
+        font=("Consolas", scaled_font_size(12)), selectmode="single",
         bg=colors.BG_INPUT, fg=colors.TEXT_MAIN,
         selectbackground=colors.ACCENT, selectforeground=colors.TEXT_MAIN,
         relief="flat", highlightthickness=0
@@ -152,7 +159,7 @@ def open_word_replacer():
     # ── Метка с метаданными выбранного слова (added_at / context) ──
     meta_label = tk.Label(
         meta_frame, text="", bg=colors.BG_CARD, fg=colors.TEXT_DIM,
-        font=("Segoe UI", 8), anchor="w", justify="left", wraplength=540
+        font=("Segoe UI", scaled_font_size(8)), anchor="w", justify="left", wraplength=540
     )
     meta_label.pack(fill="x")
 
@@ -225,11 +232,11 @@ def open_word_replacer():
 
     tk.Label(
         input_frame, text="Слово:", bg=colors.BG_CARD, fg=colors.TEXT_MAIN,
-        font=("Segoe UI", 10)
+        font=("Segoe UI", scaled_font_size(10))
     ).grid(row=0, column=0, sticky="w", padx=(0, 10))
 
     entry_word = tk.Entry(
-        input_frame, width=20, font=("Segoe UI", 10),
+        input_frame, width=20, font=("Segoe UI", scaled_font_size(10)),
         bg=colors.BG_INPUT, fg=colors.TEXT_MAIN,
         insertbackground=colors.TEXT_MAIN, relief="flat",
         highlightthickness=1, highlightbackground=colors.BORDER
@@ -238,11 +245,11 @@ def open_word_replacer():
 
     tk.Label(
         input_frame, text="Замена:", bg=colors.BG_CARD, fg=colors.TEXT_MAIN,
-        font=("Segoe UI", 10)
+        font=("Segoe UI", scaled_font_size(10))
     ).grid(row=0, column=2, sticky="w", padx=(10, 10))
 
     entry_replacement = tk.Entry(
-        input_frame, width=20, font=("Segoe UI", 10),
+        input_frame, width=20, font=("Segoe UI", scaled_font_size(10)),
         bg=colors.BG_INPUT, fg=colors.TEXT_MAIN,
         insertbackground=colors.TEXT_MAIN, relief="flat",
         highlightthickness=1, highlightbackground=colors.BORDER
@@ -386,7 +393,7 @@ def open_word_replacer():
         toggle_frame_wr, text="Словарь активен", variable=_word_replacer_enabled_var,
         fg_color=colors.BG_ACTIVE, hover_color=colors.BG_HOVER,
         border_color=colors.BORDER, text_color=colors.TEXT_MAIN,
-        font=("Segoe UI", 10)
+        font=("Segoe UI", scaled_font_size(10))
     )
     wr_cb.pack(side="right")
     _ToolTip(

@@ -16,7 +16,7 @@ except ImportError:
 from i18n import t
 
 from engine.paths import BASE_DIR, OUTPUT_DIR
-from engine.gui.colors import Colors
+from engine.gui.colors import Colors, scaled_font_size
 
 # Внедряются из main_window: root, PYGAME_OK
 root = None
@@ -180,19 +180,19 @@ def open_outputs_folder():
         card.pack(fill="x", padx=8, pady=3)
         _card_widgets[path] = card
         ico = tk.Label(card, text="🎵", bg=Colors.BG_CARD,
-                       font=("Segoe UI", 14), padx=10, pady=8)
+                       font=("Segoe UI", scaled_font_size(14)), padx=10, pady=8)
         ico.pack(side="left")
         info = tk.Frame(card, bg=Colors.BG_CARD)
         info.pack(side="left", fill="both", expand=True, pady=8)
         name_lbl = tk.Label(
             info, text=fname, bg=Colors.BG_CARD,
-            fg=Colors.TEXT_MAIN, font=("Segoe UI", 10, "bold"),
+            fg=Colors.TEXT_MAIN, font=("Segoe UI", scaled_font_size(10), "bold"),
             anchor="w", wraplength=360, justify="left"
         )
         name_lbl.pack(fill="x")
         meta_lbl = tk.Label(
             info, text=meta, bg=Colors.BG_CARD,
-            fg=Colors.TEXT_DIM, font=("Segoe UI", 8),
+            fg=Colors.TEXT_DIM, font=("Segoe UI", scaled_font_size(8)),
             anchor="w"
         )
         meta_lbl.pack(fill="x")
@@ -200,7 +200,7 @@ def open_outputs_folder():
         btn_frame.pack(side="right", padx=8)
         btn_pl = tk.Button(
             btn_frame, text="▶ ", bg=Colors.BG_INPUT, fg=Colors.TEXT_MAIN,
-            relief="flat", bd=0, font=("Segoe UI", 10), padx=6, pady=3,
+            relief="flat", bd=0, font=("Segoe UI", scaled_font_size(10)), padx=6, pady=3,
             cursor="hand2", activebackground=Colors.BG_ACTIVE,
             activeforeground=Colors.TEXT_MAIN,
             command=lambda p=path: _load_play(p)
@@ -208,7 +208,7 @@ def open_outputs_folder():
         btn_pl.pack(side="left", padx=(0, 4))
         btn_del = tk.Button(
             btn_frame, text="🗑", bg=Colors.BG_INPUT, fg=Colors.TEXT_ERROR,
-            relief="flat", bd=0, font=("Segoe UI", 10), padx=6, pady=3,
+            relief="flat", bd=0, font=("Segoe UI", scaled_font_size(10)), padx=6, pady=3,
             cursor="hand2", activebackground=Colors.BG_DANGER,
             activeforeground=Colors.TEXT_MAIN,
             command=lambda p=path, c=card: _delete_file(p, c)
@@ -343,7 +343,7 @@ def open_outputs_folder():
             parent, text=text, command=cmd,
             bg=Colors.BG_INPUT, fg=fg,
             activebackground=active_bg, activeforeground=Colors.TEXT_MAIN,
-            relief="flat", bd=0, font=("Segoe UI", 9),
+            relief="flat", bd=0, font=("Segoe UI", scaled_font_size(9)),
             padx=10, pady=4, cursor="hand2"
         )
         b.bind("<Enter>", lambda e: b.config(bg=active_bg))
@@ -356,7 +356,7 @@ def open_outputs_folder():
             fg=Colors.TEXT_ERROR, active_bg=Colors.BG_DANGER).pack(side="left", padx=(0, 4))
     _tb_btn(toolbar, t("btn_clear_cache"), _clear_cache).pack(side="left")
     count_lbl = tk.Label(toolbar, text="", bg=Colors.BG_CARD,
-                         fg=Colors.TEXT_DIM, font=("Segoe UI", 9))
+                         fg=Colors.TEXT_DIM, font=("Segoe UI", scaled_font_size(9)))
     count_lbl.pack(side="right", padx=12)
     tk.Frame(win, bg=Colors.BORDER, height=1).pack(fill="x")
     # — Список файлов —
@@ -389,7 +389,7 @@ def open_outputs_folder():
     player.pack(fill="x", side="bottom")
     now_lbl = tk.Label(
         player, text=t("no_file"), bg=Colors.BG_CARD,
-        fg=Colors.TEXT_DIM, font=("Segoe UI", 9),
+        fg=Colors.TEXT_DIM, font=("Segoe UI", scaled_font_size(9)),
         anchor="w", padx=14
     )
     now_lbl.pack(fill="x")
@@ -404,10 +404,10 @@ def open_outputs_folder():
     time_row = tk.Frame(player, bg=Colors.BG_CARD)
     time_row.pack(fill="x", padx=14)
     pos_lbl = tk.Label(time_row, text="0:00", bg=Colors.BG_CARD,
-                       fg=Colors.TEXT_DIM, font=("Consolas", 8))
+                       fg=Colors.TEXT_DIM, font=("Consolas", scaled_font_size(8)))
     pos_lbl.pack(side="left")
     dur_lbl = tk.Label(time_row, text="0:00", bg=Colors.BG_CARD,
-                       fg=Colors.TEXT_DIM, font=("Consolas", 8))
+                       fg=Colors.TEXT_DIM, font=("Consolas", scaled_font_size(8)))
     dur_lbl.pack(side="right")
     ctrl = tk.Frame(player, bg=Colors.BG_CARD)
     ctrl.pack(pady=(8, 0))
@@ -418,7 +418,7 @@ def open_outputs_folder():
             parent, text=text, command=cmd,
             bg=bg, fg=Colors.TEXT_MAIN,
             activebackground=ab, activeforeground=Colors.TEXT_MAIN,
-            relief="flat", bd=0, font=("Segoe UI", 11 if primary else 10),
+            relief="flat", bd=0, font=("Segoe UI", scaled_font_size(11 if primary else 10)),
             padx=10, pady=5, cursor="hand2", width=3
         )
         b.bind("<Enter>", lambda e: b.config(bg=ab))

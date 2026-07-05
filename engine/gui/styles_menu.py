@@ -5,7 +5,7 @@ import tkinter as tk
 
 from i18n import t
 
-from engine.gui.colors import Colors
+from engine.gui.colors import Colors, scaled_font_size
 from engine.gui.presets import open_quality_settings
 
 # Внедряются из main_window: root, quality_var, save_settings, PRESET_DESCRIPTIONS
@@ -58,7 +58,7 @@ def open_styles_menu(event=None):
             text=label,
             bg=item_bg,
             fg=Colors.TEXT_MAIN,
-            font=("Segoe UI", 10, "bold" if is_active else "normal"),
+            font=("Segoe UI", scaled_font_size(10), "bold" if is_active else "normal"),
             padx=10, pady=5,
             anchor="w",
             cursor="hand2"
@@ -82,7 +82,7 @@ def open_styles_menu(event=None):
         text=default_desc,
         bg=Colors.MENU_BG,
         fg=Colors.TEXT_DIM,
-        font=("Segoe UI", 8),
+        font=("Segoe UI", scaled_font_size(8)),
         justify="left",
         anchor="w",
         wraplength=200,

@@ -73,5 +73,6 @@
   },
   "ai_conductor_open_count": 1,
   "ai_conductor_warning_dismissed": true,
-  "ui_theme": "light"
+  "ui_theme": "light",
+  "left_panel_visible": true
 }
