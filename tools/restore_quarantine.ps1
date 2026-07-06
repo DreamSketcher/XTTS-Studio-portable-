@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
     Просмотр и ручное восстановление карантинных сессий cleanup_project.ps1.
 
@@ -10,15 +10,35 @@
     разобраться руками).
 
 .NOTES
-    Запуск: powershell -ExecutionPolicy Bypass -File restore_quarantine.ps1
+    Запуск: powershell -ExecutionPolicy Bypass -File "tools\restore_quarantine.ps1"
+    (двойной клик тоже сработает — окно не закрывается само, ждёт Enter)
 #>
 
-$ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
+function Stop-ScriptGracefully([int]$code) {
+    Write-Host "`nНажмите Enter для выхода..."
+    Read-Host | Out-Null
+    exit $code
+}
+
+trap {
+    Write-Host "`n[КРИТИЧЕСКАЯ ОШИБКА]" -ForegroundColor Red
+    Write-Host $_.Exception.Message -ForegroundColor Red
+    Write-Host $_.ScriptStackTrace -ForegroundColor DarkRed
+    Stop-ScriptGracefully 1
+}
+
+if (-not $PSScriptRoot) {
+    Write-Host "[!] Не удалось определить путь к скрипту. Запусти его как файл:" -ForegroundColor Red
+    Write-Host '    powershell -ExecutionPolicy Bypass -File "tools\restore_quarantine.ps1"'
+    Stop-ScriptGracefully 1
+}
+
+$ScriptDir = $PSScriptRoot
 $QuarantineRoot = Join-Path $ScriptDir "_quarantine"
 
 if (-not (Test-Path -LiteralPath $QuarantineRoot)) {
     Write-Host "Карантин пуст — папка $QuarantineRoot не найдена."
-    exit 0
+    Stop-ScriptGracefully 0
 }
 
 $batches = Get-ChildItem -LiteralPath $QuarantineRoot -Directory -ErrorAction SilentlyContinue |
@@ -27,7 +47,7 @@ $batches = Get-ChildItem -LiteralPath $QuarantineRoot -Directory -ErrorAction Si
 
 if (-not $batches -or $batches.Count -eq 0) {
     Write-Host "Карантинных сессий не найдено."
-    exit 0
+    Stop-ScriptGracefully 0
 }
 
 Write-Host "Карантинные сессии (новые сверху):`n"
@@ -47,12 +67,12 @@ foreach ($b in $batches) {
 $table | Format-Table -AutoSize
 
 $idxInput = Read-Host "`nНомер сессии для действия (Enter — выход)"
-if ([string]::IsNullOrWhiteSpace($idxInput)) { exit 0 }
+if ([string]::IsNullOrWhiteSpace($idxInput)) { Stop-ScriptGracefully 0 }
 
 $idx = 0
 if (-not [int]::TryParse($idxInput, [ref]$idx) -or $idx -lt 0 -or $idx -ge $batches.Count) {
     Write-Host "Некорректный номер."
-    exit 1
+    Stop-ScriptGracefully 1
 }
 
 $batch = $batches[$idx]
@@ -96,3 +116,5 @@ switch ($choice.ToLower()) {
         Write-Host "Отменено."
     }
 }
+
+Stop-ScriptGracefully 0
