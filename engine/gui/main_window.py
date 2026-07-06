@@ -129,7 +129,7 @@ def create_main_window(startup_status: str = None):
     try:
         import os as _os
         if _os.path.isfile(ICON_PATH):
-            root.iconbitmap(ICON_PATH)
+            root.iconbitmap(default=ICON_PATH)
     except Exception as e:
         print(f"[ICON ERROR] {e}")
     root.title("XTTS Studio")
@@ -177,7 +177,7 @@ def create_main_window(startup_status: str = None):
                 clean_path=clean_path)
     voice_panel.init(root=root, PYGAME_OK=PYGAME_OK, ref_var=ref_var,
                      voice_manager=voice_manager)
-    history_window.init(root=root)
+    history_window.init(root=root, PYGAME_OK=PYGAME_OK)
     output_window.init(root=root, PYGAME_OK=PYGAME_OK)
     ai_status_window.init(root=root)
     updates.init(root=root)

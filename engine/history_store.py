@@ -16,7 +16,7 @@ def _save_history(task):
             history = []
         entry = {
             "date": datetime.now().strftime("%d.%m.%Y %H:%M"),
-            "text": (task.text or "")[:120],
+            "text": task.text or "",
             "voice": os.path.basename(os.path.dirname(task.voice or "")),
             "quality": task.quality or "",
             "output": task.output_path or "",

@@ -2,6 +2,7 @@ from typing import Any, List, Optional, Tuple
 import re
 import os
 import sys
+import time
 from datetime import datetime
 from engine.prosody_layer import create_prosody_layer
 from engine.word_replacer import WordReplacer
@@ -96,6 +97,43 @@ from .utils import path, _make_output_name, detect_lang_adaptive, _Cancelled, _i
 from .export import export_audio
 
 
+def _remove_with_retry(path_to_remove, attempts=6, delay=0.15):
+    """Удаляет файл, устойчиво к временной блокировке (например,
+    если чанк сейчас проигрывается через pygame.mixer.music в окне
+    «Аудио»). Сначала пытается остановить/выгрузить mixer, если он
+    держит именно этот файл, затем делает несколько повторных попыток
+    с небольшой паузой — Windows снимает файловую блокировку не
+    мгновенно после stop()/unload().
+    """
+    if not path_to_remove or not os.path.isfile(path_to_remove):
+        return
+    try:
+        import pygame  # type: ignore
+        if pygame.mixer.get_init():
+            try:
+                busy_file = getattr(pygame.mixer.music, "get_pos", None)
+                # Не можем напрямую узнать путь текущего трека в pygame,
+                # поэтому просто освобождаем поток на всякий случай —
+                # unload() безопасен, даже если играет другой файл, т.к.
+                # UI-плеер сам перезагружает трек при следующем play().
+                pygame.mixer.music.stop()
+                if hasattr(pygame.mixer.music, "unload"):
+                    pygame.mixer.music.unload()
+            except Exception:
+                pass
+    except Exception:
+        pass
+
+    for attempt in range(attempts):
+        try:
+            os.remove(path_to_remove)
+            return
+        except Exception:
+            if attempt < attempts - 1:
+                time.sleep(delay)
+    print(f"[Cleanup] Не удалось удалить временный файл (занят): {path_to_remove}")
+
+
 def get_tts():
     global _tts_instance
 
@@ -150,11 +188,8 @@ def run_tts(
 
     def cleanup(files: list):
         for f in files:
-            try:
-                os.remove(f)
-            except Exception:
-                pass
-            
+            _remove_with_retry(f)
+
 
     import time
     gen_start = time.time()

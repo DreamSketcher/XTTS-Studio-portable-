@@ -159,6 +159,87 @@ def build_voice_cards(left_panel):
                              bg=Colors.BG_ACTIVE, width=3)
     play_btn.pack(side="left", padx=(0, 3))
     create_button(voice_btn_row, "⏩", seek_forward,
-                  bg=Colors.BG_INPUT, width=3).pack(side="left")
+                  bg=Colors.BG_INPUT, width=3).pack(side="left", padx=(0, 3))
     # Кнопка воспроизведения используется плеером референса
     player.play_btn = play_btn
+
+    # ── Громкость (раскрывающийся попап рядом с кнопками перемотки) ──
+    def _volume_icon(vol):
+        return "🔇" if vol <= 0.001 else ("🔉" if vol < 0.5 else "🔊")
+
+    vol_btn = create_button(voice_btn_row, _volume_icon(player.get_volume()),
+                            None, bg=Colors.BG_INPUT, width=3)
+    vol_btn.pack(side="left")
+
+    _vol_popup = {"win": None, "click_bind": None}
+
+    def _close_volume_popup(event=None):
+        if _vol_popup["click_bind"] is not None:
+            try:
+                root.unbind_all("<Button-1>")
+            except Exception:
+                pass
+            _vol_popup["click_bind"] = None
+        w = _vol_popup["win"]
+        if w is not None:
+            try:
+                w.destroy()
+            except Exception:
+                pass
+            _vol_popup["win"] = None
+
+    def _toggle_volume_popup():
+        if _vol_popup["win"] is not None:
+            _close_volume_popup()
+            return
+        from tkinter import ttk
+        popup = tk.Toplevel(vol_btn)
+        popup.overrideredirect(True)
+        popup.configure(bg=Colors.BG_CARD, highlightthickness=1,
+                        highlightbackground=Colors.BORDER)
+        popup.attributes("-topmost", True)
+        popup_w, popup_h = 44, 150
+        x = vol_btn.winfo_rootx() - (popup_w - vol_btn.winfo_width()) // 2
+        y = vol_btn.winfo_rooty() - popup_h - 4
+        popup.geometry(f"{popup_w}x{popup_h}+{x}+{y}")
+        inner = tk.Frame(popup, bg=Colors.BG_CARD)
+        inner.pack(fill="both", expand=True, padx=6, pady=6)
+        icon_lbl = tk.Label(inner, text=_volume_icon(player.get_volume()),
+                            bg=Colors.BG_CARD, fg=Colors.TEXT_DIM,
+                            font=("Segoe UI", scaled_font_size(9)))
+        icon_lbl.pack(side="bottom", pady=(6, 0))
+        vol_var = tk.DoubleVar(value=player.get_volume() * 100)
+
+        def _on_change(val):
+            vol = max(0.0, min(1.0, float(val) / 100.0))
+            player.set_volume(vol)
+            icon = _volume_icon(vol)
+            icon_lbl.config(text=icon)
+            vol_btn.config(text=icon)
+
+        scale = ttk.Scale(inner, from_=100, to=0, orient="vertical",
+                          variable=vol_var, command=_on_change)
+        scale.pack(side="top", fill="y", expand=True)
+        popup.bind("<Escape>", _close_volume_popup)
+        popup.focus_force()
+
+
+        def _on_global_click(event):
+            try:
+                wx, wy = popup.winfo_rootx(), popup.winfo_rooty()
+                ww, wh = popup.winfo_width(), popup.winfo_height()
+                inside_popup = wx <= event.x_root <= wx + ww and wy <= event.y_root <= wy + wh
+                bx, by = vol_btn.winfo_rootx(), vol_btn.winfo_rooty()
+                bw, bh = vol_btn.winfo_width(), vol_btn.winfo_height()
+                inside_btn = bx <= event.x_root <= bx + bw and by <= event.y_root <= by + bh
+                if not inside_popup and not inside_btn:
+                    _close_volume_popup()
+            except Exception:
+                _close_volume_popup()
+
+        _vol_popup["click_bind"] = root.bind_all("<Button-1>", _on_global_click, add="+")
+        _vol_popup["win"] = popup
+
+    vol_btn.config(command=_toggle_volume_popup)
+    ToolTip(vol_btn, "Громкость")
+

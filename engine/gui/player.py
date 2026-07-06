@@ -20,12 +20,28 @@ clean_path = None
 # Состояние (перенесено из секции STATE gui.py)
 current_pos = 0
 play_btn = None
+current_volume = 0.8
 
 
 def init(**deps):
     """Внедрение зависимостей из engine.gui.main_window (имена совпадают с
     именами глобальных переменных исходного gui.py)."""
     globals().update(deps)
+
+
+def set_volume(vol):
+    """Устанавливает громкость воспроизведения референса (0.0–1.0)."""
+    global current_volume
+    current_volume = max(0.0, min(1.0, vol))
+    if PYGAME_OK:
+        try:
+            pygame.mixer.music.set_volume(current_volume)
+        except Exception:
+            pass
+
+
+def get_volume():
+    return current_volume
 
 
 def pick_reference():
@@ -55,11 +71,17 @@ def play_reference():
         return
     if pygame.mixer.music.get_busy():
         pygame.mixer.music.stop()
+        if hasattr(pygame.mixer.music, "unload"):
+            try:
+                pygame.mixer.music.unload()
+            except Exception:
+                pass
         play_btn.config(text="▶ ")
         current_pos = 0
         return
     try:
         pygame.mixer.music.load(ref)
+        pygame.mixer.music.set_volume(current_volume)
         pygame.mixer.music.play(start=current_pos)
         play_btn.config(text="⏸")
         _check_playback()
@@ -96,6 +118,7 @@ def seek_forward():
         current_pos += 5
         pygame.mixer.music.stop()
         pygame.mixer.music.load(ref)
+        pygame.mixer.music.set_volume(current_volume)
         pygame.mixer.music.play(start=current_pos)
         play_btn.config(text="⏸")
         _check_playback()
@@ -117,6 +140,7 @@ def seek_back():
         current_pos = max(0, current_pos - 5)
         pygame.mixer.music.stop()
         pygame.mixer.music.load(ref)
+        pygame.mixer.music.set_volume(current_volume)
         pygame.mixer.music.play(start=current_pos)
         play_btn.config(text="⏸")
         _check_playback()

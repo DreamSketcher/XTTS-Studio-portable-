@@ -1,12 +1,12 @@
 {
   "language": "auto",
   "quality": "Высокое качество",
-  "ref_path": "C:/XTTS Studio/reference/asd.mp3",
+  "ref_path": "C:\\XTTS Studio\\library\\Звук Женского диктора на русском языке (1)\\normalized.wav",
   "use_gpt": false,
   "word_replacer_enabled": true,
   "lang_split_enabled": true,
-  "ui_language": "en",
-  "text_font_size": 13,
+  "ui_language": "ru",
+  "text_font_size": 15,
   "ai_conductor_enabled": false,
   "ai_conductor_context": "",
   "quality_params": {

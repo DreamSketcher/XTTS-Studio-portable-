@@ -149,6 +149,40 @@ def scaled_font_size(design_size: int) -> int:
         return design_size
 
 
+# ── Масштабирование произвольной геометрии (высота/ширина кнопок, диаметр
+# круглых кнопок, отступы и т.д.) — единая точка правды, использующая тот
+# же коэффициент get_font_scale(), что и шрифт. Раньше в разных местах
+# (widgets.create_button, output_window._round_btn, history_window.
+# _round_btn) один и тот же расчёт "diameter * get_font_scale()" был
+# продублирован вручную с разной обвязкой (где-то min_size был, где-то
+# нет) — это гарантированный источник рассинхронизации при следующей
+# правке. scaled_size() — единственное место, где стоит поменять формулу
+# масштабирования геометрии, если она когда-нибудь понадобится.
+MIN_SCALED_SIZE = 20
+MAX_SCALED_SIZE = 200
+
+
+def scaled_size(design_size, min_size=None, max_size=None):
+    """Масштабирует пиксельный размер (высоту/ширину/диаметр виджета)
+    тем же коэффициентом, что и scaled_font_size() — гарантирует, что
+    кнопки и другие геометрически заданные виджеты растут/уменьшаются
+    синхронно с текстом внутри них при смене базового размера шрифта.
+
+    min_size/max_size — необязательные локальные пределы конкретного
+    вызова (например, круглая кнопка не должна становиться меньше своего
+    исходного диаметра — используй min_size=design_size); если не
+    указаны, применяются глобальные MIN/MAX_SCALED_SIZE.
+    """
+    try:
+        scale = get_font_scale()
+        result = round(design_size * scale)
+    except Exception:
+        result = design_size
+    lo = MIN_SCALED_SIZE if min_size is None else min_size
+    hi = MAX_SCALED_SIZE if max_size is None else max_size
+    return max(lo, min(hi, result))
+
+
 def load_font_scale_from_settings() -> None:
     """Читает сохранённый базовый размер шрифта из theme_settings.json
     (через theme_manager) и применяет его к текущему состоянию масштаба.

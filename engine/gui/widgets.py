@@ -5,7 +5,7 @@ import tkinter as tk
 
 import customtkinter as ctk
 
-from engine.gui.colors import Colors, scaled_font_size
+from engine.gui.colors import Colors, scaled_font_size, scaled_size
 
 class CompatCTkButton(ctk.CTkButton):
     def __init__(self, *args, bg=None, fg=None, activebackground=None,
@@ -100,6 +100,16 @@ def create_button(parent, text, command, bg=None, fg=None,
     if active_bg is None:
         active_bg = Colors.BG_HOVER
     is_bold = "ГЕНЕРИРОВАТЬ" in text or "ОТМЕНА" in text or "GENERATE" in text or "CANCEL" in text
+    # ИСПРАВЛЕНО: высота и ширина кнопки раньше не учитывали пользовательский
+    # масштаб шрифта из Конструктора темы — рос только сам шрифт (через
+    # scaled_font_size), а геометрия кнопки оставалась фиксированной в
+    # пикселях. На крупных базовых размерах шрифта текст физически
+    # переставал помещаться и обрезался/съезжал за границы кнопки. Теперь
+    # высота и ширина масштабируются той же единой функцией scaled_size(),
+    # что использует и весь остальной проект — кнопка растёт синхронно с
+    # текстом внутри неё. min_size=design-значение — кнопка не должна
+    # становиться мельче исходного дизайнерского размера.
+    design_height = int(height * 28) if height else 28
     btn = CompatCTkButton(
         parent,
         text=text,
@@ -109,17 +119,11 @@ def create_button(parent, text, command, bg=None, fg=None,
         hover_color=active_bg,
         border_width=0,
         corner_radius=10,
-        # ИСПРАВЛЕНО: font_size здесь — центральная фабрика кнопок для
-        # практически всех панелей проекта (toolbar/панели вызывают
-        # create_button() с собственным font_size). Раньше size=font_size+2
-        # не учитывал пользовательский масштаб шрифта из Конструктора темы —
-        # теперь оборачиваем в scaled_font_size(), одна правка масштабирует
-        # шрифт кнопок сразу во всём приложении.
         font=ctk.CTkFont(family="Segoe UI", size=scaled_font_size(font_size + 2), weight="bold" if is_bold else "normal"),
-        height=max(28, int(height * 28) if height else 28)
+        height=scaled_size(design_height, min_size=design_height)
     )
     if width:
-        btn.configure(width=width)
+        btn.configure(width=scaled_size(width, min_size=width))
     return btn
 def create_entry(parent, textvariable, bg=None, fg=None):
     # ЛЕНИВЫЕ дефолты (см. create_card)
