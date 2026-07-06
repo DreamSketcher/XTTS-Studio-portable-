@@ -213,7 +213,7 @@ if errorlevel 1 (
     echo   RESULT: PROJECT OK
 )
 echo ==================================================
-echo   Log saved: %~dp0verify_report.txt
+echo   Log saved: %~dp0result\verify_report.txt
 echo.
 pause
 goto MENU

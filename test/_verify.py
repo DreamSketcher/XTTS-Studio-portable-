@@ -49,7 +49,8 @@ def main() -> int:
         return 1
 
     PROJECT_ROOT = Path(sys.argv[1]).resolve()
-    LOG_FILE = (PROJECT_ROOT / "test" / "verify_report.txt").resolve()
+    LOG_FILE = (PROJECT_ROOT / "test" / "result" / "verify_report.txt").resolve()
+    LOG_FILE.parent.mkdir(parents=True, exist_ok=True)
 
     # Tee output to console + log file
     tee = Tee(LOG_FILE)
