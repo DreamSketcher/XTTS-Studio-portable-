@@ -428,6 +428,6 @@ XTTS Studio (portable)
 
 <div align="center">
 
-**XTTS Studio** · by EXIZ10TION · Made with 🎙️ and ❤️
+**XTTS Studio** · by EXIZ10TION · Made with ❤️ and 
 
 </div>
