@@ -132,9 +132,15 @@ def _clear_dir(path: str):
 
 def _download_to_staging(relative_path: str, expected_sha256: str = None) -> bool:
     """
-    Скачивает файл во временный staging (НЕ в рабочую директорию) и,
-    если хэш указан в манифесте, проверяет SHA256 перед тем как считать
-    файл готовым к применению.
+    Скачивает файл во временный staging (НЕ в рабочую директорию) и
+    проверяет его SHA256 перед тем как считать файл готовым к применению.
+
+    ВАЖНО: expected_sha256 обязателен. Если в манифесте (version.json ->
+    "sha256") для этого файла нет хэша — файл считается непрошедшим
+    проверку и НЕ применяется, даже если скачался без ошибок. Раньше
+    отсутствие хэша в манифесте тихо пропускало проверку — это было дырой:
+    сломанный/неполный релизный манифест приводил к обновлению без
+    проверки целостности вообще.
     """
     url = f"{RAW_BASE}/{urllib.parse.quote(relative_path)}"
     dst = os.path.join(STAGING_DIR, relative_path.replace("/", os.sep))
@@ -145,12 +151,16 @@ def _download_to_staging(relative_path: str, expected_sha256: str = None) -> boo
             with open(tmp, "wb") as f:
                 shutil.copyfileobj(resp, f)
 
-        if expected_sha256:
-            actual = _sha256_of_file(tmp)
-            if actual.lower() != expected_sha256.lower():
-                print(f"[Updater] SHA256 не совпадает для {relative_path}: ожидалось {expected_sha256}, получено {actual}")
-                os.remove(tmp)
-                return False
+        if not expected_sha256:
+            print(f"[Updater] В манифесте нет SHA256 для {relative_path} — файл отклонён")
+            os.remove(tmp)
+            return False
+
+        actual = _sha256_of_file(tmp)
+        if actual.lower() != expected_sha256.lower():
+            print(f"[Updater] SHA256 не совпадает для {relative_path}: ожидалось {expected_sha256}, получено {actual}")
+            os.remove(tmp)
+            return False
 
         if os.path.exists(dst):
             os.remove(dst)
