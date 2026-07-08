@@ -16,15 +16,23 @@ Version : 3.11.7
   OK — 1 config(s) found: settings.json
 
 [3/5] Syntax check of .py files...
-  Checked: 97 files, errors: 0
+  Checked: 99 files, errors: 0
 
 [4/5] Import check of engine.* modules...
 pygame 2.6.1 (SDL 2.28.4, Python 3.11.7)
 Hello from the pygame community. https://www.pygame.org/contribute.html
-  OK — 92 modules imported successfully
+
+  --- Missing third-party packages ---
+  [WARN] Package "other" is not installed.
+         -> needed by engine.gui.history_window (OSError)
+         -> needed by engine.gui.main_window (OSError)
+         -> needed by engine.gui.output_window (OSError)
+         -> needed by engine.gui.toolbar (OSError)
+
+  -> Install: pip install other
 
 ----------------------------------------------------------------------
-CRITICAL: 0  |  WARNINGS: 0
+CRITICAL: 0  |  WARNINGS: 1
 ======================================================================
-RESULT: PROJECT IS FULLY OPERATIONAL
+RESULT: PROJECT OK (some warnings)
 ======================================================================

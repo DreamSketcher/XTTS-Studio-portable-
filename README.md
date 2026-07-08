@@ -53,7 +53,7 @@ The AI module is optional and connects through any OpenAI-compatible provider.
 - ◀ Collapsible left panel that remembers its position
 - 🔠 Adjustable text size in the input box (the "Aa" slider)
 - All view settings persist between sessions
-- 🔄 **Git-based updates** — pulls only the changes, no need to redownload the whole archive
+- 🔄 **Auto-update** — staged download of the new version, integrity check via **SHA256**, automatic backup and rollback on failure, full-reinstall detection via `min_app_version`
 
 ### 🧠 Text processing
 - Numbers → words, automatically
@@ -80,6 +80,11 @@ The AI module is optional and connects through any OpenAI-compatible provider.
 - **"AI Status" window** — shows the provider chain and each provider's live status
 - Provider chain support: Groq, OpenRouter, local (offline) LLMs, and custom OpenAI-compatible providers
 - A provider catalog and key library; the provider you pick is always first in the chain
+- **Local LLMs (offline, no keys, no internet)**
+  - Automatic scan of your PC's environment (GPU presence, CUDA, VRAM/RAM) to pick a compatible configuration
+  - Automatic installation of the libraries the selected model needs — no manual pip wrangling
+  - A built-in catalog of supported local models, downloadable right from the interface
+  - Bring your own model — just point it at a folder with the model files
 
 ### 📋 Other
 - Cancelable task queue
@@ -148,7 +153,7 @@ GPU     → G-P-U
 OpenAI  → Open-Eh-Eye
 ```
 
-The dictionary grows automatically during generation and via the AI Conductor.
+The dictionary grows automatically during generation, and when the **AI Conductor** is enabled it also helps the dictionary along: it analyzes transliteration and adds corrections into the `ai_corrected` category itself — so an active conductor effectively keeps "training" the dictionary alongside generation.
 Edit it with the **📖 Dictionary** button (add, change, or remove rules).
 
 - **Prioritized rule categories:** `builtin → auto → ai_corrected → custom` — a more specific rule overrides a more general one
@@ -200,6 +205,10 @@ XTTS Studio (portable)
 ├── word_rules.json               ← pronunciation dictionary (builtin/auto/ai_corrected/custom)
 ├── chat_history.json             ← AI chat session history
 ├── history.json                  ← generation history
+├── version.json                  ← version and update-system data (min_app_version)
+├── env_cache.cfg                  ← environment-scan cache (GPU/CUDA/libraries)
+├── generate_version_manifest.py  ← generates the version manifest for the update system
+├── ProjectAnalyzer.ps1            ← project structure snapshot for AI context between dev sessions
 │
 ├── engine/                       ═══ TECHNICAL CORE (no tkinter) ═══
 │   │
@@ -320,6 +329,7 @@ XTTS Studio (portable)
 ├── logs/                         ← error logs
 ├── reference/                    ← source reference files
 ├── word_rules_backups/           ← timestamped backups of the pronunciation dictionary
+├── test/                         ← pytest: chunker, normalizer, smart pauses, updater
 ├── tools/                        ← development support utilities
 ├── ffmpeg/bin/                   ← ffmpeg.exe, ffprobe.exe
 └── python/
@@ -347,7 +357,7 @@ XTTS Studio (portable)
 - **`ai_conductor.py`** — `conduct()`: one call for the whole text, analyzing chunks and returning per-chunk voice parameters (temperature/top_p/repetition_penalty/speed/pause_after_ms). Optionally rewrites the text for style (`rewrite_enabled`) and checks transliteration (`corrections` → `word_rules.json`). On an AI error it falls back to default parameters — generation is never interrupted. Levels 1 and 2 are explicitly gated by flags both in this module and in `tts_runner.py`, so they can never accidentally influence each other.
 - **`gui/chat_window.py` + `gui/chat_window/`** — the AI chat window: `chat_window.py` is the main interface file (UI assembly), while the `chat_window/` package holds its submodules: message rendering, input, session history and search, conversation export, text-editor mode and free-chat mode, an accordion of provider settings, hotkeys, a typing indicator. Reply-generation logic and session management live in the nested `chat_window/engine/`. Fully localized (RU/EN).
 - **`gpt_client.py`** — the cloud-provider chain (active → built-in → custom), key and model management, provider catalog.
-- **`local_llm_client.py`** / **`local_env_section.py`** / **`env_setup.py`** — support for local (offline) LLMs as an alternative to cloud providers, including environment setup.
+- **`local_llm_client.py`** / **`local_env_section.py`** / **`env_setup.py`** — support for local (offline) LLMs as an alternative to cloud providers: automatic scan of the PC's environment (GPU/CUDA/VRAM), automatic installation of the libraries the selected model needs, a built-in catalog of supported models, and the ability to plug in your own model from a folder.
 - **`gui/ai_status_window.py`** — a diagnostic window showing the provider chain and each provider's status.
 
 ### Voice and audio
@@ -357,7 +367,7 @@ XTTS Studio (portable)
 
 ### Infrastructure
 - **`task_manager.py` / `task_models.py`** — a multithreaded generation queue with cancel-by-id.
-- **`updater.py`** — Git-based updates: pulls only the changes instead of redownloading the whole archive (correct URL-encoding for filenames with spaces), self-restart.
+- **`updater.py`** — the update system: staged download of the new version, integrity check of every file via **SHA256**, automatic backup of the current version with rollback on failure, full-reinstall detection via `min_app_version` (correct URL-encoding for filenames with spaces), self-restart.
 - **`i18n.py`** — the RU/EN translation dictionary (350+ keys), auto-loads the saved language.
 
 ---
@@ -375,6 +385,20 @@ Level 2 applies **only** when `rewrite_enabled=True` is explicit — this check 
 
 ---
 
+## 🔐 How the update system works
+
+The update system follows a "safe even if something goes wrong" principle:
+
+1. **Version check** — the current version is compared against `version.json`; the `min_app_version` field determines whether a regular patch is enough or a full reinstall is required.
+2. **Staged download** — the new version is downloaded into a temporary folder, without touching the app's working files.
+3. **SHA256 verification** — every downloaded file is checked against its checksum; on a mismatch the update is aborted and the working version is left untouched.
+4. **Backup and rollback** — a backup of the current version is made before files are replaced; if applying the update fails, the app automatically rolls back to that backup.
+5. **Self-restart** — once the update is applied successfully, the app restarts itself.
+
+If auto-update still fails, `XTTS_DIAG.bat` provides a forced recovery/reinstall option.
+
+---
+
 ## 🗃 Data and config files
 
 | File | Purpose |
@@ -385,6 +409,8 @@ Level 2 applies **only** when `rewrite_enabled=True` is explicit — this check 
 | `word_rules_backups/` | timestamped dictionary backups before every save |
 | `chat_history.json` | AI chat session history |
 | `history.json` | generation history |
+| `version.json` | current version and update-system data (including `min_app_version`) |
+| `env_cache.cfg` | environment-scan cache (GPU/CUDA/libraries) |
 
 ---
 
@@ -393,6 +419,10 @@ Level 2 applies **only** when `rewrite_enabled=True` is explicit — this check 
 Built using AI tools: **Claude**, **ChatGPT**, and others.
 
 Architecture refactoring (splitting into `engine/` + `engine/gui/`), RU/EN localization, the light theme, and interface polish were done with **Arena.ai Agent Mode** (a multi-model agent combining Claude, ChatGPT, Gemini, and others).
+
+Key modules (`updater.py`, `chunker.py`, `normalizer.py`, `smart_pauses.py`) are covered by **pytest** tests (`test/`, run via `RUN_TESTS.bat`).
+
+Development support tools live in `tools/`: generating `version.json` and the update manifest, converting `.py` to `.txt` for pasting into an AI chat, icon generation, a GitHub publishing script. `ProjectAnalyzer.ps1` at the project root builds a structure snapshot used as AI context across development sessions.
 
 ---
 
