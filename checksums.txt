@@ -1,4 +1,4 @@
-XTTS Studio — контрольные суммы SHA256 для версии 1.1.70
+XTTS Studio — контрольные суммы SHA256 для версии 1.1.80
 Проверка (Windows PowerShell): certutil -hashfile "имя_файла" SHA256
 Проверка (Linux/macOS): sha256sum имя_файла
 
@@ -93,7 +93,7 @@ b47a8ef2bd7b911211794fc48528e84962fe9e8a62dc5dd36686cacf5519c541  engine/tts/cac
 ba8d7fd846c1006706cf3c2bc84d2010e4fb77b35cf56c547bf73c5c984f2cab  engine/tts/qc.py
 d2ce8e043ded787bdf4f48c8d02d816da20db639e87482c4733b88dccf21bb52  engine/tts/utils.py
 cce1a0c70d0f53f7bb54a842876e9a3e0139fc10f7b686781408d7659bc2e180  engine/tts_runner.py
-4fd7e0353f3b5d29790bd1c6e9ddee16293bde1632d00b3117792b41be3209d7  engine/updater.py
+16cc7f0c965e045471ab4034ee57d6633cd5eeac0becc97a7a1ddf0381e2d46c  engine/updater.py
 181495e80f0d99a675ab160ffaf6ff0e199e28054980b6de21f19837e63fa441  engine/voice_manager.py
 e90d1304376b54d2cc94f4a4a3cb9b5f60b07c380ab1fd3cd554a3b4c493e88c  engine/word_replacer.py
 20623ccd89d6c1956afafbcf9d0ea0f8ec3ff95a24422456da63ab5d9397d5fd  engine/word_replacer_window.py
