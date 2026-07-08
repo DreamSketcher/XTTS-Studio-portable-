@@ -617,8 +617,9 @@ def open_gpt_settings(event=None):
                         download_in_progress.__setitem__(0, False),
                     ))
                 except Exception as e:
-                    _safe_after(0, lambda: (
-                        action_status_lbl.config(text=str(e), fg=_c("TEXT_ERROR")),
+                    err_msg = str(e)
+                    _safe_after(0, lambda msg=err_msg: (
+                        action_status_lbl.config(text=msg, fg=_c("TEXT_ERROR")),
                         action_btn.config(text=t("local_catalog_download_btn") if not _has_incomplete_download(m.get("filename", "")) else t("local_catalog_resume_btn"), state="normal", bg=_c("BG_ACTIVE")),
                         download_in_progress.__setitem__(0, False),
                     ))

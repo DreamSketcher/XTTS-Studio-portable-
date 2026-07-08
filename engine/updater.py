@@ -117,6 +117,7 @@ def check_update() -> dict:
             "remote": remote,
             "files": info.get("files", []),
             "sha256": info.get("sha256", {}),
+            "removed_files": info.get("removed_files", []),
             "changelog": info.get("changelog", ""),
             "min_app_version": min_required,
             "needs_manual_reinstall": needs_manual,
@@ -175,6 +176,38 @@ def _download_to_staging(relative_path: str, expected_sha256: str = None) -> boo
         return False
 
 
+def _delete_removed_files(removed_files: list):
+    """
+    Удаляет файлы, которых больше нет в новом манифесте (переименованные,
+    перенесённые или объединённые при рефакторинге на стороне разработчика).
+
+    Файлы уже забэкаплены заранее (см. apply_update -> _backup_current_files),
+    поэтому это безопасно откатывается через rollback_update() при необходимости.
+
+    Ошибка удаления одного файла НЕ прерывает обновление — это уборка мусора,
+    а не критический шаг; лучше оставить лишний файл на диске, чем откатить
+    иначе успешное обновление.
+    """
+    for rel in removed_files:
+        path = os.path.join(BASE_DIR, rel.replace("/", os.sep))
+        try:
+            if os.path.isfile(path):
+                os.remove(path)
+                print(f"[Updater] Удалён устаревший файл: {rel}")
+        except Exception as e:
+            print(f"[Updater] Не удалось удалить устаревший файл {rel}: {e}")
+
+    # Подчищаем опустевшие после удаления директории (best-effort)
+    dirs = {os.path.dirname(os.path.join(BASE_DIR, rel.replace("/", os.sep))) for rel in removed_files}
+    for d in sorted(dirs, key=len, reverse=True):  # сначала самые глубокие
+        try:
+            if os.path.isdir(d) and not os.listdir(d):
+                os.rmdir(d)
+                print(f"[Updater] Удалена опустевшая папка: {os.path.relpath(d, BASE_DIR)}")
+        except Exception:
+            pass
+
+
 def _backup_current_files(files: list):
     """Копирует текущие рабочие версии файлов в BACKUP_DIR перед заменой."""
     _clear_dir(BACKUP_DIR)
@@ -201,11 +234,12 @@ def _move_staged_to_live(files: list):
         shutil.move(staged, live)
 
 
-def _write_rollback_marker(old_version: str, new_version: str, files: list):
+def _write_rollback_marker(old_version: str, new_version: str, files: list, removed_files: list = None):
     data = {
         "old_version": old_version,
         "new_version": new_version,
         "files": files,
+        "removed_files": removed_files or [],
         "attempt": 0,
         "timestamp": time.time(),
     }
@@ -213,19 +247,24 @@ def _write_rollback_marker(old_version: str, new_version: str, files: list):
         json.dump(data, f, ensure_ascii=False, indent=2)
 
 
-def apply_update(files: list, sha256_map: dict = None, progress_callback=None) -> bool:
+def apply_update(files: list, sha256_map: dict = None, removed_files: list = None, progress_callback=None) -> bool:
     """
     Безопасный цикл обновления:
       1. скачать ВСЕ файлы в staging, не трогая рабочую копию
       2. проверить SHA256 каждого файла (если хэш есть в манифесте)
       3. если хоть один файл не прошёл проверку/не скачался — отменить всё,
          рабочие файлы остаются как есть
-      4. если всё ок — сделать backup рабочих файлов
+      4. если всё ок — сделать backup рабочих файлов (включая те, что будут
+         удалены как устаревшие)
       5. перенести staged-файлы поверх рабочих
-      6. записать маркер "обновление ожидает подтверждения" (см.
+      6. удалить файлы, которых больше нет в новом манифесте (removed_files) —
+         переименованные/перенесённые/объединённые при рефакторинге; иначе
+         они бы бесконечно копились на дисках уже обновившихся пользователей
+      7. записать маркер "обновление ожидает подтверждения" (см.
          check_startup_health / confirm_update_success ниже)
     """
     sha256_map = sha256_map or {}
+    removed_files = removed_files or []
     _clear_dir(STAGING_DIR)
     os.makedirs(STAGING_DIR, exist_ok=True)
 
@@ -256,7 +295,7 @@ def apply_update(files: list, sha256_map: dict = None, progress_callback=None) -
     old_version = get_local_version()
 
     try:
-        _backup_current_files(files)
+        _backup_current_files(files + removed_files)
     except Exception as e:
         print(f"[Updater] Не удалось создать backup, обновление отменено: {e}")
         _clear_dir(STAGING_DIR)
@@ -269,6 +308,9 @@ def apply_update(files: list, sha256_map: dict = None, progress_callback=None) -
         rollback_update()
         return False
 
+    if removed_files:
+        _delete_removed_files(removed_files)
+
     try:
         info = get_remote_version_info()
         new_version = info.get("version", "?")
@@ -278,7 +320,7 @@ def apply_update(files: list, sha256_map: dict = None, progress_callback=None) -
         print(f"[Updater] Не удалось сохранить version.json: {e}")
         new_version = "?"
 
-    _write_rollback_marker(old_version, new_version, files)
+    _write_rollback_marker(old_version, new_version, files, removed_files)
     _clear_dir(STAGING_DIR)
     return True
 
@@ -361,7 +403,8 @@ def rollback_update() -> bool:
             with open(ROLLBACK_MARKER, "r", encoding="utf-8") as f:
                 marker = json.load(f)
         files = marker.get("files", [])
-        for rel in files:
+        removed_files = marker.get("removed_files", [])
+        for rel in files + removed_files:
             backup_src = os.path.join(BACKUP_DIR, rel.replace("/", os.sep))
             if os.path.exists(backup_src):
                 live = os.path.join(BASE_DIR, rel.replace("/", os.sep))

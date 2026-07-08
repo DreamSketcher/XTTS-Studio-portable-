@@ -7,9 +7,33 @@ import os
 import sys
 import json
 import shutil
+import ssl
+import socket
 import threading
+import time
 import urllib.request
 import urllib.error
+import http.client
+
+try:
+    import certifi
+    _SSL_CONTEXT = ssl.create_default_context(cafile=certifi.where())
+except Exception:
+    _SSL_CONTEXT = ssl.create_default_context()
+
+# Ошибки, при которых имеет смысл повторить попытку скачивания
+# (обрыв соединения/TLS-сессии), в отличие от логических ошибок типа 404.
+_TRANSIENT_DOWNLOAD_ERRORS = (
+    urllib.error.URLError,
+    ssl.SSLError,
+    socket.timeout,
+    ConnectionError,
+    http.client.IncompleteRead,
+    EOFError,
+)
+
+_MAX_DOWNLOAD_RETRIES = 5
+_RETRY_BACKOFF_SEC = 3  # линейный backoff: 3с, 6с, 9с...
 
 # Убеждаемся, что папка, куда ставится llama-cpp-python, есть в sys.path
 # (актуально для bundled/python и portable-окружений)
@@ -233,65 +257,94 @@ def download_model(url: str, filename: str, progress_cb=None, cancelled_flag=Non
     offset = checkpoint.get("offset", 0) if resume and checkpoint.get("url") == url else 0
     total = checkpoint.get("total", 0)
 
-    try:
-        headers = {"User-Agent": "XTTS-Studio/1.0"}
-        if offset > 0:
-            headers["Range"] = f"bytes={offset}-"
-            emit(f"Продолжаю скачивание {filename} с {offset / (1024**2):.1f} MB...")
-        else:
-            emit(f"Скачивание {filename}...")
-
-        req = urllib.request.Request(url, headers=headers)
-        with urllib.request.urlopen(req, timeout=30) as response:
-            # Если сервер не поддерживает Range — сбрасываем offset
-            if offset > 0 and response.status != 206:
-                emit("Сервер не поддерживает докачку — начинаю сначала.")
-                offset = 0
-
-            if offset == 0:
-                total = int(response.headers.get("Content-Length", 0))
-
-            downloaded = offset
-            block_size = 8192
-            mode = "ab" if offset > 0 else "wb"
-            with open(temp_path, mode) as f:
-                while True:
-                    if is_cancelled():
-                        _save_download_checkpoint(filename, downloaded, total, url)
-                        raise InterruptedError("Скачивание отменено пользователем")
-                    block = response.read(block_size)
-                    if not block:
-                        break
-                    f.write(block)
-                    downloaded += len(block)
-                    _save_download_checkpoint(filename, downloaded, total, url)
-                    if total:
-                        pct = downloaded / total * 100
-                        mb = downloaded / (1024 ** 2)
-                        total_mb = total / (1024 ** 2)
-                        emit(f"\rСкачано: {mb:.1f} / {total_mb:.1f} MB ({pct:.1f}%)")
-                    else:
-                        emit(f"\rСкачано: {downloaded / (1024 ** 2):.1f} MB")
-        os.replace(temp_path, dest_path)
-        _clear_download_checkpoint(filename)
-        emit(f"✅ Сохранено: {dest_path}")
-        return dest_path
-    except InterruptedError:
-        raise
-    except urllib.error.HTTPError as e:
-        raise RuntimeError(f"Ошибка загрузки {e.code}: {e.reason}")
-    except Exception as e:
-        # Сохраняем прогресс, чтобы можно было продолжить
+    attempt = 0
+    while True:
+        attempt += 1
         try:
-            if os.path.exists(temp_path):
-                current = os.path.getsize(temp_path)
-                _save_download_checkpoint(filename, current, total, url)
-        except Exception:
-            pass
-        raise RuntimeError(f"Не удалось скачать модель: {e}")
-    finally:
-        # Удаляем .tmp только при успехе; при отмене/ошибке оставляем для resume
-        pass
+            headers = {"User-Agent": "XTTS-Studio/1.0"}
+            if offset > 0:
+                headers["Range"] = f"bytes={offset}-"
+                emit(f"Продолжаю скачивание {filename} с {offset / (1024**2):.1f} MB...")
+            else:
+                emit(f"Скачивание {filename}...")
+
+            req = urllib.request.Request(url, headers=headers)
+            with urllib.request.urlopen(req, timeout=30, context=_SSL_CONTEXT) as response:
+                # Если сервер не поддерживает Range — сбрасываем offset
+                if offset > 0 and response.status != 206:
+                    emit("Сервер не поддерживает докачку — начинаю сначала.")
+                    offset = 0
+
+                if offset == 0:
+                    total = int(response.headers.get("Content-Length", 0))
+
+                downloaded = offset
+                block_size = 8192
+                mode = "ab" if offset > 0 else "wb"
+                with open(temp_path, mode) as f:
+                    while True:
+                        if is_cancelled():
+                            _save_download_checkpoint(filename, downloaded, total, url)
+                            raise InterruptedError("Скачивание отменено пользователем")
+                        block = response.read(block_size)
+                        if not block:
+                            break
+                        f.write(block)
+                        downloaded += len(block)
+                        _save_download_checkpoint(filename, downloaded, total, url)
+                        if total:
+                            pct = downloaded / total * 100
+                            mb = downloaded / (1024 ** 2)
+                            total_mb = total / (1024 ** 2)
+                            emit(f"\rСкачано: {mb:.1f} / {total_mb:.1f} MB ({pct:.1f}%)")
+                        else:
+                            emit(f"\rСкачано: {downloaded / (1024 ** 2):.1f} MB")
+            os.replace(temp_path, dest_path)
+            _clear_download_checkpoint(filename)
+            emit(f"✅ Сохранено: {dest_path}")
+            return dest_path
+        except InterruptedError:
+            raise
+        except urllib.error.HTTPError as e:
+            raise RuntimeError(f"Ошибка загрузки {e.code}: {e.reason}")
+        except _TRANSIENT_DOWNLOAD_ERRORS as e:
+            # Обрыв соединения/TLS-сессии — это не повод сдаваться сразу.
+            # Сохраняем прогресс и пробуем переподключиться с текущего оффсета.
+            try:
+                if os.path.exists(temp_path):
+                    offset = os.path.getsize(temp_path)
+                    _save_download_checkpoint(filename, offset, total, url)
+            except Exception:
+                pass
+
+            if attempt >= _MAX_DOWNLOAD_RETRIES:
+                raise RuntimeError(
+                    f"Не удалось скачать модель после {attempt} попыток "
+                    f"(обрыв соединения): {e}"
+                )
+
+            wait_s = _RETRY_BACKOFF_SEC * attempt
+            emit(f"⚠ Обрыв соединения ({e}). Повтор через {wait_s}с "
+                 f"(попытка {attempt}/{_MAX_DOWNLOAD_RETRIES})...")
+
+            # Спим короткими интервалами, чтобы отмена сработала быстро,
+            # а не только после полного ожидания.
+            slept = 0.0
+            while slept < wait_s:
+                if is_cancelled():
+                    raise InterruptedError("Скачивание отменено пользователем")
+                time.sleep(0.5)
+                slept += 0.5
+            continue
+        except Exception as e:
+            # Сохраняем прогресс, чтобы можно было продолжить
+            try:
+                if os.path.exists(temp_path):
+                    current = os.path.getsize(temp_path)
+                    _save_download_checkpoint(filename, current, total, url)
+            except Exception:
+                pass
+            raise RuntimeError(f"Не удалось скачать модель: {e}")
 
 
 def install_catalog_model(model_id: str, progress_cb=None, cancelled_flag=None, resume: bool = False) -> dict:

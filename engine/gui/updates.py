@@ -26,6 +26,7 @@ def _do_update(result):
         ok = apply_update(
             result["files"],
             sha256_map=result.get("sha256", {}),
+            removed_files=result.get("removed_files", []),
             progress_callback=lambda i, t_val: set_progress(int(i / t_val * 100)),
         )
         if ok:
