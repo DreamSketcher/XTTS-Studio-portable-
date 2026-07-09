@@ -1,19 +1,19 @@
 # -*- coding: utf-8 -*-
 """engine/gui/output_window.py — окно «Аудио» / Outputs со встроенным плеером
-(перенесено из gui.py: open_outputs_folder).
 
-Редизайн: скруглённые карточки и кнопки (CompatCTk*), единая "таблетка"
-с кнопками сверху, современный скроллируемый список (CTkScrollableFrame),
-плавающая карточка плеера с waveform (название/время наложены прямо на
-волну), круглые кнопки управления, повтор трека и непрерывное
-воспроизведение следующего файла, полностью круглый всплывающий регулятор
-громкости (эффект прозрачного фона на Windows — без острых углов).
+ФИКС v2 от 2026-07-09:
+1. Починена кнопка повтора (замыкание) + увеличен текст (из v1)
+2. NEW: сохранение состояния повтора между перезапусками окна/приложения
+   -> сохраняется в theme_settings.json как audio_repeat_one через theme_manager
+3. NEW: фикс иконки в панели задач Windows (перо tkinter -> нормальная иконка)
+   -> ставится iconbitmap + iconphoto + AppUserModelID + re-apply через after
 """
 import os
 import datetime as _dt
 import threading
 import tkinter as tk
 from tkinter import messagebox
+import json
 
 import pygame
 import customtkinter as ctk
@@ -26,6 +26,12 @@ except ImportError:
 from i18n import t
 
 from engine.paths import BASE_DIR, OUTPUT_DIR
+# ICON_PATH может быть, а может нет — обрабатываем fallback
+try:
+    from engine.paths import ICON_PATH
+except ImportError:
+    ICON_PATH = os.path.join(str(BASE_DIR), "icon.ico")
+
 from engine.gui.colors import Colors, scaled_font_size, scaled_size
 from engine.gui.tooltip import ToolTip
 from engine.gui.widgets import CompatCTkFrame, CompatCTkButton, CompatCTkLabel
@@ -39,15 +45,10 @@ _VOL_TRANSPARENT_KEY = "#ff00ff"
 
 
 def init(**deps):
-    """Внедрение зависимостей из engine.gui.main_window (имена совпадают с
-    именами глобальных переменных исходного gui.py)."""
     globals().update(deps)
 
 
 def _compute_waveform_peaks(path, num_bars=_WAVE_BARS):
-    """Считывает аудиофайл и возвращает список пар (min, max) амплитуды на
-    каждый столбец waveform. Выполняется в фоновом потоке — не блокирует
-    интерфейс. При ошибке (или отсутствии soundfile) возвращает []."""
     if sf is None:
         return []
     try:
@@ -72,7 +73,6 @@ def _compute_waveform_peaks(path, num_bars=_WAVE_BARS):
 
 
 def _round_rect(canvas, x1, y1, x2, y2, r, **kwargs):
-    """Рисует скруглённый прямоугольник на Canvas (сглаженный полигон)."""
     points = [
         x1 + r, y1, x2 - r, y1, x2, y1, x2, y1 + r,
         x2, y2 - r, x2, y2, x2 - r, y2, x1 + r, y2,
@@ -81,17 +81,187 @@ def _round_rect(canvas, x1, y1, x2, y2, r, **kwargs):
     return canvas.create_polygon(points, smooth=True, **kwargs)
 
 
+# ── Helpers для сохранения повтора ──
+def _load_repeat_saved() -> bool:
+    # 1. через theme_manager если есть новый API
+    try:
+        from engine.gui import theme_manager as tm
+        if hasattr(tm, "get_audio_repeat"):
+            return bool(tm.get_audio_repeat())
+        if hasattr(tm, "get_audio_repeat_state"):
+            return bool(tm.get_audio_repeat_state())
+        # fallback чтение json напрямую
+        if hasattr(tm, "_read_json"):
+            data = tm._read_json()
+            return bool(data.get("audio_repeat_one", False))
+    except Exception:
+        pass
+    # 2. через settings.json (устаревший fallback)
+    try:
+        from engine.settings_store import SETTINGS_PATH
+        if os.path.isfile(SETTINGS_PATH):
+            with open(SETTINGS_PATH, "r", encoding="utf-8") as f:
+                d = json.load(f)
+                if "audio_repeat_one" in d:
+                    return bool(d["audio_repeat_one"])
+    except Exception:
+        pass
+    # 3. прямой чтение theme_settings.json
+    try:
+        tf = os.path.join(str(BASE_DIR), "theme_settings.json")
+        if os.path.isfile(tf):
+            with open(tf, "r", encoding="utf-8") as f:
+                d = json.load(f)
+                return bool(d.get("audio_repeat_one", False))
+    except Exception:
+        pass
+    return False
+
+
+def _save_repeat_state(val: bool):
+    try:
+        from engine.gui import theme_manager as tm
+        if hasattr(tm, "set_audio_repeat"):
+            tm.set_audio_repeat(bool(val))
+            return
+        if hasattr(tm, "set_audio_repeat_state"):
+            tm.set_audio_repeat_state(bool(val))
+            return
+        # прямой write если API нет
+        if hasattr(tm, "_read_json") and hasattr(tm, "THEME_FILE"):
+            data = tm._read_json()
+            data["audio_repeat_one"] = bool(val)
+            with open(tm.THEME_FILE, "w", encoding="utf-8") as f:
+                json.dump(data, f, ensure_ascii=False, indent=2)
+            return
+    except Exception:
+        pass
+    # fallback в theme_settings.json напрямую
+    try:
+        tf = os.path.join(str(BASE_DIR), "theme_settings.json")
+        data = {}
+        if os.path.isfile(tf):
+            try:
+                with open(tf, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+            except Exception:
+                data = {}
+        data["audio_repeat_one"] = bool(val)
+        with open(tf, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+    except Exception:
+        pass
+
+
+# ── Helper для иконки окна аудио (фикс пера) ──
+def _apply_window_icon(win: tk.Toplevel):
+    """Ставит нормальную иконку окну аудио чтобы в таскбаре не было пера tkinter.
+    Тянет ICON_PATH если есть, иначе ищет icon.ico / icon.png в BASE_DIR / images.
+    Делает iconbitmap + iconphoto + AppUserModelID + повтор через after.
+    """
+    # 1. AppUserModelID чтобы Windows группировала иконку с основным приложением
+    try:
+        import ctypes
+        # тот же ID что и у основного окна — тогда иконка не слетает
+        try:
+            ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("XTTSStudio.App")
+        except Exception:
+            pass
+    except Exception:
+        pass
+
+    candidates = []
+    if ICON_PATH:
+        candidates.append(ICON_PATH)
+    candidates.extend([
+        os.path.join(str(BASE_DIR), "icon.ico"),
+        os.path.join(str(BASE_DIR), "icon.png"),
+        os.path.join(str(BASE_DIR), "images", "icon.ico"),
+        os.path.join(str(BASE_DIR), "images", "icon.png"),
+        os.path.join(str(BASE_DIR), "..", "icon.ico"),
+    ])
+    ico_file = None
+    png_file = None
+    for p in candidates:
+        try:
+            if p and os.path.isfile(p):
+                if p.lower().endswith(".ico") and ico_file is None:
+                    ico_file = p
+                elif p.lower().endswith(".png") and png_file is None:
+                    png_file = p
+        except Exception:
+            continue
+
+    # iconbitmap — для заголовка окна и частично для таскбара на Win
+    if ico_file:
+        try:
+            win.iconbitmap(default=ico_file)
+        except Exception:
+            try:
+                win.iconbitmap(ico_file)
+            except Exception:
+                pass
+
+        def _reapply_icon():
+            try:
+                win.iconbitmap(default=ico_file)
+            except Exception:
+                try:
+                    win.iconbitmap(ico_file)
+                except Exception:
+                    pass
+        try:
+            win.after(100, _reapply_icon)
+            win.after(400, _reapply_icon)
+            win.after(1000, _reapply_icon)
+        except Exception:
+            pass
+
+    # iconphoto — более надежно для таскбара в Windows с Tk 8.6
+    try:
+        photo = None
+        if png_file:
+            try:
+                photo = tk.PhotoImage(file=png_file)
+            except Exception:
+                photo = None
+        if photo is None and ico_file:
+            # попробуем через PIL если есть
+            try:
+                from PIL import Image, ImageTk
+                im = Image.open(ico_file)
+                im = im.resize((32, 32), Image.LANCZOS)
+                photo = ImageTk.PhotoImage(im)
+            except Exception:
+                # пробуем напрямую PhotoImage с ico (иногда работает)
+                try:
+                    photo = tk.PhotoImage(file=ico_file)
+                except Exception:
+                    photo = None
+        if photo is not None:
+            try:
+                win.iconphoto(True, photo)
+                win._icon_photo_ref = photo  # keep ref
+            except Exception:
+                pass
+    except Exception:
+        pass
+
+
 def open_outputs_folder():
     os.makedirs(OUTPUT_DIR, exist_ok=True)
     win = tk.Toplevel(root)
     win.title(t("win_audio_title"))
-    win.geometry("760x620")
-    win.minsize(620, 480)
+    win.geometry("820x680")
+    win.minsize(640, 500)
     win.resizable(True, True)
     win.configure(bg=Colors.BG_DARK)
+    # ФИКС ИКОНКИ — сразу
+    _apply_window_icon(win)
     win.grab_set()
 
     # ── состояние плеера ──
+    saved_repeat = _load_repeat_saved()
     _p = {
         "playing": False,
         "path": None,
@@ -99,7 +269,7 @@ def open_outputs_folder():
         "duration": 0.0,
         "after_id": None,
         "volume": 0.8,
-        "repeat_one": False,
+        "repeat_one": bool(saved_repeat),
         "error": None,
     }
     _wave_state = {"peaks": [], "path": None}
@@ -108,10 +278,8 @@ def open_outputs_folder():
     _active_path = {"v": None}
     _vol_popup = {"win": None}
     _empty_state = {"widget": None}
+    _ui_refs = {"repeat_btn": None, "vol_btn": None, "play_btn": None}
 
-    # ══════════════════════════════════════════════════════════════
-    # МЕЛКИЕ ХЕЛПЕРЫ
-    # ══════════════════════════════════════════════════════════════
     def _round_btn(parent, text, cmd, diameter=36, primary=False, danger=False):
         bg = Colors.BG_ACTIVE if primary else Colors.BG_INPUT
         if primary:
@@ -120,16 +288,12 @@ def open_outputs_folder():
             hover = Colors.BG_DANGER
         else:
             hover = Colors.BG_HOVER
-        # Диаметр масштабируется единой функцией scaled_size() (тем же
-        # коэффициентом, что и шрифт внутри кнопки) — иначе на крупных
-        # размерах шрифта иконка/текст выходит за пределы кружка.
-        # min_size=diameter — кнопка не мельче своего исходного размера.
         scaled_diameter = scaled_size(diameter, min_size=diameter)
         return CompatCTkButton(
             parent, text=text, command=cmd,
             width=scaled_diameter, height=scaled_diameter, corner_radius=scaled_diameter // 2,
             fg_color=bg, text_color=Colors.TEXT_MAIN, hover_color=hover,
-            border_width=0, font=("Segoe UI", scaled_font_size(14 if primary else 12)),
+            border_width=0, font=("Segoe UI", scaled_font_size(17 if primary else 15)),
         )
 
     def _fmt(sec):
@@ -174,9 +338,6 @@ def open_outputs_folder():
     def _volume_icon(vol):
         return "🔇" if vol <= 0.001 else ("🔉" if vol < 0.5 else "🔊")
 
-    # ══════════════════════════════════════════════════════════════
-    # WAVEFORM (заголовок трека и время наложены прямо на волну)
-    # ══════════════════════════════════════════════════════════════
     def _redraw_waveform():
         try:
             wave_canvas.delete("all")
@@ -184,8 +345,8 @@ def open_outputs_folder():
             h = wave_canvas.winfo_height()
             if w <= 1 or h <= 1:
                 return
-            text_zone_h = 22
-            body_top = text_zone_h + 4
+            text_zone_h = 28
+            body_top = text_zone_h + 6
             body_h = max(10, h - body_top - 4)
             mid = body_top + body_h / 2
             peaks = _wave_state["peaks"]
@@ -211,7 +372,6 @@ def open_outputs_folder():
             if _p["path"]:
                 wave_canvas.create_line(played_x, body_top - 2, played_x, h,
                                         fill=Colors.TEXT_MAIN, width=1)
-            # оверлей заголовка/времени — маскирует полосу сверху волны
             wave_canvas.create_rectangle(0, 0, w, text_zone_h, fill=Colors.BG_CARD, outline="")
             if _p.get("error"):
                 title, title_color = _p["error"], Colors.TEXT_ERROR
@@ -220,10 +380,10 @@ def open_outputs_folder():
             else:
                 title, title_color = t("no_file"), Colors.TEXT_DIM
             wave_canvas.create_text(10, text_zone_h / 2, text=_truncate(title), anchor="w",
-                                    fill=title_color, font=("Segoe UI", scaled_font_size(9), "bold"))
+                                    fill=title_color, font=("Segoe UI", scaled_font_size(12), "bold"))
             time_text = f"{_fmt(_p['pos'])} / {_fmt(_p['duration'])}" if _p["path"] else "0:00"
             wave_canvas.create_text(w - 10, text_zone_h / 2, text=time_text, anchor="e",
-                                    fill=Colors.TEXT_DIM, font=("Consolas", scaled_font_size(8)))
+                                    fill=Colors.TEXT_DIM, font=("Consolas", scaled_font_size(11)))
         except Exception:
             pass
 
@@ -237,6 +397,7 @@ def open_outputs_folder():
 
         def worker():
             peaks = _compute_waveform_peaks(path)
+
             def apply():
                 if _wave_state["path"] == path:
                     _wave_state["peaks"] = peaks
@@ -255,9 +416,6 @@ def open_outputs_folder():
         frac = min(1.0, max(0.0, event.x / w))
         _load_play(_p["path"], frac * _p["duration"])
 
-    # ══════════════════════════════════════════════════════════════
-    # ВОСПРОИЗВЕДЕНИЕ / НАВИГАЦИЯ / ПОВТОР
-    # ══════════════════════════════════════════════════════════════
     def _refresh_card_icons():
         for p, btn in list(_card_buttons.items()):
             try:
@@ -270,9 +428,12 @@ def open_outputs_folder():
         _p.update(playing=False, path=None, pos=0.0, duration=0.0, error=None)
         _wave_state.update(peaks=[], path=None)
         try:
-            play_btn.configure(text="▶")
+            _ui_refs.get("play_btn").configure(text="▶")
         except Exception:
-            pass
+            try:
+                play_btn.configure(text="▶")
+            except Exception:
+                pass
         _redraw_waveform()
         _refresh_card_icons()
 
@@ -306,14 +467,25 @@ def open_outputs_folder():
             pygame.mixer.music.stop()
             pygame.mixer.music.load(path)
             pygame.mixer.music.set_volume(_p["volume"])
-            pygame.mixer.music.play(start=from_pos)
+            try:
+                pygame.mixer.music.play(start=from_pos)
+            except TypeError:
+                pygame.mixer.music.play()
+            except Exception:
+                try:
+                    pygame.mixer.music.play()
+                except Exception:
+                    raise
             dur = _get_duration(path)
             _p.update(playing=True, path=path, pos=from_pos, duration=dur, error=None)
             _load_waveform_async(path)
             _redraw_waveform()
             _highlight_active(path)
             _refresh_card_icons()
-            play_btn.configure(text="⏸")
+            try:
+                _ui_refs.get("play_btn").configure(text="⏸")
+            except Exception:
+                play_btn.configure(text="⏸")
             _tick()
         except Exception as e:
             _p["error"] = str(e)
@@ -332,13 +504,25 @@ def open_outputs_folder():
             pygame.mixer.music.pause()
             _p["playing"] = False
             _stop_ticker()
-            play_btn.configure(text="▶")
+            try:
+                _ui_refs.get("play_btn").configure(text="▶")
+            except Exception:
+                try:
+                    play_btn.configure(text="▶")
+                except Exception:
+                    pass
             _refresh_card_icons()
         else:
             if _p["path"] and os.path.isfile(_p["path"]):
                 pygame.mixer.music.unpause()
                 _p["playing"] = True
-                play_btn.configure(text="⏸")
+                try:
+                    _ui_refs.get("play_btn").configure(text="⏸")
+                except Exception:
+                    try:
+                        play_btn.configure(text="⏸")
+                    except Exception:
+                        pass
                 _refresh_card_icons()
                 _tick()
 
@@ -364,12 +548,33 @@ def open_outputs_folder():
         else:
             _reset_player_ui()
 
+    def _update_repeat_btn_visual():
+        btn = _ui_refs.get("repeat_btn")
+        if btn is None:
+            try:
+                btn = repeat_btn
+            except Exception:
+                return
+        try:
+            if _p["repeat_one"]:
+                btn.configure(
+                    fg_color=Colors.AI_ACCENT,
+                    hover_color=getattr(Colors, "AI_ACCENT_HOVER", getattr(Colors, "ACCENT_HOVER", Colors.BG_HOVER)),
+                    text="🔂"
+                )
+            else:
+                btn.configure(
+                    fg_color=Colors.BG_INPUT,
+                    hover_color=Colors.BG_HOVER,
+                    text="🔁"
+                )
+        except Exception:
+            pass
+
     def _toggle_repeat():
         _p["repeat_one"] = not _p["repeat_one"]
-        if _p["repeat_one"]:
-            repeat_btn.configure(fg_color=Colors.AI_ACCENT, hover_color=Colors.AI_ACCENT_HOVER)
-        else:
-            repeat_btn.configure(fg_color=Colors.BG_INPUT, hover_color=Colors.BG_HOVER)
+        _save_repeat_state(_p["repeat_one"])
+        _update_repeat_btn_visual()
 
     def on_volume_change(vol):
         vol = max(0.0, min(1.0, vol))
@@ -380,13 +585,14 @@ def open_outputs_folder():
             except Exception:
                 pass
         try:
-            vol_btn.configure(text=_volume_icon(vol))
+            vb = _ui_refs.get("vol_btn")
+            if vb:
+                vb.configure(text=_volume_icon(vol))
+            else:
+                vol_btn.configure(text=_volume_icon(vol))
         except Exception:
             pass
 
-    # ══════════════════════════════════════════════════════════════
-    # КАРТОЧКИ ФАЙЛОВ
-    # ══════════════════════════════════════════════════════════════
     def _highlight_active(path):
         prev = _active_path["v"]
         if prev and prev in _card_widgets:
@@ -404,7 +610,10 @@ def open_outputs_folder():
     def _make_card(parent, fname):
         path = os.path.join(OUTPUT_DIR, fname)
         dur = _get_duration(path)
-        size_kb = os.path.getsize(path) // 1024
+        try:
+            size_kb = os.path.getsize(path) // 1024
+        except Exception:
+            size_kb = 0
         date_str = _file_date(path)
         dur_str = _fmt(dur) if dur > 0 else "--:--"
         meta = f"{dur_str}   ·   {size_kb} KB   ·   {date_str}"
@@ -415,34 +624,31 @@ def open_outputs_folder():
         _card_widgets[path] = card
 
         badge = CompatCTkFrame(card, fg_color=Colors.BG_INPUT, corner_radius=20,
-                               width=40, height=40)
+                               width=44, height=44)
         badge.pack(side="left", padx=(14, 10), pady=12)
         badge.pack_propagate(False)
         CompatCTkLabel(badge, text="🎵", fg_color=Colors.BG_INPUT, text_color=Colors.TEXT_MAIN,
-                      font=("Segoe UI", scaled_font_size(14))).pack(expand=True)
+                      font=("Segoe UI", scaled_font_size(18))).pack(expand=True)
 
         info = tk.Frame(card, bg=Colors.BG_CARD)
         info.pack(side="left", fill="both", expand=True, pady=10)
         CompatCTkLabel(info, text=fname, fg_color=Colors.BG_CARD, text_color=Colors.TEXT_MAIN,
-                      font=("Segoe UI", scaled_font_size(10), "bold"), anchor="w").pack(fill="x")
+                      font=("Segoe UI", scaled_font_size(13), "bold"), anchor="w").pack(fill="x")
         CompatCTkLabel(info, text=meta, fg_color=Colors.BG_CARD, text_color=Colors.TEXT_DIM,
-                      font=("Segoe UI", scaled_font_size(8)), anchor="w").pack(fill="x", pady=(2, 0))
+                      font=("Segoe UI", scaled_font_size(11)), anchor="w").pack(fill="x", pady=(2, 0))
 
         actions = tk.Frame(card, bg=Colors.BG_CARD)
         actions.pack(side="right", padx=12)
-        play_btn_card = _round_btn(actions, "▶", lambda p=path: _card_click_play(p), diameter=32)
+        play_btn_card = _round_btn(actions, "▶", lambda p=path: _card_click_play(p), diameter=34)
         play_btn_card.pack(side="left", padx=(0, 6))
         _card_buttons[path] = play_btn_card
         del_btn_card = _round_btn(actions, "🗑", lambda p=path, c=card: _delete_file(p, c),
-                                  diameter=32, danger=True)
+                                  diameter=34, danger=True)
         del_btn_card.pack(side="left")
 
         for w in (card, badge, info):
             w.bind("<Double-Button-1>", lambda e, p=path: _card_click_play(p))
 
-    # ══════════════════════════════════════════════════════════════
-    # ОПЕРАЦИИ С ФАЙЛАМИ
-    # ══════════════════════════════════════════════════════════════
     def _delete_file(path, card_widget):
         fname = os.path.basename(path)
         if not messagebox.askyesno(t("dlg_delete_title"), t("dlg_delete_msg", fname), parent=win):
@@ -534,7 +740,10 @@ def open_outputs_folder():
             n = len([f for f in os.listdir(OUTPUT_DIR) if f.lower().endswith(".wav")])
         except Exception:
             n = 0
-        count_lbl.configure(text=t("files_count", n))
+        try:
+            count_lbl.configure(text=t("files_count", n))
+        except Exception:
+            pass
 
     def _maybe_show_empty_state():
         if list_frame.winfo_children():
@@ -548,20 +757,20 @@ def open_outputs_folder():
         if _empty_state["widget"] is None:
             lbl = CompatCTkLabel(list_frame, text="Здесь появятся ваши аудиозаписи",
                                  fg_color=Colors.BG_DARK, text_color=Colors.TEXT_DIM,
-                                 font=("Segoe UI", scaled_font_size(10)))
+                                 font=("Segoe UI", scaled_font_size(13)))
             lbl.pack(pady=50)
             _empty_state["widget"] = lbl
 
-    # ══════════════════════════════════════════════════════════════
-    # ГРОМКОСТЬ — круглый плавающий попап (прозрачный фон на Windows)
-    # ══════════════════════════════════════════════════════════════
     def _close_volume_popup(event=None):
         w = _vol_popup["win"]
         if w is not None:
             try:
-                win.unbind_all("<Button-1>")
+                win.unbind("<Button-1>")
             except Exception:
-                pass
+                try:
+                    win.unbind_all("<Button-1>")
+                except Exception:
+                    pass
             try:
                 w.destroy()
             except Exception:
@@ -608,7 +817,7 @@ def open_outputs_folder():
             pcanvas.create_oval(cx - 7, thumb_y - 7, cx + 7, thumb_y + 7,
                                fill=Colors.TEXT_MAIN, outline="")
             pcanvas.create_text(cx, popup_h - 18, text=_volume_icon(_p["volume"]),
-                               font=("Segoe UI", scaled_font_size(11)), fill=Colors.TEXT_DIM)
+                               font=("Segoe UI", scaled_font_size(14)), fill=Colors.TEXT_DIM)
 
         def _on_slider_drag(event):
             frac = 1 - min(1.0, max(0.0, (event.y - track_top) / track_h))
@@ -638,10 +847,7 @@ def open_outputs_folder():
         win.bind_all("<Button-1>", _on_global_click, add="+")
         _vol_popup["win"] = popup
 
-    # ══════════════════════════════════════════════════════════════
     # LAYOUT
-    # ══════════════════════════════════════════════════════════════
-    # — Шапка: кнопки сгруппированы в одну "таблетку" —
     header = tk.Frame(win, bg=Colors.BG_DARK, pady=12)
     header.pack(fill="x", padx=16)
 
@@ -664,10 +870,9 @@ def open_outputs_folder():
                                 border_width=1, border_color=Colors.BORDER)
     count_pill.pack(side="right")
     count_lbl = CompatCTkLabel(count_pill, text="", fg_color=Colors.BG_CARD,
-                               text_color=Colors.TEXT_DIM, font=("Segoe UI", scaled_font_size(9)))
+                               text_color=Colors.TEXT_DIM, font=("Segoe UI", scaled_font_size(12)))
     count_lbl.pack(padx=16, pady=9)
 
-    # — Список файлов —
     list_frame = ctk.CTkScrollableFrame(win, fg_color=Colors.BG_DARK, corner_radius=12)
     list_frame.pack(fill="both", expand=True, padx=12, pady=(4, 6))
 
@@ -676,7 +881,6 @@ def open_outputs_folder():
     _update_count()
     _maybe_show_empty_state()
 
-    # — Плеер: плавающая карточка снизу —
     outer_wrap = tk.Frame(win, bg=Colors.BG_DARK)
     outer_wrap.pack(fill="x", side="bottom")
 
@@ -684,7 +888,7 @@ def open_outputs_folder():
                                  border_width=1, border_color=Colors.BORDER)
     player_card.pack(fill="x", padx=14, pady=(6, 14))
 
-    wave_canvas = tk.Canvas(player_card, bg=Colors.BG_CARD, height=84, bd=0,
+    wave_canvas = tk.Canvas(player_card, bg=Colors.BG_CARD, height=90, bd=0,
                             highlightthickness=0, cursor="hand2")
     wave_canvas.pack(fill="x", padx=18, pady=(16, 6))
     wave_canvas.bind("<Button-1>", _wave_seek)
@@ -696,24 +900,33 @@ def open_outputs_folder():
     ctrl_row = tk.Frame(ctrl_pill, bg=Colors.BG_INPUT)
     ctrl_row.pack(padx=12, pady=8)
 
-    btn_prev = _round_btn(ctrl_row, "⏮", lambda: _skip_track(-1), diameter=36)
+    btn_prev = _round_btn(ctrl_row, "⏮", lambda: _skip_track(-1), diameter=38)
     btn_prev.pack(side="left", padx=4)
     ToolTip(btn_prev, "Предыдущий трек")
 
-    play_btn = _round_btn(ctrl_row, "▶", toggle_play, diameter=54, primary=True)
+    play_btn = _round_btn(ctrl_row, "▶", toggle_play, diameter=56, primary=True)
     play_btn.pack(side="left", padx=10)
+    _ui_refs["play_btn"] = play_btn
 
-    btn_next = _round_btn(ctrl_row, "⏭", lambda: _skip_track(1), diameter=36)
+    btn_next = _round_btn(ctrl_row, "⏭", lambda: _skip_track(1), diameter=38)
     btn_next.pack(side="left", padx=4)
     ToolTip(btn_next, "Следующий трек")
 
-    repeat_btn = _round_btn(ctrl_row, "🔁", _toggle_repeat, diameter=36)
+    repeat_btn = _round_btn(ctrl_row, "🔁", _toggle_repeat, diameter=38)
     repeat_btn.pack(side="left", padx=(16, 4))
     ToolTip(repeat_btn, "Повтор трека")
+    _ui_refs["repeat_btn"] = repeat_btn
+    try:
+        repeat_btn.configure(command=_toggle_repeat)
+    except Exception:
+        pass
+    # применить сохраненное состояние визуально
+    _update_repeat_btn_visual()
 
-    vol_btn = _round_btn(ctrl_row, _volume_icon(_p["volume"]), _toggle_volume_popup, diameter=36)
+    vol_btn = _round_btn(ctrl_row, _volume_icon(_p["volume"]), _toggle_volume_popup, diameter=38)
     vol_btn.pack(side="left", padx=4)
     ToolTip(vol_btn, "Громкость")
+    _ui_refs["vol_btn"] = vol_btn
 
     if PYGAME_OK:
         try:
@@ -722,6 +935,11 @@ def open_outputs_folder():
             pass
 
     _redraw_waveform()
+    # финальная попытка иконки после отрисовки
+    try:
+        win.after(150, lambda: _apply_window_icon(win))
+    except Exception:
+        pass
 
     def on_close():
         _close_volume_popup()

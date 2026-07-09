@@ -59,5 +59,8 @@
       "padding_inner": 8
     }
   },
-  "layout": "classic"
+  "layout": "classic",
+  "audio_repeat_one": true,
+  "console_visible": false,
+  "console_scroll_pos": 0.3273809523809524
 }

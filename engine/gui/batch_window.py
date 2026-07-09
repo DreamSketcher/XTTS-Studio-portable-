@@ -1,31 +1,35 @@
+# -*- coding: utf-8 -*-
 """
-engine/batch_window.py — окно "Пакетная обработка" для XTTS Studio
+engine/gui/batch_window.py — окно «Пакетная обработка» в стиле Аудио/История
 
-Массовая генерация из папки или списка TXT-файлов: выбор источника,
-список файлов со статусами, запуск через общую очередь task_manager.
-
-Архитектура:
-    init(root, colors, output_dir, task_manager, ref_var, quality_var,
-         quality_params, word_replacer_enabled_var, lang_split_enabled_var,
-         use_gpt_var, lang_var, normalize_text_fn, clean_path_fn)
-
-Окно не импортирует ничего из gui.py напрямую — все зависимости
-приходят через init().
+Редизайн 2026-07-09 (единый стиль):
+- скруглённые карточки файлов, таблетка с кнопками сверху, счетчик
+- крупные шрифты как в audio/history (scaled_font_size +3)
+- круглые кнопки _round_btn (CompatCTkButton)
+- фикс иконки в таскбаре Windows (перо -> норм)
+- CTkScrollableFrame вместо Canvas
+- статус трекер сохранен
 """
-
 from __future__ import annotations
 
 import os
 import tkinter as tk
 from tkinter import filedialog, messagebox
+import json
 
 from engine.task_models import Task
+from engine.paths import BASE_DIR
+try:
+    from engine.paths import ICON_PATH
+except ImportError:
+    ICON_PATH = os.path.join(str(BASE_DIR), "icon.ico")
 
+from engine.gui.colors import Colors, scaled_font_size, scaled_size
+from engine.gui.tooltip import ToolTip
+from engine.gui.widgets import CompatCTkFrame, CompatCTkButton, CompatCTkLabel
+import customtkinter as ctk
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Dependency injection
-# ─────────────────────────────────────────────────────────────────────────────
-
+# DI
 _root = None
 _colors = None
 _output_dir = None
@@ -40,10 +44,9 @@ _lang_var = None
 _normalize_text = None
 _clean_path = None
 
-
 def init(root, colors, output_dir, task_manager, ref_var, quality_var,
-          quality_params, word_replacer_enabled_var, lang_split_enabled_var,
-          use_gpt_var, lang_var, normalize_text_fn, clean_path_fn):
+         quality_params, word_replacer_enabled_var, lang_split_enabled_var,
+         use_gpt_var, lang_var, normalize_text_fn, clean_path_fn):
     global _root, _colors, _output_dir, _task_manager, _ref_var, _quality_var
     global _quality_params, _word_replacer_enabled_var, _lang_split_enabled_var
     global _use_gpt_var, _lang_var, _normalize_text, _clean_path
@@ -62,23 +65,91 @@ def init(root, colors, output_dir, task_manager, ref_var, quality_var,
     _clean_path = clean_path_fn
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Window
-# ─────────────────────────────────────────────────────────────────────────────
+def _apply_window_icon(win: tk.Toplevel):
+    try:
+        import ctypes
+        try:
+            ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("XTTSStudio.App")
+        except Exception:
+            pass
+    except Exception:
+        pass
+    candidates = []
+    if ICON_PATH:
+        candidates.append(ICON_PATH)
+    candidates.extend([
+        os.path.join(str(BASE_DIR), "icon.ico"),
+        os.path.join(str(BASE_DIR), "icon.png"),
+        os.path.join(str(BASE_DIR), "images", "icon.ico"),
+    ])
+    ico_file = None
+    png_file = None
+    for p in candidates:
+        if p and os.path.isfile(p):
+            if p.lower().endswith(".ico") and not ico_file:
+                ico_file = p
+            elif p.lower().endswith(".png") and not png_file:
+                png_file = p
+    if ico_file:
+        try:
+            win.iconbitmap(default=ico_file)
+        except Exception:
+            try:
+                win.iconbitmap(ico_file)
+            except Exception:
+                pass
+        try:
+            win.after(100, lambda: win.iconbitmap(default=ico_file))
+            win.after(400, lambda: win.iconbitmap(default=ico_file))
+        except Exception:
+            pass
+    try:
+        photo = None
+        if png_file:
+            try:
+                photo = tk.PhotoImage(file=png_file)
+            except Exception:
+                photo = None
+        if photo is None and ico_file:
+            try:
+                from PIL import Image, ImageTk
+                im = Image.open(ico_file).resize((32,32), Image.LANCZOS)
+                photo = ImageTk.PhotoImage(im)
+            except Exception:
+                photo = None
+        if photo:
+            win.iconphoto(True, photo)
+            win._icon_photo_ref = photo
+    except Exception:
+        pass
+
 
 def open_batch_window():
-    """Открывает окно пакетной обработки TXT-файлов."""
     colors = _colors
     win = tk.Toplevel(_root)
     win.title("📦 Пакетная обработка")
-    win.geometry("660x520")
-    win.minsize(560, 400)
+    win.geometry("860x620")
+    win.minsize(700, 480)
     win.resizable(True, True)
-    win.configure(bg=colors.BG_DARK)
+    win.configure(bg=Colors.BG_DARK)
+    _apply_window_icon(win)
     win.grab_set()
 
-    _files = []        # list of (src_txt, dst_wav)
-    _status_vars = []  # list of tk.StringVar
+    _files = []
+    _status_vars = []
+    _card_widgets = {}
+    _empty_state = {"w": None}
+
+    def _round_btn(parent, text, cmd, diameter=36, primary=False, danger=False):
+        bg = Colors.BG_ACTIVE if primary else Colors.BG_INPUT
+        hover = "#2ea043" if primary else (Colors.BG_DANGER if danger else Colors.BG_HOVER)
+        sd = scaled_size(diameter, min_size=diameter)
+        return CompatCTkButton(
+            parent, text=text, command=cmd,
+            width=sd, height=sd, corner_radius=sd//2,
+            fg_color=bg, text_color=Colors.TEXT_MAIN, hover_color=hover,
+            border_width=0, font=("Segoe UI", scaled_font_size(17 if primary else 15)),
+        )
 
     def _unique_wav(base: str) -> str:
         candidate = os.path.join(_output_dir, f"{base}.wav")
@@ -88,36 +159,69 @@ def open_batch_window():
             counter += 1
         return candidate
 
+    def _maybe_show_empty():
+        if list_frame.winfo_children():
+            if _empty_state["w"]:
+                try:
+                    _empty_state["w"].destroy()
+                except Exception:
+                    pass
+                _empty_state["w"] = None
+            return
+        if _empty_state["w"] is None:
+            lbl = CompatCTkLabel(list_frame, text="Выберите папку или файлы с текстами",
+                                 fg_color=Colors.BG_DARK, text_color=Colors.TEXT_DIM,
+                                 font=("Segoe UI", scaled_font_size(13)))
+            lbl.pack(pady=60)
+            _empty_state["w"] = lbl
+
+    def _make_row(idx, src, dst, status_var):
+        card = CompatCTkFrame(list_frame, fg_color=Colors.BG_CARD, corner_radius=14,
+                              border_width=1, border_color=Colors.BORDER)
+        card.pack(fill="x", padx=4, pady=5)
+        _card_widgets[src] = card
+
+        # badge
+        badge = CompatCTkFrame(card, fg_color=Colors.BG_INPUT, corner_radius=20, width=44, height=44)
+        badge.pack(side="left", padx=(14,10), pady=12)
+        badge.pack_propagate(False)
+        CompatCTkLabel(badge, text="📄", fg_color=Colors.BG_INPUT, text_color=Colors.TEXT_MAIN,
+                      font=("Segoe UI", scaled_font_size(18))).pack(expand=True)
+
+        info = tk.Frame(card, bg=Colors.BG_CARD)
+        info.pack(side="left", fill="both", expand=True, pady=10)
+        CompatCTkLabel(info, text=os.path.basename(src), fg_color=Colors.BG_CARD,
+                      text_color=Colors.TEXT_MAIN, font=("Segoe UI", scaled_font_size(13), "bold"),
+                      anchor="w").pack(fill="x")
+        CompatCTkLabel(info, text=os.path.dirname(src)[-48:], fg_color=Colors.BG_CARD,
+                      text_color=Colors.TEXT_DIM, font=("Segoe UI", scaled_font_size(10)),
+                      anchor="w").pack(fill="x", pady=(2,0))
+
+        status_lbl = CompatCTkLabel(card, textvariable=status_var,
+                                   fg_color=Colors.BG_CARD, text_color=Colors.TEXT_DIM,
+                                   font=("Consolas", scaled_font_size(11)))
+        status_lbl.pack(side="right", padx=12)
+
     def _refresh_rows():
-        for w in scroll_inner.winfo_children():
-            w.destroy()
+        for w in list_frame.winfo_children():
+            try:
+                w.destroy()
+            except Exception:
+                pass
         _status_vars.clear()
+        _card_widgets.clear()
         if not _files:
-            tk.Label(scroll_inner, text="Выберите папку или файлы ",
-                     bg=colors.BG_DARK, fg=colors.TEXT_DIM,
-                     font=("Segoe UI", 11)).pack(pady=60)
-            count_lbl.config(text="0 файлов")
-            btn_run.config(state="disabled")
+            count_lbl.configure(text="0 файлов")
+            btn_run.configure(state="disabled")
+            _maybe_show_empty()
             return
         for i, (src, dst) in enumerate(_files):
             sv = tk.StringVar(value="⏳ Ожидает")
             _status_vars.append(sv)
-            row = tk.Frame(scroll_inner, bg=colors.BG_CARD,
-                           highlightthickness=1,
-                           highlightbackground=colors.BORDER)
-            row.pack(fill="x", padx=8, pady=2)
-            tk.Label(row, text=f"{i+1}.", width=3,
-                     bg=colors.BG_CARD, fg=colors.TEXT_DIM,
-                     font=("Consolas", 9)).pack(side="left", padx=(6, 2), pady=6)
-            tk.Label(row, text=os.path.basename(src), anchor="w",
-                     bg=colors.BG_CARD, fg=colors.TEXT_MAIN,
-                     font=("Segoe UI", 9)).pack(side="left", fill="x",
-                                                 expand=True, pady=6)
-            tk.Label(row, textvariable=sv, width=14, anchor="e",
-                     bg=colors.BG_CARD, fg=colors.TEXT_DIM,
-                     font=("Consolas", 8)).pack(side="right", padx=8)
-        count_lbl.config(text=f"{len(_files)} файлов")
-        btn_run.config(state="normal")
+            _make_row(i, src, dst, sv)
+        count_lbl.configure(text=f"{len(_files)} файлов")
+        btn_run.configure(state="normal")
+        _maybe_show_empty()
 
     def _pick_folder():
         folder = filedialog.askdirectory(title="Выбрать папку с TXT-файлами")
@@ -136,10 +240,7 @@ def open_batch_window():
         _refresh_rows()
 
     def _pick_files():
-        paths = filedialog.askopenfilenames(
-            title="Выбрать TXT-файлы",
-            filetypes=[("TXT", "*.txt")]
-        )
+        paths = filedialog.askopenfilenames(title="Выбрать TXT-файлы", filetypes=[("TXT", "*.txt")])
         if not paths:
             return
         _files.clear()
@@ -166,11 +267,10 @@ def open_batch_window():
                             win.after(0, lambda s=sv: s.set("❌ Ошибка"))
                         elif t.status == "cancelled":
                             win.after(0, lambda s=sv: s.set("⛔ Отменено"))
-                        elif t.status in ("running", "generate", "merge",
-                                          "chunking", "normalize", "reference"):
-                            win.after(0, lambda s=sv, p=t.progress: s.set(f" ▶{p}%"))
+                        elif t.status in ("running", "generate", "merge", "chunking", "normalize", "reference"):
+                            win.after(0, lambda s=sv, p=t.progress: s.set(f"▶ {p}%"))
                         elif t.status == "queued":
-                            win.after(0, lambda s=sv: s.set("▶  В очереди"))
+                            win.after(0, lambda s=sv: s.set("🕒 В очереди"))
                         break
             try:
                 win.after(400, _tick)
@@ -189,9 +289,9 @@ def open_batch_window():
         if quality_name not in _quality_params:
             quality_name = "Высокое качество"
         params = _quality_params[quality_name]
-        btn_run.config(state="disabled")
-        btn_folder.config(state="disabled")
-        btn_files.config(state="disabled")
+        btn_run.configure(state="disabled")
+        btn_folder.configure(state="disabled")
+        btn_files.configure(state="disabled")
         for i, (src, dst) in enumerate(_files):
             try:
                 with open(src, "r", encoding="utf-8") as f:
@@ -207,7 +307,7 @@ def open_batch_window():
                     _status_vars[i].set("⚠ Пустой")
                 continue
             if i < len(_status_vars):
-                _status_vars[i].set("▶  В очереди")
+                _status_vars[i].set("🕒 В очереди")
             task = Task(
                 text=text,
                 raw_text=raw.strip(),
@@ -220,113 +320,91 @@ def open_batch_window():
                     "word_replacer_enabled": _word_replacer_enabled_var.get(),
                     "lang_split_enabled": _lang_split_enabled_var.get(),
                     "use_gpt": _use_gpt_var.get(),
-                    "ai_conductor_enabled": params.get(
-                        "ai_conductor_enabled", tk.BooleanVar()).get(),
+                    "ai_conductor_enabled": params.get("ai_conductor_enabled", tk.BooleanVar()).get(),
+                    "output_path_override": dst,
                 }
             )
             _task_manager.add_task(task)
-        win.after(500, lambda: (
-            btn_folder.config(state="normal"),
-            btn_files.config(state="normal"),
-        ))
+        win.after(500, lambda: (btn_folder.configure(state="normal"), btn_files.configure(state="normal")))
         _start_status_tracker()
 
-    # ── LAYOUT ───────────────────────────────────────────────────────────────
-    toolbar = tk.Frame(win, bg=colors.BG_CARD, pady=6)
-    toolbar.pack(fill="x")
+    # HEADER - pill
+    header = tk.Frame(win, bg=Colors.BG_DARK, pady=12)
+    header.pack(fill="x", padx=16)
 
-    def _tb_btn(text, cmd):
-        b = tk.Button(toolbar, text=text, command=cmd,
-                      bg=colors.BG_INPUT, fg=colors.TEXT_MAIN,
-                      activebackground=colors.BG_HOVER,
-                      activeforeground=colors.TEXT_MAIN,
-                      relief="flat", bd=0, font=("Segoe UI", 9),
-                      padx=10, pady=4, cursor="hand2")
-        b.bind("<Enter>", lambda e: b.config(bg=colors.BG_HOVER))
-        b.bind("<Leave>", lambda e: b.config(bg=colors.BG_INPUT))
-        return b
+    pill = CompatCTkFrame(header, fg_color=Colors.BG_CARD, corner_radius=18,
+                          border_width=1, border_color=Colors.BORDER)
+    pill.pack(side="left")
+    row = tk.Frame(pill, bg=Colors.BG_CARD)
+    row.pack(padx=6, pady=6)
 
-    btn_folder = _tb_btn("📂 Выбрать папку", _pick_folder)
-    btn_folder.pack(side="left", padx=(10, 4))
-    btn_files = _tb_btn("📄 Выбрать файлы", _pick_files)
-    btn_files.pack(side="left", padx=(0, 4))
-    count_lbl = tk.Label(toolbar, text="0 файлов",
-                         bg=colors.BG_CARD, fg=colors.TEXT_DIM,
-                         font=("Segoe UI", 9))
-    count_lbl.pack(side="left", padx=8)
+    btn_folder = _round_btn(row, "📂", _pick_folder, diameter=36)
+    btn_folder.pack(side="left", padx=3)
+    ToolTip(btn_folder, "Выбрать папку с TXT")
 
-    # текущий голос — справа в тулбаре
+    btn_files = _round_btn(row, "📄", _pick_files, diameter=36)
+    btn_files.pack(side="left", padx=3)
+    ToolTip(btn_files, "Выбрать отдельные TXT файлы")
+
+    count_pill = CompatCTkFrame(header, fg_color=Colors.BG_CARD, corner_radius=14,
+                                border_width=1, border_color=Colors.BORDER)
+    count_pill.pack(side="right")
+    count_lbl = CompatCTkLabel(count_pill, text="0 файлов", fg_color=Colors.BG_CARD,
+                               text_color=Colors.TEXT_DIM, font=("Segoe UI", scaled_font_size(12)))
+    count_lbl.pack(padx=16, pady=9)
+
+    voice_pill = CompatCTkFrame(header, fg_color=Colors.BG_CARD, corner_radius=14,
+                                border_width=1, border_color=Colors.BORDER)
+    voice_pill.pack(side="right", padx=(0,10))
     _batch_voice_var = tk.StringVar()
-
     def _update_batch_voice(*_):
         p = _ref_var.get().strip()
         if not p:
-            _batch_voice_var.set("")
+            _batch_voice_var.set("голос не выбран")
             return
         folder = os.path.basename(os.path.dirname(p))
         name = os.path.splitext(os.path.basename(p))[0]
         _batch_voice_var.set(folder if name.lower() == "normalized" else name)
-
     _ref_var.trace_add("write", _update_batch_voice)
     _update_batch_voice()
+    tk.Frame(voice_pill, bg=Colors.BG_CARD, width=6).pack(side="left")
+    CompatCTkLabel(voice_pill, text="Голос:", fg_color=Colors.BG_CARD,
+                  text_color=Colors.TEXT_DIM, font=("Segoe UI", scaled_font_size(11))).pack(side="left")
+    CompatCTkLabel(voice_pill, textvariable=_batch_voice_var, fg_color=Colors.BG_CARD,
+                  text_color=Colors.ACCENT, font=("Segoe UI", scaled_font_size(11), "bold"),
+                  width=120).pack(side="left", padx=(4,12), pady=9)
 
-    tk.Label(toolbar, text="Голос:", bg=colors.BG_CARD, fg=colors.TEXT_DIM,
-             font=("Segoe UI", 8)).pack(side="right", padx=(0, 2))
-    tk.Label(toolbar, textvariable=_batch_voice_var, bg=colors.BG_CARD,
-             fg=colors.ACCENT, font=("Segoe UI", 8),
-             width=18, anchor="e").pack(side="right", padx=(0, 10))
+    # LIST
+    list_frame = ctk.CTkScrollableFrame(win, fg_color=Colors.BG_DARK, corner_radius=12)
+    list_frame.pack(fill="both", expand=True, padx=12, pady=(4,6))
 
-    tk.Frame(win, bg=colors.BORDER, height=1).pack(fill="x")
+    # BOTTOM
+    outer_wrap = tk.Frame(win, bg=Colors.BG_DARK)
+    outer_wrap.pack(fill="x", side="bottom")
+    bottom_card = CompatCTkFrame(outer_wrap, fg_color=Colors.BG_CARD, corner_radius=20,
+                                 border_width=1, border_color=Colors.BORDER)
+    bottom_card.pack(fill="x", padx=14, pady=(6,14))
+    bottom_row = tk.Frame(bottom_card, bg=Colors.BG_CARD)
+    bottom_row.pack(fill="x", padx=18, pady=14)
 
-    # список файлов (прокручиваемый)
-    list_outer = tk.Frame(win, bg=colors.BG_DARK)
-    list_outer.pack(fill="both", expand=True)
-    canvas = tk.Canvas(list_outer, bg=colors.BG_DARK, bd=0, highlightthickness=0)
-    scrollbar = tk.Scrollbar(list_outer, orient="vertical",
-                             command=canvas.yview,
-                             bg=colors.BG_INPUT, troughcolor=colors.BG_DARK)
-    canvas.configure(yscrollcommand=scrollbar.set)
-    scrollbar.pack(side="right", fill="y")
-    canvas.pack(side="left", fill="both", expand=True)
-    scroll_inner = tk.Frame(canvas, bg=colors.BG_DARK)
-    cw = canvas.create_window((0, 0), window=scroll_inner, anchor="nw")
-    scroll_inner.bind("<Configure>",
-                      lambda e: canvas.configure(scrollregion=canvas.bbox("all")))
-    canvas.bind("<Configure>", lambda e: canvas.itemconfig(cw, width=e.width))
+    CompatCTkLabel(bottom_row, text="Пресет:", fg_color=Colors.BG_CARD,
+                  text_color=Colors.TEXT_DIM, font=("Segoe UI", scaled_font_size(11))).pack(side="left")
+    CompatCTkLabel(bottom_row, textvariable=_quality_var, fg_color=Colors.BG_CARD,
+                  text_color=Colors.TEXT_MAIN, font=("Segoe UI", scaled_font_size(12), "bold")).pack(side="left", padx=(6,12))
 
-    def _on_mousewheel(e):
-        try:
-            if canvas.winfo_exists():
-                canvas.yview_scroll(int(-1 * (e.delta / 120)), "units")
-        except Exception:
-            pass
-
-    win.bind("<MouseWheel>", _on_mousewheel)
-    tk.Frame(win, bg=colors.BORDER, height=1).pack(fill="x")
-
-    # нижняя панель
-    bottom = tk.Frame(win, bg=colors.BG_CARD, pady=8)
-    bottom.pack(fill="x", side="bottom")
-    tk.Label(bottom, text="Пресет:", bg=colors.BG_CARD, fg=colors.TEXT_DIM,
-             font=("Segoe UI", 9)).pack(side="left", padx=(12, 4))
-    tk.Label(bottom, textvariable=_quality_var, bg=colors.BG_CARD,
-             fg=colors.TEXT_MAIN,
-             font=("Segoe UI", 9, "bold")).pack(side="left")
-    btn_run = tk.Button(
-        bottom, text="🚀 Запустить пакет",
-        command=_run_batch,
-        bg=colors.BG_ACTIVE, fg=colors.TEXT_MAIN,
-        activebackground="#2ea043", activeforeground=colors.TEXT_MAIN,
-        relief="flat", bd=0, font=("Segoe UI", 10, "bold"),
-        padx=18, pady=5, cursor="hand2", state="disabled"
-    )
-    btn_run.pack(side="right", padx=12)
+    btn_run = _round_btn(bottom_row, "🚀 Запустить пакет", _run_batch, diameter=44, primary=True)
+    # делаем шире для текста
+    try:
+        btn_run.configure(width=scaled_size(220, min_size=200), corner_radius=22)
+    except Exception:
+        pass
+    btn_run.pack(side="right")
 
     def _on_close():
-        canvas.unbind_all("<MouseWheel>")
         win.destroy()
-
     win.protocol("WM_DELETE_WINDOW", _on_close)
-
-    # начальный placeholder
     _refresh_rows()
+    try:
+        win.after(150, lambda: _apply_window_icon(win))
+    except Exception:
+        pass

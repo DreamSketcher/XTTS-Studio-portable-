@@ -1,5 +1,9 @@
 # -*- coding: utf-8 -*-
-"""engine/gui/theme_manager.py — сохранение/загрузка кастомной темы в theme_settings.json"""
+"""engine/gui/theme_manager.py — сохранение/загрузка кастомной темы в theme_settings.json
+
+Добавлено в патче 2026-07-09:
+- сохранение состояния кнопки повтора аудио-окна (audio_repeat_one)
+"""
 
 import json
 import os
@@ -13,10 +17,6 @@ except Exception:
     _BASE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
     THEME_FILE = os.path.join(_BASE_DIR, "theme_settings.json")
 
-# --- Пресеты раскладки (Classic = текущая раскладка приложения) ---
-# Значения для Classic взяты из engine/gui/layout.py build_layout():
-# left_panel width=260, main_container padx=8, pady=14,
-# left_panel padx=(0,2), toggle_strip width=22
 DEFAULT_LAYOUT_PRESETS = {
     "classic": {
         "left_panel_width": 260,
@@ -69,19 +69,6 @@ DEFAULT_LAYOUT_PRESETS = {
 }
 
 DEFAULT_THEME = {
-    # ВНИМАНИЕ (важно для истории этого файла): секция "colors" ниже —
-    # ЛЕГАСИ-СТРУКТУРА из самой первой версии Конструктора темы. Она
-    # реально сохранялась в JSON, но НИКОГДА не применялась к настоящей
-    # палитре приложения (engine/gui/colors.py Colors/DARK_PALETTE/
-    # LIGHT_PALETTE) — это была "мёртвая" секция, отдельная от рабочей
-    # системы тем (☀/🌙 в textbox.py -> theme.py -> colors.apply_palette()).
-    # Из 11 ключей здесь только 5 случайно совпадали по ИМЕНИ с реальными
-    # атрибутами Colors (BG_DARK, TEXT_MAIN, TEXT_DIM, ACCENT, BORDER), но
-    # даже они не считывались обратно в Colors. Секция оставлена как есть
-    # для обратной совместимости чтения старых theme_settings.json (чтобы
-    # merge в load_theme() не падал), но для реальной покраски приложения
-    # теперь используется НОВАЯ секция "custom_colors" ниже — см. её
-    # комментарий и get_custom_colors()/set_custom_colors().
     "colors": {
         "BG_MAIN": "#1a1b26",
         "BG_SEC": "#24283b",
@@ -107,38 +94,17 @@ DEFAULT_THEME = {
         "padding_inner": 5,
         "item_spacing": 8,
     },
-    # Поддержка и старого ключа "layout", и нового "layout_preset"
     "layout": "classic",
     "layout_preset": "classic",
     "presets": DEFAULT_LAYOUT_PRESETS,
-    # ── НОВАЯ рабочая система кастомизации цветов ──
-    # Структура: {"dark": {"BG_CARD": "#...", ...}, "light": {...}}.
-    # Хранит ТОЛЬКО переопределения поверх встроенных DARK_PALETTE/
-    # LIGHT_PALETTE из engine/gui/colors.py — пустой словарь для темы
-    # означает "ничего не настраивалось, используется встроенная палитра
-    # как есть" (100% совпадает с поведением ДО добавления кастомизации).
-    # Применяется в colors.apply_palette() — см. комментарий там.
     "custom_colors": {
         "dark": {},
         "light": {},
     },
-    # ── Базовый размер шрифта интерфейса (масштабируется через
-    # colors.scaled_font_size(), см. подробный комментарий в colors.py).
-    # НЕ относится к тексту в поле ввода/редакторе (engine/gui/textbox.py) —
-    # там свой независимый механизм размера (слайдер "Aa"). 10 = дефолт,
-    # соответствует поведению приложения ДО добавления этой фичи.
     "font_base_size": 10,
-    # ── Именованные пользовательские пресеты темы ──
-    # Каждый пресет — это "снимок" (color + font + layout) на момент
-    # сохранения. Формат одного пресета:
-    #   {
-    #     "custom_colors": {"BG_CARD": "#...", ...},  # для темы, в которой сохранён
-    #     "theme_name": "dark" | "light",              # какая тема была активна
-    #     "font_base_size": 12,
-    #     "layout_preset": "classic" | "compact" | "wide",
-    #   }
-    # Список пуст по умолчанию — ничего не создаётся автоматически.
     "saved_presets": {},
+    # NEW: состояние кнопки повтора аудио-окна
+    "audio_repeat_one": False,
 }
 
 
@@ -152,13 +118,11 @@ def _read_json() -> dict:
         print(f"[ThemeManager] Load error: {e}")
         return {}
 
+
 def load_theme() -> dict:
-    """Загружает настройки темы из JSON. Если файла нет, возвращает значения по умолчанию."""
     data = _read_json()
     if not data:
-        return json.loads(json.dumps(DEFAULT_THEME))  # deep copy
-
-    # Слияние с дефолтной темой для гарантии наличия всех ключей
+        return json.loads(json.dumps(DEFAULT_THEME))
     merged = json.loads(json.dumps(DEFAULT_THEME))
     for section in DEFAULT_THEME:
         if section in data:
@@ -166,22 +130,18 @@ def load_theme() -> dict:
                 merged[section].update(data[section])
             else:
                 merged[section] = data[section]
-    # Обратная совместимость: layout -> layout_preset
     if "layout_preset" not in merged and "layout" in merged:
         merged["layout_preset"] = merged["layout"]
     return merged
 
+
 def save_theme(theme_data: dict):
-    """Сохраняет данные темы в JSON файл. Не затирает presets, если их нет во входных данных."""
     try:
-        # Не ломаем существующие presets
         current = _read_json()
         out = current.copy()
         out.update(theme_data)
-        # Гарантируем наличие presets
         if "presets" not in out:
             out["presets"] = DEFAULT_LAYOUT_PRESETS
-        # Синхронизируем layout / layout_preset
         if "layout_preset" in out:
             out["layout"] = out["layout_preset"]
         elif "layout" in out:
@@ -191,15 +151,14 @@ def save_theme(theme_data: dict):
     except Exception as e:
         print(f"[ThemeManager] Save error: {e}")
 
-# --- Layout Presets API ---
 
 def get_layout_presets() -> dict:
     data = load_theme()
     presets = data.get("presets", {})
-    # Дополняем недостающие дефолтными (обратная совместимость)
     merged = DEFAULT_LAYOUT_PRESETS.copy()
     merged.update(presets)
     return merged
+
 
 def get_current_layout_preset_name() -> str:
     data = load_theme()
@@ -208,8 +167,8 @@ def get_current_layout_preset_name() -> str:
         return "classic"
     return name
 
+
 def get_layout_preset(name: str | None = None) -> dict:
-    """Возвращает словарь геометрии для пресета. Fallback -> classic."""
     presets = get_layout_presets()
     if name is None:
         name = get_current_layout_preset_name()
@@ -218,14 +177,14 @@ def get_layout_preset(name: str | None = None) -> dict:
         preset = presets.get("classic", DEFAULT_LAYOUT_PRESETS["classic"])
     return preset.copy()
 
+
 def set_layout_preset(name: str) -> bool:
-    """Сохраняет выбор пресета в theme_settings.json"""
     presets = get_layout_presets()
     if name not in presets:
         return False
     data = _read_json()
     data["layout_preset"] = name
-    data["layout"] = name  # для совместимости со старым ключом
+    data["layout"] = name
     if "presets" not in data:
         data["presets"] = DEFAULT_LAYOUT_PRESETS
     try:
@@ -236,23 +195,17 @@ def set_layout_preset(name: str) -> bool:
         print(f"[ThemeManager] set_layout_preset error: {e}")
         return False
 
+
 def load_layout_preset(name: str | None = None) -> dict:
-    """Публичная функция для main_window.py"""
     return get_layout_preset(name)
 
-# --- Разовая подсказка про Double-Click на кнопке темы (☀/🌙) ---
-# Флаг хранится прямо в theme_settings.json (без завязки на load_theme()/
-# save_theme(), т.к. они мержат только ключи из DEFAULT_THEME — читаем и
-# пишем "сырой" json напрямую, по аналогии с set_layout_preset() выше).
 
 def is_layout_hint_shown() -> bool:
-    """True, если подсказка «Двойной клик открывает настройки темы и
-    раскладки интерфейса» уже была показана пользователю ранее."""
     data = _read_json()
     return bool(data.get("layout_hint_shown", False))
 
+
 def mark_layout_hint_shown() -> None:
-    """Отмечает, что подсказка уже была показана (больше не показывать)."""
     try:
         data = _read_json()
         data["layout_hint_shown"] = True
@@ -262,19 +215,40 @@ def mark_layout_hint_shown() -> None:
         print(f"[ThemeManager] mark_layout_hint_shown error: {e}")
 
 
-# --- Кастомные цвета поверх встроенных палитр (dark/light) ---
-# Это НОВАЯ, реально работающая замена легаси-секции "colors" выше (см.
-# комментарий в DEFAULT_THEME). Ключевое отличие: значения тут ПРИМЕНЯЮТСЯ
-# к настоящей палитре через engine/gui/colors.py apply_palette(), а не
-# просто сохраняются "в стол". Хранится отдельно на dark/light, потому что
-# у тем разные базовые палитры (см. DARK_PALETTE/LIGHT_PALETTE) — цвет,
-# который хорошо смотрится на тёмном фоне, может быть нечитаем на светлом.
+# ── NEW: сохранение состояния кнопки повтора аудио-окна ──
+def get_audio_repeat() -> bool:
+    """Возвращает сохраненное состояние повтора (True = повтор одного трека)."""
+    data = _read_json()
+    return bool(data.get("audio_repeat_one", False))
+
+
+# Алиасы для совместимости
+def get_audio_repeat_state() -> bool:
+    return get_audio_repeat()
+
+
+def is_audio_repeat() -> bool:
+    return get_audio_repeat()
+
+
+def set_audio_repeat(value: bool) -> bool:
+    """Сохраняет состояние повтора в theme_settings.json, не затирая остальные ключи."""
+    try:
+        data = _read_json()
+        data["audio_repeat_one"] = bool(value)
+        with open(THEME_FILE, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+        return True
+    except Exception as e:
+        print(f"[ThemeManager] set_audio_repeat error: {e}")
+        return False
+
+
+def set_audio_repeat_state(value: bool) -> bool:
+    return set_audio_repeat(value)
+
 
 def get_custom_colors(theme_name: str) -> dict:
-    """Возвращает словарь переопределений цвета для темы ('dark'|'light').
-    Пустой словарь = пользователь ничего не настраивал, используется
-    встроенная DARK_PALETTE/LIGHT_PALETTE как есть (поведение по
-    умолчанию, ничего не сломано для тех, кто не открывал конструктор)."""
     data = load_theme()
     custom = data.get("custom_colors", {})
     if not isinstance(custom, dict):
@@ -284,9 +258,6 @@ def get_custom_colors(theme_name: str) -> dict:
 
 
 def set_custom_colors(theme_name: str, colors: dict) -> bool:
-    """Сохраняет переопределения цвета для конкретной темы ('dark'|'light'),
-    НЕ затрагивая переопределения другой темы (важно: пользователь может
-    настроить только dark, а light должна остаться нетронутой)."""
     if theme_name not in ("dark", "light"):
         return False
     try:
@@ -303,16 +274,10 @@ def set_custom_colors(theme_name: str, colors: dict) -> bool:
 
 
 def reset_custom_colors(theme_name: str) -> bool:
-    """Сбрасывает переопределения цвета для темы обратно к встроенной
-    палитре (используется кнопкой 'Сбросить к стандартной' в конструкторе)."""
     return set_custom_colors(theme_name, {})
 
 
-# --- Базовый размер шрифта интерфейса (не относится к textbox-редактору) ---
-
 def get_font_base_size() -> int:
-    """Возвращает сохранённый базовый размер шрифта (pt). Fallback -> 10
-    (дефолт, соответствует поведению приложения до этой фичи)."""
     data = load_theme()
     try:
         return int(data.get("font_base_size", 10))
@@ -321,7 +286,6 @@ def get_font_base_size() -> int:
 
 
 def set_font_base_size(base_size: int) -> bool:
-    """Сохраняет новый базовый размер шрифта в theme_settings.json."""
     try:
         base_size = max(6, min(24, int(base_size)))
     except Exception:
@@ -337,25 +301,13 @@ def set_font_base_size(base_size: int) -> bool:
         return False
 
 
-# --- Именованные пользовательские пресеты (цвета + шрифт + раскладка) ---
-# См. структуру одного пресета в комментарии у "saved_presets" внутри
-# DEFAULT_THEME выше. Пресет — это "снимок" полного визуального состояния
-# на момент сохранения; применение пресета полностью заменяет текущие
-# custom_colors (для темы, с которой пресет был сохранён), font_base_size
-# и layout_preset одним действием.
-
 def get_saved_presets() -> dict:
-    """Возвращает словарь {имя_пресета: данные_пресета}."""
     data = load_theme()
     presets = data.get("saved_presets", {})
     return presets if isinstance(presets, dict) else {}
 
 
 def save_named_preset(preset_name: str, snapshot: dict) -> bool:
-    """Сохраняет новый именованный пресет (или перезаписывает существующий
-    с тем же именем — пользователь явно предупреждается об этом в UI).
-    snapshot должен содержать: custom_colors, theme_name, font_base_size,
-    layout_preset (см. структуру в DEFAULT_THEME)."""
     preset_name = (preset_name or "").strip()
     if not preset_name:
         return False
@@ -373,9 +325,6 @@ def save_named_preset(preset_name: str, snapshot: dict) -> bool:
 
 
 def delete_named_preset(preset_name: str) -> bool:
-    """Удаляет именованный пресет по имени. Возвращает False, если
-    пресета с таким именем не было (ничего не сломано, просто нечего
-    удалять)."""
     try:
         data = _read_json()
         presets = data.get("saved_presets", {})
@@ -392,16 +341,6 @@ def delete_named_preset(preset_name: str) -> bool:
 
 
 def apply_named_preset(preset_name: str) -> dict | None:
-    """Применяет сохранённый пресет: пишет его custom_colors/font_base_size/
-    layout_preset в theme_settings.json как ТЕКУЩЕЕ активное состояние.
-    Возвращает словарь пресета при успехе (чтобы вызывающий код —
-    theme_settings.py — мог сразу применить его к живому Colors/шрифтам
-    без перезапуска), либо None, если пресет с таким именем не найден.
-
-    ВАЖНО: НЕ переключает саму тему (dark/light) — пресет применяется
-    к теме, которая была активна в момент его создания (snapshot["theme_name"]),
-    поэтому вызывающий код должен переключить тему сам, если она отличается
-    от текущей (или предупредить пользователя)."""
     presets = get_saved_presets()
     snapshot = presets.get(preset_name)
     if not isinstance(snapshot, dict):
@@ -416,4 +355,3 @@ def apply_named_preset(preset_name: str) -> dict | None:
     set_layout_preset(layout_preset_name)
 
     return snapshot.copy()
-

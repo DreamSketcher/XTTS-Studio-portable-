@@ -28,6 +28,31 @@ AI_CONDUCTOR_WARNING_INTERVAL = 3
 _conductor_warning_session_resolved = False
 _conductor_warning_pending = False
 
+
+def _set_placeholder(text_widget, placeholder):
+    """Показать серую подсказку-плейсхолдер в отключённом (disabled) поле."""
+    text_widget.config(state="normal")
+    text_widget.delete("1.0", "end")
+    text_widget.insert("1.0", placeholder)
+    text_widget.tag_add("placeholder", "1.0", "end")
+    text_widget.tag_config("placeholder", foreground=Colors.TEXT_DIM)
+    text_widget.config(state="disabled")
+
+
+def _clear_placeholder(text_widget, placeholder):
+    """Убрать плейсхолдер перед тем, как поле станет редактируемым."""
+    text_widget.config(state="normal")
+    if text_widget.get("1.0", "end-1c") == placeholder:
+        text_widget.delete("1.0", "end")
+    text_widget.tag_remove("placeholder", "1.0", "end")
+
+
+def _get_real_value(text_widget, placeholder):
+    """Вернуть содержимое поля, игнорируя плейсхолдер."""
+    val = text_widget.get("1.0", "end-1c").strip()
+    return "" if val == placeholder else val
+
+
 def open_ai_conductor_window():
     global _conductor_warning_session_resolved, _conductor_warning_pending
     if not _conductor_warning_session_resolved:
@@ -102,6 +127,10 @@ def open_ai_conductor_window():
     ai_preset_var.set(s.get("ai_conductor_preset", "Все пресеты"))
     ai_rewrite_var.set(s.get("ai_rewrite_enabled", False))
 
+    # Плейсхолдеры-подсказки для полей стиля (показываются, когда поля отключены)
+    STYLE_PLACEHOLDER = t("conductor_style_placeholder")
+    NEGATIVE_PLACEHOLDER = t("conductor_negative_placeholder")
+
     # Заголовок
     tk.Label(win, text=t("conductor_header"), bg=Colors.BG_CARD, fg=Colors.TEXT_MAIN,
              font=("Segoe UI", scaled_font_size(13), "bold")).pack(padx=20, pady=(18, 4))
@@ -152,8 +181,22 @@ def open_ai_conductor_window():
             text=t("conductor_rewrite_on") if ai_rewrite_var.get() else t("conductor_rewrite_off"),
             bg=Colors.BG_ACTIVE if ai_rewrite_var.get() else Colors.BG_INPUT
         )
-        rewrite_text.config(state="normal" if ai_rewrite_var.get() else "disabled")
-        rewrite_negative_text.config(state="normal" if ai_rewrite_var.get() else "disabled")
+        is_on = ai_rewrite_var.get()
+        if is_on:
+            _clear_placeholder(rewrite_text, STYLE_PLACEHOLDER)
+            _clear_placeholder(rewrite_negative_text, NEGATIVE_PLACEHOLDER)
+            rewrite_text.config(state="normal")
+            rewrite_negative_text.config(state="normal")
+            rewrite_text.focus_set()
+        else:
+            if not _get_real_value(rewrite_text, STYLE_PLACEHOLDER):
+                _set_placeholder(rewrite_text, STYLE_PLACEHOLDER)
+            else:
+                rewrite_text.config(state="disabled")
+            if not _get_real_value(rewrite_negative_text, NEGATIVE_PLACEHOLDER):
+                _set_placeholder(rewrite_negative_text, NEGATIVE_PLACEHOLDER)
+            else:
+                rewrite_negative_text.config(state="disabled")
     rewrite_btn = tk.Button(
         rewrite_row,
         text=t("conductor_rewrite_on") if ai_rewrite_var.get() else t("conductor_rewrite_off"),
@@ -187,7 +230,10 @@ def open_ai_conductor_window():
     if _saved_rewrite:
         rewrite_text.insert("1.0", _saved_rewrite)
     if not ai_rewrite_var.get():
-        rewrite_text.config(state="disabled")
+        if _saved_rewrite:
+            rewrite_text.config(state="disabled")
+        else:
+            _set_placeholder(rewrite_text, STYLE_PLACEHOLDER)
 
     tk.Label(win, text=t("conductor_negative_prompt"),
              bg=Colors.BG_CARD, fg=Colors.TEXT_MAIN,
@@ -205,7 +251,10 @@ def open_ai_conductor_window():
     if _saved_rewrite_negative:
         rewrite_negative_text.insert("1.0", _saved_rewrite_negative)
     if not ai_rewrite_var.get():
-        rewrite_negative_text.config(state="disabled")
+        if _saved_rewrite_negative:
+            rewrite_negative_text.config(state="disabled")
+        else:
+            _set_placeholder(rewrite_negative_text, NEGATIVE_PLACEHOLDER)
 
     preset_options = [t("conductor_all_presets")] + list(quality_params.keys())
     for opt in preset_options:
@@ -237,6 +286,8 @@ def open_ai_conductor_window():
     def save_and_close():
         enabled = ai_enabled_var.get()
         preset_target = ai_preset_var.get()
+        rewrite_value = _get_real_value(rewrite_text, STYLE_PLACEHOLDER)
+        rewrite_negative_value = _get_real_value(rewrite_negative_text, NEGATIVE_PLACEHOLDER)
         # Map translated "Все пресеты" back to logic
         all_presets_label = t("conductor_all_presets")
         for preset_name, params in quality_params.items():
@@ -247,10 +298,10 @@ def open_ai_conductor_window():
                 params["ai_rewrite_enabled"].set(ai_rewrite_var.get())
                 if "ai_rewrite_context" not in params:
                     params["ai_rewrite_context"] = tk.StringVar()
-                params["ai_rewrite_context"].set(rewrite_text.get("1.0", "end-1c").strip())
+                params["ai_rewrite_context"].set(rewrite_value)
                 if "ai_rewrite_negative" not in params:
                     params["ai_rewrite_negative"] = tk.StringVar()
-                params["ai_rewrite_negative"].set(rewrite_negative_text.get("1.0", "end-1c").strip())
+                params["ai_rewrite_negative"].set(rewrite_negative_value)
         save_settings(extra={"ai_conductor_preset": preset_target})
         ai_btn.config(
             bg=Colors.BG_INPUT,

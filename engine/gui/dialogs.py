@@ -1,34 +1,78 @@
 # -*- coding: utf-8 -*-
-"""engine/gui/dialogs.py — диалоги «Язык озвучки» и «Справка»
-(перенесено из gui.py: pick_language, show_help)."""
+"""engine/gui/dialogs.py — диалоги «Язык озвучки» и «Справка» в стиле Аудио/История"""
 import tkinter as tk
+import os
 
 import customtkinter as ctk
 
 from i18n import t
+from engine.paths import BASE_DIR
+try:
+    from engine.paths import ICON_PATH
+except ImportError:
+    ICON_PATH = os.path.join(str(BASE_DIR), "icon.ico")
 
-from engine.gui.colors import Colors, scaled_font_size
+from engine.gui.colors import Colors, scaled_font_size, scaled_size
 from engine.gui.tooltip import ToolTip
+from engine.gui.widgets import CompatCTkFrame, CompatCTkButton, CompatCTkLabel
+import customtkinter as ctk
 
-# Внедряются из main_window: root, lang_var, lang_split_enabled, save_settings
 root = None
 lang_var = None
 lang_split_enabled = None
 save_settings = None
 
-
 def init(**deps):
-    """Внедрение зависимостей из engine.gui.main_window (имена совпадают с
-    именами глобальных переменных исходного gui.py)."""
     globals().update(deps)
 
+def _apply_window_icon(win):
+    try:
+        import ctypes
+        try:
+            ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("XTTSStudio.App")
+        except Exception:
+            pass
+    except Exception:
+        pass
+    ico = ICON_PATH if os.path.isfile(ICON_PATH) else os.path.join(str(BASE_DIR), "icon.ico")
+    if os.path.isfile(ico):
+        try:
+            win.iconbitmap(default=ico)
+            win.after(200, lambda: win.iconbitmap(default=ico))
+        except Exception:
+            pass
+    try:
+        png = os.path.join(str(BASE_DIR), "icon.png")
+        if os.path.isfile(png):
+            photo = tk.PhotoImage(file=png)
+            win.iconphoto(True, photo)
+            win._icon_photo_ref = photo
+    except Exception:
+        pass
+
+def _round_btn(parent, text, cmd, diameter=36, primary=False, width=None):
+    bg = Colors.BG_ACTIVE if primary else Colors.BG_INPUT
+    hover = "#2ea043" if primary else Colors.BG_HOVER
+    sd = scaled_size(diameter, min_size=diameter)
+    btn = CompatCTkButton(
+        parent, text=text, command=cmd,
+        width=width if width else sd, height=sd,
+        corner_radius=sd//2,
+        fg_color=bg, text_color=Colors.TEXT_MAIN, hover_color=hover,
+        border_width=0, font=("Segoe UI", scaled_font_size(13)),
+    )
+    return btn
 
 def pick_language():
     win = tk.Toplevel(root)
     win.title(t("lang_picker_title"))
-    win.resizable(False, False)
-    win.configure(bg=Colors.BG_CARD)
+    win.geometry("620x460")
+    win.minsize(540, 400)
+    win.resizable(True, True)
+    win.configure(bg=Colors.BG_DARK)
+    _apply_window_icon(win)
     win.grab_set()
+
     langs = [
         ("Авто", "auto"), ("RU", "ru"), ("EN", "en"),
         ("ES", "es"), ("FR", "fr"), ("DE", "de"),
@@ -37,141 +81,170 @@ def pick_language():
         ("AR", "ar"), ("ZH", "zh-cn"), ("HU", "hu"),
         ("KO", "ko"), ("JA", "ja"), ("HI", "hi"),
     ]
-    tk.Label(win, text=t("lang_picker_header"), bg=Colors.BG_CARD, fg=Colors.TEXT_MAIN,
-             font=("Segoe UI", scaled_font_size(12), "bold")).pack(pady=(15, 10))
-    grid = tk.Frame(win, bg=Colors.BG_CARD)
-    grid.pack(padx=15, pady=(0, 15))
+
+    # Header card
+    header_card = CompatCTkFrame(win, fg_color=Colors.BG_CARD, corner_radius=20,
+                                 border_width=1, border_color=Colors.BORDER)
+    header_card.pack(fill="x", padx=14, pady=14)
+
+    inner = tk.Frame(header_card, bg=Colors.BG_CARD)
+    inner.pack(fill="x", padx=18, pady=16)
+
+    CompatCTkLabel(inner, text=t("lang_picker_header"), fg_color=Colors.BG_CARD,
+                  text_color=Colors.TEXT_MAIN, font=("Segoe UI", scaled_font_size(16), "bold"),
+                  anchor="w").pack(fill="x")
+
+    # Languages grid inside scrollable? Use card pill
+    grid_card = CompatCTkFrame(win, fg_color=Colors.BG_CARD, corner_radius=20,
+                               border_width=1, border_color=Colors.BORDER)
+    grid_card.pack(fill="both", expand=True, padx=14, pady=(0,10))
+
+    grid_inner = tk.Frame(grid_card, bg=Colors.BG_CARD)
+    grid_inner.pack(fill="both", expand=True, padx=12, pady=12)
+
+    # Use CTkScrollableFrame for languages
+    scroll = ctk.CTkScrollableFrame(grid_inner, fg_color=Colors.BG_DARK, corner_radius=12)
+    scroll.pack(fill="both", expand=True)
+
+    lang_frame = tk.Frame(scroll, bg=Colors.BG_DARK)
+    lang_frame.pack(fill="both", expand=True, padx=6, pady=6)
+
     for i, (label, value) in enumerate(langs):
-        tk.Radiobutton(
-            grid, text=label, variable=lang_var, value=value,
-            indicatoron=False, width=6,
-            bg=Colors.BG_INPUT, fg=Colors.TEXT_MAIN,
-            selectcolor=Colors.ACCENT, activebackground=Colors.BG_HOVER,
-            font=("Segoe UI", scaled_font_size(9), "bold"), relief="flat", cursor="hand2"
-        ).grid(row=i // 6, column=i % 6, padx=3, pady=3)
-    tk.Frame(win, bg=Colors.BG_CARD, height=1).pack(fill="x", padx=15, pady=(5, 0))
-    split_row = tk.Frame(win, bg=Colors.BG_CARD)
-    split_row.pack(fill="x", padx=15, pady=(8, 0))
+        is_active = (lang_var.get() == value)
+        btn = CompatCTkButton(
+            lang_frame,
+            text=label,
+            command=lambda v=value: lang_var.set(v),
+            fg_color=Colors.ACCENT if is_active else Colors.BG_INPUT,
+            text_color="#ffffff" if is_active else Colors.TEXT_MAIN,
+            hover_color=Colors.ACCENT if is_active else Colors.BG_HOVER,
+            corner_radius=18,
+            height=scaled_size(38, min_size=36),
+            width=scaled_size(84, min_size=80),
+            font=("Segoe UI", scaled_font_size(13), "bold"),
+        )
+        btn.grid(row=i // 4, column=i % 4, padx=6, pady=6, sticky="nsew")
+        # update visual when lang_var changes
+        def make_updater(b=btn, v=value):
+            def updater(*_):
+                try:
+                    active = (lang_var.get() == v)
+                    b.configure(fg_color=Colors.ACCENT if active else Colors.BG_INPUT,
+                                text_color="#ffffff" if active else Colors.TEXT_MAIN)
+                except Exception:
+                    pass
+            return updater
+        try:
+            lang_var.trace_add("write", lambda *_args, u=make_updater(): u())
+        except Exception:
+            pass
+
+    for c in range(4):
+        lang_frame.grid_columnconfigure(c, weight=1)
+
+    # Bottom options card
+    bottom_card = CompatCTkFrame(win, fg_color=Colors.BG_CARD, corner_radius=20,
+                                 border_width=1, border_color=Colors.BORDER)
+    bottom_card.pack(fill="x", padx=14, pady=(0,14))
+
+    bottom_inner = tk.Frame(bottom_card, bg=Colors.BG_CARD)
+    bottom_inner.pack(fill="x", padx=18, pady=14)
+
+    split_row = tk.Frame(bottom_inner, bg=Colors.BG_CARD)
+    split_row.pack(fill="x", pady=(0,10))
+
     cb = ctk.CTkCheckBox(
         split_row, text=t("lang_auto_switch"), variable=lang_split_enabled,
         fg_color=Colors.BG_ACTIVE, hover_color=Colors.BG_HOVER,
         border_color=Colors.BORDER, text_color=Colors.TEXT_MAIN,
-        font=("Segoe UI", scaled_font_size(9))
+        font=("Segoe UI", scaled_font_size(13))
     )
     cb.pack(side="left")
     ToolTip(cb, t("lang_auto_switch_tip"))
-    tk.Button(
-        win, text=t("btn_close"), command=lambda: [win.destroy(), save_settings()],
-        bg=Colors.BG_ACTIVE, fg=Colors.TEXT_MAIN, relief="flat",
-        font=("Segoe UI", scaled_font_size(10), "bold"), cursor="hand2", padx=20, pady=5
-    ).pack(pady=(0, 15))
 
+    btn_close = _round_btn(bottom_inner, t("btn_close"), lambda: [win.destroy(), save_settings()],
+                           diameter=44, primary=True, width=scaled_size(160, min_size=140))
+    btn_close.pack(pady=(6,0))
 
 def show_help():
     win = tk.Toplevel(root)
     win.title(t("win_help_title"))
-    win.geometry("650x550")
+    win.geometry("720x620")
+    win.minsize(600, 480)
     win.resizable(True, True)
-    win.configure(bg=Colors.BG_CARD)
+    win.configure(bg=Colors.BG_DARK)
+    _apply_window_icon(win)
     win.grab_set()
-    frame = tk.Frame(win, bg=Colors.BG_CARD)
-    frame.pack(fill="both", expand=True, padx=15, pady=15)
+
+    header_card = CompatCTkFrame(win, fg_color=Colors.BG_CARD, corner_radius=20,
+                                 border_width=1, border_color=Colors.BORDER)
+    header_card.pack(fill="x", padx=14, pady=14)
+
+    inner = tk.Frame(header_card, bg=Colors.BG_CARD)
+    inner.pack(fill="x", padx=18, pady=14)
+
+    CompatCTkLabel(inner, text="📖 " + t("win_help_title"), fg_color=Colors.BG_CARD,
+                  text_color=Colors.TEXT_MAIN, font=("Segoe UI", scaled_font_size(16), "bold"),
+                  anchor="w").pack(fill="x")
+
+    frame_card = CompatCTkFrame(win, fg_color=Colors.BG_CARD, corner_radius=20,
+                                border_width=1, border_color=Colors.BORDER)
+    frame_card.pack(fill="both", expand=True, padx=14, pady=(0,14))
+
+    frame = tk.Frame(frame_card, bg=Colors.BG_CARD)
+    frame.pack(fill="both", expand=True, padx=8, pady=8)
+
     scrollbar = tk.Scrollbar(frame, bg=Colors.BG_INPUT, troughcolor=Colors.BG_DARK)
     scrollbar.pack(side="right", fill="y")
     text = tk.Text(
         frame, wrap="word", yscrollcommand=scrollbar.set,
         font=("Consolas", scaled_font_size(12)), bg=Colors.BG_DARK, fg=Colors.TEXT_MAIN,
-        padx=15, pady=15, state="normal", relief="flat", highlightthickness=0
+        padx=14, pady=14, relief="flat", highlightthickness=0
     )
     text.pack(fill="both", expand=True)
     scrollbar.config(command=text.yview)
-    text.tag_configure("header", foreground=Colors.ACCENT, font=("Consolas", scaled_font_size(11)))
-    text.tag_configure("symbol", foreground="#ffd600", font=("Consolas", scaled_font_size(9)))
-    text.tag_configure("good", foreground=Colors.TEXT_SUCCESS)
+
+    text.tag_configure("header", foreground=Colors.ACCENT, font=("Consolas", scaled_font_size(13), "bold"))
+    text.tag_configure("symbol", foreground="#ffd600", font=("Consolas", scaled_font_size(11)))
+    text.tag_configure("good", foreground=Colors.TEXT_SUCCESS, font=("Consolas", scaled_font_size(12)))
     text.tag_configure("bad", foreground=Colors.TEXT_ERROR)
-    text.tag_configure("normal", foreground=Colors.TEXT_MAIN)
-    text.tag_configure("comment", foreground=Colors.TEXT_DIM)
+    text.tag_configure("normal", foreground=Colors.TEXT_MAIN, font=("Consolas", scaled_font_size(12)))
+    text.tag_configure("comment", foreground=Colors.TEXT_DIM, font=("Consolas", scaled_font_size(11)))
+
     content = [
         ("header", "\n🤖 AI ФУНКЦИИ\n"),
-        ("good", "Флажок ✨ AI (главное окно) — улучшение текста перед генерацией\n"),
-        ("comment", "Технический редактор: раскрывает сокращения, убирает спецсимволы,\nразбивает длинные предложения. Смысл и стиль не меняет.\n\n"),
+        ("good", "Флажок ✨ AI — улучшение текста перед генерацией\n"),
+        ("comment", "Технический редактор: раскрывает сокращения, убирает спецсимволы.\n\n"),
         ("good", "Кнопка 🤖 AI — AI Conductor\n"),
-        ("comment", "Анализирует весь текст и назначает параметры XTTS для каждого чанка.\nПросодия и смарт-паузы отключаются — AI управляет ими напрямую.\nЭкспериментальная функция: результат зависит от провайдера и модели.\n\n"),
-        ("good", "AI Conductor — Уровень 1: параметры движка\n"),
-        ("comment", "Temperature, speed, паузы и прочие параметры назначаются индивидуально\nдля каждого чанка на основе контекста и интонации.\n\n"),
-        ("good", "AI Conductor — Уровень 2: стиль текста\n"),
-        ("comment", "Включается отдельным переключателем внутри окна кондуктора.\nAI переписывает текст под заданный жанр или настроение перед генерацией.\nФакты и названия сохраняются — меняется форма подачи.\nМожно добавить negative prompt: чего избегать при переработке.\n\n"),
-        ("normal", "Оба уровня работают независимо и могут комбинироваться\n"),
-        ("comment", "Сначала текст переписывается (уровень 2), затем под новый текст\nназначаются параметры чанков (уровень 1).\n\n"),
-        ("good", "Настроение референса влияет на результат не менее параметров\n"),
-        ("comment", "Если референс записан нейтрально — драматический стиль даст слабый эффект.\nДля лучшего результата подбирайте референс под заданный стиль.\n"),
+        ("comment", "Анализирует весь текст и назначает параметры XTTS для каждого чанка.\n\n"),
         ("header", "🎯 АВТОМАТИЧЕСКАЯ ОБРАБОТКА\n"),
-        ("good", "Числа → слова (авто)\n"),
-        ("comment", "«2024» → «две тысячи двадцать четыре», «3.5» → «три целых пять»\n\n"),
-        ("good", "Аббревиатуры → словарь произношений\n"),
-        ("comment", "Английские слова автоматически распознаются и добавляются в словарь.\nНеизвестные термины читаются кириллицей по фонетике.\n\n"),
-        ("good", "Пунктуационные и смысловые паузы → автоматически\n"),
-        ("comment", "Модель сама расставляет паузы по знакам препинания и контексту.\n\n"),
-        ("good", "Нормализация текста → автоматически\n"),
-        ("comment", "Лишние пробелы, двойные знаки, артефакты — убираются до генерации.\n\n"),
-        ("good", "Контроль качества чанков → авто-перегенерация\n"),
-        ("comment", "Если модель выдала повторы или обрыв — чанк перегенерируется\nдо 3 раз. Включается в настройках пресета (🛡 QC).\n\n"),
+        ("good", "Числа → слова, аббревиатуры → словарь, паузы → авто\n"),
+        ("comment", "Нормализация текста, контроль качества чанков → авто-перегенерация\n\n"),
         ("header", "\n⏸ ПАУЗЫ\n"),
-        ("symbol", ".  "), ("normal", "стандартная пауза (~400 мс)\n"),
-        ("symbol", ",  "), ("normal", "короткая пауза (~150 мс)\n"),
+        ("symbol", ".  "), ("normal", "стандартная пауза\n"),
+        ("symbol", ",  "), ("normal", "короткая пауза\n"),
         ("symbol", "?  "), ("normal", "вопросительная интонация\n"),
-        ("symbol", "!  "), ("normal", "восклицательная интонация\n"),
-        ("symbol", "—  "), ("normal", "нормализуется в запятую\n"),
-        ("symbol", ":  "), ("normal", "пауза перед пояснением\n"),
-        ("symbol", "…  "), ("normal", "длинная пауза с затуханием\n\n"),
-        ("header", "\n💬 СМЫСЛОВЫЕ ПАУЗЫ\n"),
-        ("normal", "Перед «но», «однако», «хотя» → короткая пауза\n"),
-        ("normal", "После «поэтому», «итак», «таким образом» → пауза вывода\n"),
-        ("normal", "Перед «важно», «главное», «ключевое» → выделение\n"),
-        ("normal", "Перед «например», «к примеру», «допустим» → пауза пояснения\n"),
-        ("comment", "Паузы вставляются автоматически — вручную ничего расставлять не нужно.\n\n"),
-        ("header", "\n📋 СПИСКИ\n"),
+        ("symbol", "!  "), ("normal", "восклицательная интонация\n\n"),
+        ("header", "📋 СПИСКИ\n"),
         ("good", "1. Первый пункт → читается как «первый»\n"),
-        ("good", "2. Второй пункт → читается как «второй»\n"),
-        ("comment", "Пункты 1–20 читаются порядковыми числительными, далее — цифрами.\nКаждый пункт получает паузу после номера автоматически.\n\n"),
-        ("header", "\n🎨 ПРЕСЕТЫ\n"),
+        ("comment", "Пункты 1–20 читаются порядковыми числительными.\n\n"),
+        ("header", "🎨 ПРЕСЕТЫ\n"),
         ("normal", "⭐ Высокое качество — стабильный нейтральный голос\n"),
-        ("normal", "📖 Нарратив — медленно, плавно, для книг и лекций\n"),
-        ("normal", "⚡ Динамика — бодро, быстро, для рекламы и роликов\n"),
-        ("normal", "🎭 Экспрессия — эмоционально, для драматичных сцен\n"),
-        ("comment", "Двойной клик на пресете открывает тонкие настройки.\n\n"),
-        ("header", "\n🎤 РЕФЕРЕНС\n"),
-        ("good", "Оптимальная длина: 10–20 секунд\n"),
-        ("good", "Тихая комната, без музыки и эха\n"),
-        ("good", "Нейтральная эмоция, разборчивая речь\n"),
-        ("good", "Автоматическая обрезка тишины и нормализация громкости\n"),
-        ("good", "Файл сохраняется в библиотеку для повторного использования\n"),
-        ("comment", "Чем чище референс — тем стабильнее клонирование.\nSNR ниже 8 dB даст заметные артефакты.\n\n"),
-        ("header", "\n⚙ СОВЕТЫ\n"),
-        ("normal", "Длинный текст автоматически бьётся на чанки — ограничений нет\n"),
-        ("normal", "Словарь произношений — первая помощь при артефактах на конкретном слове\n"),
-        ("normal", "Если голос «плывёт» к концу — уменьши Temperature в настройках пресета\n"),
-        ("normal", "Повторы и «каша» — увеличь Repetition Penalty\n"),
-        ("comment", "Кэш чанков ускоряет повторную генерацию того же текста тем же голосом.\n"),
+        ("normal", "📖 Нарратив — для книг и лекций\n"),
+        ("normal", "⚡ Динамика — для рекламы\n"),
+        ("normal", "🎭 Экспрессия — для драматичных сцен\n\n"),
+        ("header", "🎤 РЕФЕРЕНС\n"),
+        ("good", "Оптимальная длина: 10–20 секунд, тихая комната\n"),
     ]
-    for tag, content_text in content:
-        text.insert("end", content_text, tag)
+    for tag, txt in content:
+        text.insert("end", txt, tag)
     text.config(state="disabled")
 
     def close_window():
-        # ИСПРАВЛЕНО: раньше save_settings() вызывался ДО win.destroy() и
-        # без try/except. Если save_settings() бросало исключение (например,
-        # проблема с записью settings.json) — выполнение прерывалось прямо
-        # тут, строка win.destroy() не выполнялась, и окно "Справка"
-        # оставалось висеть навсегда — крестик (X) выглядел так, будто
-        # совсем не реагирует. Сравните с pick_language() выше в этом же
-        # файле — там уже применён безопасный порядок: [win.destroy(),
-        # save_settings()] (сначала закрыть, потом сохранить). Здесь делаем
-        # то же самое + оборачиваем save_settings() в try/except на всякий
-        # случай, чтобы окно гарантированно закрывалось при любом исходе.
         win.destroy()
         try:
             save_settings()
         except Exception:
             pass
     win.protocol("WM_DELETE_WINDOW", close_window)
+    win.after(150, lambda: _apply_window_icon(win))

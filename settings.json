@@ -6,8 +6,8 @@
   "word_replacer_enabled": true,
   "lang_split_enabled": true,
   "ui_language": "ru",
-  "text_font_size": 15,
-  "ai_conductor_enabled": true,
+  "text_font_size": 13,
+  "ai_conductor_enabled": false,
   "ai_conductor_context": "",
   "quality_params": {
     "Высокое качество": {
@@ -23,7 +23,7 @@
       "trim_mode": "auto",
       "export_format": "wav",
       "use_gpt": false,
-      "ai_conductor_enabled": true,
+      "ai_conductor_enabled": false,
       "ai_rewrite_enabled": false,
       "ai_rewrite_context": "",
       "ai_rewrite_negative": ""
@@ -41,7 +41,7 @@
       "trim_mode": "auto",
       "export_format": "wav",
       "use_gpt": false,
-      "ai_conductor_enabled": true,
+      "ai_conductor_enabled": false,
       "ai_rewrite_enabled": false,
       "ai_rewrite_context": "",
       "ai_rewrite_negative": ""
@@ -59,7 +59,7 @@
       "trim_mode": "auto",
       "export_format": "wav",
       "use_gpt": false,
-      "ai_conductor_enabled": true,
+      "ai_conductor_enabled": false,
       "ai_rewrite_enabled": false,
       "ai_rewrite_context": "",
       "ai_rewrite_negative": ""
@@ -77,15 +77,15 @@
       "trim_mode": "auto",
       "export_format": "wav",
       "use_gpt": false,
-      "ai_conductor_enabled": true,
+      "ai_conductor_enabled": false,
       "ai_rewrite_enabled": false,
       "ai_rewrite_context": "",
       "ai_rewrite_negative": ""
     }
   },
-  "ai_conductor_open_count": 4,
+  "ai_conductor_open_count": 9,
   "ai_conductor_warning_dismissed": true,
   "ui_theme": "light",
-  "left_panel_visible": false,
+  "left_panel_visible": true,
   "ai_conductor_preset": "Все пресеты"
 }

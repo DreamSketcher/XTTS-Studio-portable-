@@ -1,15 +1,14 @@
 from __future__ import annotations
-import json
-import os
-import threading
-import uuid
-from datetime import datetime
-from tkinter import filedialog, messagebox
 import tkinter as tk
-
 import engine.gui.chat_window.state as state
 from engine.gui.chat_window.custom_widgets import CTK_AVAILABLE, CTkFrame, CTkLabel, CTkButton, TkFrame, TkLabel, TkButton, TkRawFrame
 from i18n import t
+
+try:
+    from engine.gui.colors import Colors, scaled_font_size
+except Exception:
+    def scaled_font_size(x): return x
+    Colors = None
 
 def _add_message_bubble(message: dict, smooth_scroll: bool = True, force_scroll: bool = False):
     if not _widget_exists(state.chat_messages_frame):
@@ -21,7 +20,6 @@ def _add_message_bubble(message: dict, smooth_scroll: bool = True, force_scroll:
     tokens = _approx_tokens(content)
 
     _destroy_empty_state_if_any()
-    # Запоминаем позицию ДО добавления пузыря
     _was_near_bottom = _is_chat_near_bottom()
 
     if role == "system":
@@ -34,7 +32,7 @@ def _add_message_bubble(message: dict, smooth_scroll: bool = True, force_scroll:
 
     row = TkFrame(state.chat_messages_frame, bg=_c("BG_DARK"))
     row._is_message_row = True
-    row.pack(fill="x", padx=12, pady=6)
+    row.pack(fill="x", padx=14, pady=8)
 
     avatar_text = "🧑" if is_user else "🤖"
     avatar = TkLabel(
@@ -42,7 +40,7 @@ def _add_message_bubble(message: dict, smooth_scroll: bool = True, force_scroll:
         text=avatar_text,
         bg=_c("BG_DARK"),
         fg=_c("TEXT_MAIN"),
-        font=("Segoe UI Emoji", 18),
+        font=("Segoe UI Emoji", 22),
         width=2,
     )
 
@@ -50,17 +48,32 @@ def _add_message_bubble(message: dict, smooth_scroll: bool = True, force_scroll:
     bubble_fg = "#ffffff" if is_user else _c("TEXT_MAIN")
     bubble_hover = _lighten_color(bubble_bg, 0.10)
 
-    bubble = tk.Frame(
+    # Unified rounded card for bubble (like audio/history cards)
+    bubble = TkFrame(
         row,
         bg=bubble_bg,
-        highlightthickness=1,
-        highlightbackground=_c("BORDER") if not is_user else bubble_bg,
-        padx=10,
-        pady=8,
     )
+    # Use CTkFrame for rounded if available
+    try:
+        bubble_outer = CTkFrame(row, fg_color=bubble_bg, corner_radius=18,
+                                border_width=1, border_color=_c("BORDER") if not is_user else bubble_bg)
+        bubble_outer.pack_propagate(False)
+        bubble = bubble_outer
+        inner_bg = bubble_bg
+    except Exception:
+        bubble = tk.Frame(
+            row,
+            bg=bubble_bg,
+            highlightthickness=1,
+            highlightbackground=_c("BORDER") if not is_user else bubble_bg,
+            padx=14,
+            pady=10,
+        )
+        inner_bg = bubble_bg
 
-    meta = tk.Frame(bubble, bg=bubble_bg)
-    meta.pack(fill="x")
+    # inner content
+    meta = tk.Frame(bubble, bg=inner_bg)
+    meta.pack(fill="x", padx=14, pady=(10,4))
 
     author = t("chat_author_you") if is_user else _ai_display_name()
     meta_fg = "#dbeafe" if is_user else _c("TEXT_DIM")
@@ -68,13 +81,13 @@ def _add_message_bubble(message: dict, smooth_scroll: bool = True, force_scroll:
     tk.Label(
         meta,
         text=t("chat_meta_format", author, ts, tokens),
-        bg=bubble_bg,
+        bg=inner_bg,
         fg=meta_fg,
-        font=("Segoe UI", 8),
+        font=("Segoe UI", scaled_font_size(11)),
         anchor="w",
     ).pack(side="left")
 
-    btn_box = tk.Frame(meta, bg=bubble_bg)
+    btn_box = tk.Frame(meta, bg=inner_bg)
     btn_box.pack(side="right")
 
     def _send_selected_or_full(lbl=None):
@@ -88,78 +101,69 @@ def _add_message_bubble(message: dict, smooth_scroll: bool = True, force_scroll:
                 pass
         _send_to_main_editor(content)
 
-    # to_editor_btn
     to_editor_btn = tk.Button(
         btn_box,
         text="→",
         command=lambda: _send_selected_or_full(text_label),
-        bg=bubble_bg,
+        bg=inner_bg,
         fg=meta_fg,
         activebackground=bubble_hover,
         activeforeground=_c("TEXT_MAIN"),
         relief="flat",
         bd=0,
         cursor="hand2",
-        font=("Segoe UI", 8, "bold"),
+        font=("Segoe UI", scaled_font_size(11), "bold"),
         width=3,
         padx=2,
         pady=0,
     )
     to_editor_btn.pack(side="right", padx=(4, 0))
 
-    # copy_btn
     copy_btn = tk.Button(
         btn_box,
         text="",
         command=lambda t=content: _copy_to_clipboard(t),
-        bg=bubble_bg,
+        bg=inner_bg,
         fg=meta_fg,
         activebackground=bubble_hover,
         activeforeground=_c("TEXT_MAIN"),
         relief="flat",
         bd=0,
         cursor="hand2",
-        font=("Segoe UI", 8),
+        font=("Segoe UI", scaled_font_size(11)),
         width=7,
         padx=2,
         pady=0,
     )
     copy_btn.pack(side="right")
 
-    # ── Текст сообщения как read-only Text, чтобы поддержать выделение мышкой ──
     text_label = tk.Text(
         bubble,
-        bg=bubble_bg,
+        bg=inner_bg,
         fg=bubble_fg,
-        font=("Segoe UI", 10),
+        font=("Segoe UI", scaled_font_size(13)),
         relief="flat",
         highlightthickness=0,
         bd=0,
         wrap="word",
-        padx=0,
-        pady=0,
+        padx=14,
+        pady=6,
         cursor="arrow",
         takefocus=0,
     )
     text_label.insert("1.0", content)
-    # state остаётся "normal", иначе в некоторых сборках Tk выделение мышью
-    # в disabled Text работает нестабильно. Редактирование блокируем явно:
     text_label.bind("<Key>", lambda e: "break")
     text_label.bind("<<Paste>>", lambda e: "break")
     text_label.bind("<<Cut>>", lambda e: "break")
-    text_label.bind("<Button-2>", lambda e: "break")  # средняя кнопка мыши = paste в X11
-
-    # Выделение текста должно остаться возможным, даже когда state="disabled" —
-    # для этого разрешаем тег "sel" работать независимо от read-only режима.
+    text_label.bind("<Button-2>", lambda e: "break")
     text_label.bind("<Button-1>", lambda e: _on_bubble_text_click(e))
     text_label.bind("<B1-Motion>", lambda e: "ignore_disabled_drag" or None)
-
-    # Высота Text подбирается по контенту динамически (см. _resize_bubble_text)
-    text_label.pack(fill="x", pady=(4, 0))
+    text_label.pack(fill="x", padx=2, pady=(0,10))
     text_label._bubble_content = content
-    text_label._bubble_bg = bubble_bg
+    text_label._bubble_bg = inner_bg
     state._message_labels.append(text_label)
-    def _send_selected_or_full():
+
+    def _send_selected_or_full2():
         try:
             ranges = text_label.tag_ranges("sel")
             if ranges:
@@ -171,7 +175,7 @@ def _add_message_bubble(message: dict, smooth_scroll: bool = True, force_scroll:
             pass
         _send_to_main_editor(content)
 
-    to_editor_btn.config(command=_send_selected_or_full)
+    to_editor_btn.config(command=_send_selected_or_full2)
     _resize_bubble_text(text_label)
 
     text_label.bind("<Button-3>", lambda e, c=content: _show_bubble_context_menu(e, c, text_label))
@@ -182,16 +186,15 @@ def _add_message_bubble(message: dict, smooth_scroll: bool = True, force_scroll:
 
     if is_user:
         spacer_left.pack(side="left", fill="x", expand=True)
-        bubble.pack(side="left", padx=(60, 8), anchor="e")
-        avatar.pack(side="left", anchor="n")
+        bubble.pack(side="left", padx=(60, 12), anchor="e", fill="x", expand=False)
+        avatar.pack(side="left", anchor="n", pady=(2,0))
     else:
-        avatar.pack(side="left", anchor="n")
-        bubble.pack(side="left", padx=(8, 60), anchor="w")
+        avatar.pack(side="left", anchor="n", pady=(2,0))
+        bubble.pack(side="left", padx=(12, 60), anchor="w", fill="x", expand=False)
         spacer_right.pack(side="left", fill="x", expand=True)
 
-    # ── Подсветка пузыря по клику (если не было выделения текста) ──────────
     def _select_this_bubble(_event=None):
-        _select_bubble(bubble, content, bubble_bg)
+        _select_bubble(bubble, content, inner_bg)
 
     for w in (row, bubble, meta):
         try:
@@ -201,7 +204,7 @@ def _add_message_bubble(message: dict, smooth_scroll: bool = True, force_scroll:
 
     def on_enter(_event=None):
         if bubble is _selected_bubble_frame_get():
-            return  # выбранный пузырь не теряет свою подсветку при hover
+            return
         try:
             bubble.config(bg=bubble_hover)
             meta.config(bg=bubble_hover)
@@ -219,20 +222,20 @@ def _add_message_bubble(message: dict, smooth_scroll: bool = True, force_scroll:
         if bubble is _selected_bubble_frame_get():
             return
         try:
-            bubble.config(bg=bubble_bg)
-            meta.config(bg=bubble_bg)
-            text_label.config(bg=bubble_bg)
-            copy_btn.config(text="", bg=bubble_bg)
-            to_editor_btn.config(bg=bubble_bg)
+            bubble.config(bg=inner_bg)
+            meta.config(bg=inner_bg)
+            text_label.config(bg=inner_bg)
+            copy_btn.config(text="", bg=inner_bg)
+            to_editor_btn.config(bg=inner_bg)
             for child in meta.winfo_children():
                 try:
-                    child.config(bg=bubble_bg)
+                    child.config(bg=inner_bg)
                 except Exception:
                     pass
         except Exception:
             pass
 
-    bubble._on_select_colors = (bubble_bg, bubble_hover, meta, text_label, copy_btn, to_editor_btn)
+    bubble._on_select_colors = (inner_bg, bubble_hover, meta, text_label, copy_btn, to_editor_btn)
 
     for w in (row, bubble, meta, text_label, avatar):
         try:
@@ -241,10 +244,8 @@ def _add_message_bubble(message: dict, smooth_scroll: bool = True, force_scroll:
         except Exception:
             pass
 
-    # Сначала задаём правильную ширину, потом пересчитываем высоту
     _safe_after(50, lambda: _resize_bubble_text(text_label) if _widget_exists(text_label) else None)
 
-    # Проверяем позицию ПОСЛЕ того как пузырь отрисован и scrollregion обновился
     def _check_and_scroll():
         if not _widget_exists(state.chat_canvas):
             return
@@ -260,20 +261,24 @@ def _add_message_bubble(message: dict, smooth_scroll: bool = True, force_scroll:
 def _add_system_message(content: str, ts: str):
     row = tk.Frame(state.chat_messages_frame, bg=_c("BG_DARK"))
     row._is_message_row = True
-    row.pack(fill="x", padx=18, pady=8)
+    row.pack(fill="x", padx=18, pady=10)
+
+    card = CTkFrame(row, fg_color=_c("BG_CARD"), corner_radius=14,
+                    border_width=1, border_color=_c("BORDER"))
+    card.pack(anchor="center", padx=12, pady=4)
 
     label = TkLabel(
-        row,
+        card,
         text=f"{ts} · {content}",
         bg=_c("BG_CARD"),
         fg=_c("TEXT_DIM"),
-        font=("Segoe UI", 9, "italic"),
-        wraplength=540,
+        font=("Segoe UI", scaled_font_size(11), "italic"),
+        wraplength=560,
         justify="center",
-        padx=12,
-        pady=8,
+        padx=16,
+        pady=10,
     )
-    label.pack(anchor="center")
+    label.pack()
     state._message_labels.append(label)
 
 
@@ -282,9 +287,7 @@ def _resize_bubble_text(text_widget):
         return
     try:
         text_widget.update_idletasks()
-        n = int(text_widget.tk.call(
-            text_widget._w, "count", "-displaylines", "1.0", "end"
-        ))
+        n = int(text_widget.tk.call(text_widget._w, "count", "-displaylines", "1.0", "end"))
         text_widget.config(height=max(1, n))
     except Exception:
         try:
@@ -323,16 +326,10 @@ def _selected_bubble_frame_get():
 
 
 def _select_bubble(bubble_frame, content: str, base_bg: str):
-    """
-    Подсветить пузырь как выбранный. Повторный клик по тому же пузырю — снять выбор.
-    """
-
-
-    # Снимаем подсветку с предыдущего выбранного пузыря (если был и существует)
     if _widget_exists(state._selected_bubble_frame) and state._selected_bubble_frame is not bubble_frame:
         try:
             prev_bg, _hover, prev_meta, prev_text, prev_copy, prev_to_editor = state._selected_bubble_frame._on_select_colors
-            state._selected_bubble_frame.config(bg=prev_bg, highlightbackground=_c("BORDER"))
+            state._selected_bubble_frame.config(fg_color=prev_bg if hasattr(state._selected_bubble_frame, 'configure') else prev_bg, bg=prev_bg)
             prev_meta.config(bg=prev_bg)
             prev_text.config(bg=prev_bg)
             prev_copy.config(bg=prev_bg)
@@ -346,10 +343,8 @@ def _select_bubble(bubble_frame, content: str, base_bg: str):
             pass
 
     if state._selected_bubble_frame is bubble_frame:
-        # Повторный клик по уже выбранному — снимаем выбор
         try:
             _, _hover, meta, text_w, copy_b, to_editor_b = bubble_frame._on_select_colors
-            bubble_frame.config(bg=base_bg, highlightbackground=_c("BORDER"))
             meta.config(bg=base_bg)
             text_w.config(bg=base_bg)
             copy_b.config(bg=base_bg)
@@ -361,11 +356,13 @@ def _select_bubble(bubble_frame, content: str, base_bg: str):
         set_chat_status(t("chat_selection_cleared"))
         return
 
-    # Подсвечиваем новый выбранный пузырь акцентной рамкой
     try:
-        bubble_frame.config(highlightbackground=_c("ACCENT"), highlightthickness=2)
+        bubble_frame.configure(border_color=_c("ACCENT"), border_width=2)
     except Exception:
-        pass
+        try:
+            bubble_frame.config(highlightbackground=_c("ACCENT"), highlightthickness=2)
+        except Exception:
+            pass
 
     state._selected_bubble_frame = bubble_frame
     state._selected_bubble_content = content
@@ -373,17 +370,7 @@ def _select_bubble(bubble_frame, content: str, base_bg: str):
 
 
 def _on_bubble_text_click(event):
-    """
-    Клик по тексту внутри пузыря: если это просто клик (не начало выделения),
-    подсветка пузыря сработает через биндинг на родителе (bubble/meta/row),
-    который тоже получит это же событие по умолчанию в Tkinter (bubbling
-    в tk идёт по виджетам, а не по DOM-дереву, поэтому верхний bind на bubble
-    сработает независимо). Здесь только гарантируем, что клик не блокируется
-    discard-логикой disabled Text, и что повторное растягивание выделения
-    мышью (B1-Motion) не цепляет подсветку повторно — это естественно, т.к.
-    выделение текста — отдельный, не привязанный к подсветке жест.
-    """
-    return None  # пропускаем штатную обработку Text (выделение работает само)
+    return None
 
 
 def _show_bubble_context_menu(event, content: str, text_widget=None):
@@ -408,21 +395,12 @@ def _show_bubble_context_menu(event, content: str, text_widget=None):
         activebackground=_c("BG_HOVER") if hasattr(state._colors, "BG_HOVER") else _c("BORDER"),
         activeforeground=_c("TEXT_MAIN"),
         relief="flat", borderwidth=1,
-        font=("Segoe UI", 9),
+        font=("Segoe UI", 11),
     )
-    menu.add_command(
-        label=t("chat_ctx_copy"),
-        command=lambda: _copy_to_clipboard(_get_sel_or_full()),
-    )
+    menu.add_command(label=t("chat_ctx_copy"), command=lambda: _copy_to_clipboard(_get_sel_or_full()))
     menu.add_separator()
-    menu.add_command(
-        label=t("chat_ctx_to_editor"),
-        command=lambda: _send_to_main_editor(_get_sel_or_full()),
-    )
-    menu.add_command(
-        label=t("chat_ctx_to_input"),
-        command=lambda: _insert_prompt_into_chat_input(_get_sel_or_full()),
-    )
+    menu.add_command(label=t("chat_ctx_to_editor"), command=lambda: _send_to_main_editor(_get_sel_or_full()))
+    menu.add_command(label=t("chat_ctx_to_input"), command=lambda: _insert_prompt_into_chat_input(_get_sel_or_full()))
     try:
         menu.tk_popup(event.x_root, event.y_root)
     finally:
@@ -436,10 +414,8 @@ def _update_wraplengths(event=None):
         width = state.chat_canvas.winfo_width()
         if width < 50:
             return
-        wrap_px = max(260, min(720, int(width * 0.62)))
-        char_width = max(30, wrap_px // 7)
-        
-        # Собираем все изменения, применяем за один проход без update_idletasks внутри цикла
+        wrap_px = max(300, min(760, int(width * 0.66)))
+        char_width = max(32, wrap_px // 7)
         for widget in list(state._message_labels):
             if not _widget_exists(widget):
                 continue
@@ -450,8 +426,6 @@ def _update_wraplengths(event=None):
                     widget.config(wraplength=wrap_px)
             except Exception:
                 pass
-        
-        # update_idletasks только один раз в конце
         try:
             state.chat_canvas.update_idletasks()
             state.chat_canvas.configure(scrollregion=state.chat_canvas.bbox("all"))
@@ -465,15 +439,12 @@ def _render_current_session():
     _hide_new_message_indicator()
     _clear_messages_ui()
     session = _get_current_session()
-
     messages = session.get("messages", [])
     if not messages:
         _add_empty_state()
     else:
         for m in messages:
             _add_message_bubble(m, smooth_scroll=False)
-
-    # Откладываем до того как канвас получит реальные размеры
     _safe_after(0, _update_wraplengths)
     _safe_after(150, _update_wraplengths)
     _scroll_chat_to_bottom(immediate=True)
@@ -484,42 +455,29 @@ def _render_current_session():
 def _add_empty_state():
     if not _widget_exists(state.chat_messages_frame):
         return
-
     box = TkFrame(state.chat_messages_frame, bg=_c("BG_DARK"))
     box._is_empty_state = True
     box.pack(fill="both", expand=True, padx=24, pady=60)
 
-    TkLabel(
-        box,
-        text="💬",
-        bg=_c("BG_DARK"),
-        fg=_c("TEXT_DIM"),
-        font=("Segoe UI Emoji", 42),
-    ).pack(pady=(0, 10))
+    card = CTkFrame(box, fg_color=_c("BG_CARD"), corner_radius=20,
+                    border_width=1, border_color=_c("BORDER"))
+    card.pack(pady=10, padx=20)
 
-    TkLabel(
-        box,
-        text=t("chat_new_chat_title"),
-        bg=_c("BG_DARK"),
-        fg=_c("TEXT_MAIN"),
-        font=("Segoe UI", 16, "bold"),
-    ).pack()
+    inner = TkFrame(card, bg=_c("BG_CARD"))
+    inner.pack(padx=24, pady=24)
 
-    TkLabel(
-        box,
-        text=t("chat_welcome"),
-        bg=_c("BG_DARK"),
-        fg=_c("TEXT_DIM"),
-        font=("Segoe UI", 10),
-        wraplength=420,
-        justify="center",
-    ).pack(pady=(8, 0))
+    TkLabel(inner, text="💬", bg=_c("BG_CARD"), fg=_c("TEXT_DIM"),
+            font=("Segoe UI Emoji", 48)).pack(pady=(0, 12))
+    TkLabel(inner, text=t("chat_new_chat_title"), bg=_c("BG_CARD"),
+            fg=_c("TEXT_MAIN"), font=("Segoe UI", 18, "bold")).pack()
+    TkLabel(inner, text=t("chat_welcome"), bg=_c("BG_CARD"),
+            fg=_c("TEXT_DIM"), font=("Segoe UI", 13),
+            wraplength=440, justify="center").pack(pady=(10, 0))
 
 
 def _destroy_empty_state_if_any():
     if not _widget_exists(state.chat_messages_frame):
         return
-
     for child in state.chat_messages_frame.winfo_children():
         try:
             if getattr(child, "_is_empty_state", False):
@@ -529,18 +487,13 @@ def _destroy_empty_state_if_any():
 
 
 def _clear_messages_ui():
-
-
-
     state._message_labels = []
     state._typing_frame = None
     state._typing_label = None
     state._selected_bubble_frame = None
     state._selected_bubble_content = ""
-
     if not _widget_exists(state.chat_messages_frame):
         return
-
     for child in state.chat_messages_frame.winfo_children():
         try:
             child.destroy()
@@ -548,8 +501,6 @@ def _clear_messages_ui():
             pass
 
 
-
-# Inter-module imports
 from engine.gui.chat_window.engine.utils import _now_ts, _now_full, _approx_tokens, _ai_display_name, _build_editor_compose_prompt
 from engine.gui.chat_window.engine.sessions import _load_sessions, _save_sessions, _enforce_limits, _create_session_dict, _get_current_session, _update_session_title_if_needed, _messages_for_api
 from engine.gui.chat_window.engine.generation import _run_generation

@@ -1,29 +1,14 @@
 # -*- coding: utf-8 -*-
 """
-engine/gui/word_replacer_window.py — окно «Словарь произношений» для XTTS Studio
+engine/gui/word_replacer_window.py — окно «Словарь произношений» в стиле Аудио/История
 
-Управляет фонетическими заменами (engine.word_replacer.WordReplacer):
-просмотр, добавление, редактирование и удаление правил, а также
-переключатель «Словарь активен».
-
-Архитектура:
-    init(root, colors, create_button_fn, word_replacer_enabled_var, save_settings_fn)
-
-Окно не импортирует ничего из gui.py напрямую — все зависимости
-приходят через init().
-
-Изменения раскладки (функциональность не тронута):
-  • окно теперь resizable (min 560x420) — список правил растягивается;
-  • нижние ряды упакованы side="bottom", поэтому при уменьшении окна
-    ужимается список, а кнопки и чекбокс всегда видны;
-  • кнопки — авто-ширина по тексту (width=0), чекбокс «Словарь активен»
-    вынесен в отдельный ряд и больше не выталкивается кнопками.
+Редизайн 2026-07-09 единый стиль.
 """
-
 from __future__ import annotations
 
 import tkinter as tk
 from tkinter import messagebox
+import os
 
 try:
     import customtkinter as ctk
@@ -32,23 +17,21 @@ except Exception:
     CTK_AVAILABLE = False
     ctk = None
 
-# ПРИМЕЧАНИЕ: colors.py — не тот "gui.py" (старый монолит), про который
-# говорит docstring выше ("окно не импортирует ничего из gui.py напрямую").
-# Отдельный лёгкий модуль без tkinter-зависимостей (палитра + масштаб
-# шрифта), поэтому прямой импорт не нарушает архитектурный принцип файла —
-# сам Colors по-прежнему приходит через init(), как и раньше.
-from engine.gui.colors import scaled_font_size
+from engine.paths import BASE_DIR
+try:
+    from engine.paths import ICON_PATH
+except ImportError:
+    ICON_PATH = os.path.join(str(BASE_DIR), "icon.ico")
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Dependency injection
-# ─────────────────────────────────────────────────────────────────────────────
+from engine.gui.colors import Colors, scaled_font_size, scaled_size
+from engine.gui.widgets import CompatCTkFrame, CompatCTkButton, CompatCTkLabel
+from engine.gui.tooltip import ToolTip
 
 _root = None
 _colors = None
 _create_button = None
 _word_replacer_enabled_var = None
 _save_settings = None
-
 
 def init(root, colors, create_button_fn, word_replacer_enabled_var, save_settings_fn):
     global _root, _colors, _create_button, _word_replacer_enabled_var, _save_settings
@@ -59,10 +42,6 @@ def init(root, colors, create_button_fn, word_replacer_enabled_var, save_setting
     _save_settings = save_settings_fn
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# ToolTip (лёгкая копия из gui.py — своя, чтобы не тянуть прямой импорт)
-# ─────────────────────────────────────────────────────────────────────────────
-
 class _ToolTip:
     def __init__(self, widget, text: str):
         self.widget = widget
@@ -71,7 +50,6 @@ class _ToolTip:
         widget.bind("<Enter>", self.show, add="+")
         widget.bind("<Leave>", self.hide, add="+")
         widget.bind("<ButtonPress>", self.hide, add="+")
-
     def show(self, event=None):
         if self.tip:
             return
@@ -83,181 +61,206 @@ class _ToolTip:
         tk.Label(
             self.tip,
             text=self.text() if callable(self.text) else self.text,
-            bg=_colors.TOOLTIP_BG,
-            fg=_colors.TEXT_MAIN,
-            justify="left",
-            relief="flat",
-            borderwidth=0,
-            padx=10,
-            pady=7,
-            font=("Segoe UI", scaled_font_size(9)),
-            wraplength=280
+            bg=_colors.TOOLTIP_BG, fg=_colors.TEXT_MAIN,
+            justify="left", relief="flat", borderwidth=0, padx=10, pady=7,
+            font=("Segoe UI", scaled_font_size(11)), wraplength=320
         ).pack()
-
     def hide(self, event=None):
         if self.tip:
             self.tip.destroy()
             self.tip = None
 
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Window
-# ─────────────────────────────────────────────────────────────────────────────
+def _apply_window_icon(win: tk.Toplevel):
+    try:
+        import ctypes
+        try:
+            ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("XTTSStudio.App")
+        except Exception:
+            pass
+    except Exception:
+        pass
+    ico = ICON_PATH if os.path.isfile(ICON_PATH) else os.path.join(str(BASE_DIR), "icon.ico")
+    if os.path.isfile(ico):
+        try:
+            win.iconbitmap(default=ico)
+            win.after(200, lambda: win.iconbitmap(default=ico))
+        except Exception:
+            pass
+    try:
+        photo = None
+        png = os.path.join(str(BASE_DIR), "icon.png")
+        if os.path.isfile(png):
+            photo = tk.PhotoImage(file=png)
+        if photo:
+            win.iconphoto(True, photo)
+            win._icon_photo_ref = photo
+    except Exception:
+        pass
 
 def open_word_replacer():
-    """Открывает окно словаря произношений (фонетических замен)."""
     from engine.tts_runner import word_replacer
     colors = _colors
 
     win = tk.Toplevel(_root)
     win.title("📖 Словарь произношений")
-    win.geometry("580x560")
-    # ── Изменение размера включено; ниже минимума кнопки не помещаются ──
-    win.minsize(560, 480)
+    win.geometry("720x640")
+    win.minsize(640, 540)
     win.resizable(True, True)
-    win.configure(bg=colors.BG_CARD)
+    win.configure(bg=Colors.BG_DARK)
+    _apply_window_icon(win)
     win.grab_set()
 
-    # ── Нижние ряды пакуются side="bottom" ПЕРВЫМИ: при нехватке высоты
-    #    pack ужимает список, а кнопки/чекбокс остаются видимыми ──
-    toggle_frame_wr = tk.Frame(win, bg=colors.BG_CARD)
-    toggle_frame_wr.pack(side="bottom", fill="x", padx=15, pady=(0, 10))
+    def _round_btn(parent, text, cmd, diameter=36, primary=False, danger=False):
+        bg = Colors.BG_ACTIVE if primary else Colors.BG_INPUT
+        hover = "#2ea043" if primary else (Colors.BG_DANGER if danger else Colors.BG_HOVER)
+        sd = scaled_size(diameter, min_size=diameter)
+        return CompatCTkButton(
+            parent, text=text, command=cmd,
+            width=sd, height=sd, corner_radius=sd//2,
+            fg_color=bg, text_color=Colors.TEXT_MAIN, hover_color=hover,
+            border_width=0, font=("Segoe UI", scaled_font_size(15)),
+        )
 
-    btn_frame_wr = tk.Frame(win, bg=colors.BG_CARD)
-    btn_frame_wr.pack(side="bottom", fill="x", padx=15, pady=(0, 6))
+    # HEADER pill
+    header = tk.Frame(win, bg=Colors.BG_DARK, pady=12)
+    header.pack(fill="x", padx=16)
 
-    btn_row_top = tk.Frame(btn_frame_wr, bg=colors.BG_CARD)
-    btn_row_top.pack(side="top", fill="x", pady=(0, 4))
+    pill = CompatCTkFrame(header, fg_color=Colors.BG_CARD, corner_radius=18,
+                          border_width=1, border_color=Colors.BORDER)
+    pill.pack(side="left")
+    row = tk.Frame(pill, bg=Colors.BG_CARD)
+    row.pack(padx=6, pady=6)
 
-    btn_row_bottom = tk.Frame(btn_frame_wr, bg=colors.BG_CARD)
-    btn_row_bottom.pack(side="top", fill="x")
+    count_var = tk.StringVar(value="0 правил")
+    # будет обновляться в refresh
 
-    meta_frame = tk.Frame(win, bg=colors.BG_CARD)
-    meta_frame.pack(side="bottom", fill="x", padx=15, pady=(0, 2))
-
-    input_frame = tk.Frame(win, bg=colors.BG_CARD)
-    input_frame.pack(side="bottom", fill="x", padx=15, pady=(6, 6))
-
-    list_frame = tk.Frame(win, bg=colors.BG_CARD)
-    list_frame.pack(fill="both", expand=True, padx=15, pady=(10, 4))
-
-    scrollbar = tk.Scrollbar(list_frame, bg=colors.BG_INPUT, troughcolor=colors.BG_DARK)
-    scrollbar.pack(side="right", fill="y")
-
-    listbox = tk.Listbox(
-        list_frame, yscrollcommand=scrollbar.set,
-        font=("Consolas", scaled_font_size(12)), selectmode="single",
-        bg=colors.BG_INPUT, fg=colors.TEXT_MAIN,
-        selectbackground=colors.ACCENT, selectforeground=colors.TEXT_MAIN,
-        relief="flat", highlightthickness=0
-    )
-    listbox.pack(fill="both", expand=True)
-    scrollbar.config(command=listbox.yview)
+    # LIST - scrollable frame как в history
+    list_frame = ctk.CTkScrollableFrame(win, fg_color=Colors.BG_DARK, corner_radius=12)
+    list_frame.pack(fill="both", expand=True, padx=12, pady=(4,6))
 
     _selected_word = {"word": None, "category": None}
+    meta_var = tk.StringVar(value="")
 
-    # ── Метка с метаданными выбранного слова (added_at / context) ──
-    meta_label = tk.Label(
-        meta_frame, text="", bg=colors.BG_CARD, fg=colors.TEXT_DIM,
-        font=("Segoe UI", scaled_font_size(8)), anchor="w", justify="left", wraplength=540
-    )
-    meta_label.pack(fill="x")
+    def _category_tag(cat: str) -> str:
+        return {"builtin":"[встроено]","auto":"[авто]","ai_corrected":"[ai]","custom":"[ручное]"}.get(cat, f"[{cat}]")
 
-    def _category_tag(category: str) -> str:
-        return {
-            "builtin": "[встроено]",
-            "auto": "[авто]",
-            "ai_corrected": "[ai]",
-            "custom": "[ручное]",
-        }.get(category, f"[{category}]")
+    # Для поиска/хранения маппинга карточек -> слово
+    card_map = {}
+
+    def _make_card(parent, word, text, category, entry_obj):
+        tag = _category_tag(category)
+        card = CompatCTkFrame(parent, fg_color=Colors.BG_CARD, corner_radius=14,
+                              border_width=1, border_color=Colors.BORDER)
+        card.pack(fill="x", padx=4, pady=5)
+
+        badge = CompatCTkFrame(card, fg_color=Colors.BG_INPUT, corner_radius=20, width=44, height=44)
+        badge.pack(side="left", padx=(14,10), pady=12)
+        badge.pack_propagate(False)
+        CompatCTkLabel(badge, text=tag[:2], fg_color=Colors.BG_INPUT, text_color=Colors.TEXT_MAIN,
+                      font=("Segoe UI", scaled_font_size(11), "bold")).pack(expand=True)
+
+        info = tk.Frame(card, bg=Colors.BG_CARD)
+        info.pack(side="left", fill="both", expand=True, pady=10)
+        CompatCTkLabel(info, text=f"{word}  →  {text}", fg_color=Colors.BG_CARD,
+                      text_color=Colors.TEXT_MAIN, font=("Consolas", scaled_font_size(13), "bold"),
+                      anchor="w").pack(fill="x")
+        # мета
+        if isinstance(entry_obj, dict) and entry_obj.get("added_at"):
+            meta = f"Добавлено: {entry_obj.get('added_at','')} • встреч: {entry_obj.get('occurrences','')}"
+            CompatCTkLabel(info, text=meta, fg_color=Colors.BG_CARD, text_color=Colors.TEXT_DIM,
+                          font=("Segoe UI", scaled_font_size(10)), anchor="w").pack(fill="x", pady=(2,0))
+
+        def on_card_click(e=None, w=word, cat=category):
+            _selected_word["word"] = w
+            _selected_word["category"] = cat
+            entry_word.delete(0, tk.END)
+            entry_word.insert(0, w)
+            entry_replacement.delete(0, tk.END)
+            entry_replacement.insert(0, text)
+            if isinstance(entry_obj, dict):
+                parts = []
+                if entry_obj.get("added_at"):
+                    parts.append(f"Добавлено: {entry_obj['added_at']}")
+                if entry_obj.get("context"):
+                    parts.append(f"«{entry_obj['context']}»")
+                meta_var.set("  •  ".join(parts))
+            else:
+                meta_var.set("")
+
+            # подсветка
+            for c, _ in card_map.values():
+                try:
+                    c.configure(border_color=Colors.BORDER, border_width=1)
+                except Exception:
+                    pass
+            try:
+                card.configure(border_color=Colors.ACCENT, border_width=2)
+            except Exception:
+                pass
+
+        card.bind("<Button-1>", on_card_click)
+        info.bind("<Button-1>", on_card_click)
+        for child in info.winfo_children():
+            try:
+                child.bind("<Button-1>", on_card_click)
+            except Exception:
+                pass
+        card_map[word] = (card, entry_obj)
 
     def refresh():
-        listbox.delete(0, tk.END)
+        for w in list_frame.winfo_children():
+            try:
+                w.destroy()
+            except Exception:
+                pass
+        card_map.clear()
+        total = 0
         for category, data in word_replacer.data.items():
             if category == "meta":
                 continue
             for word, value in data.items():
-                text = value["text"] if isinstance(value, dict) else value
-                tag = _category_tag(category)
-                listbox.insert(tk.END, f"{tag} {word}  →  {text}")
-        meta_label.config(text="")
+                txt = value["text"] if isinstance(value, dict) else value
+                _make_card(list_frame, word, txt, category, value)
+                total += 1
+        count_var.set(f"{total} правил")
+        count_lbl.configure(text=count_var.get())
+        meta_var.set("")
 
-    def _find_entry(word: str):
-        """Возвращает (category, entry_dict) для слова, если оно есть."""
-        for category, data in word_replacer.data.items():
-            if category == "meta":
-                continue
-            if word in data:
-                return category, data[word]
-        return None, None
+    # INPUT area - карточка снизу
+    outer_wrap = tk.Frame(win, bg=Colors.BG_DARK)
+    outer_wrap.pack(fill="x", side="bottom")
+    input_card = CompatCTkFrame(outer_wrap, fg_color=Colors.BG_CARD, corner_radius=20,
+                                border_width=1, border_color=Colors.BORDER)
+    input_card.pack(fill="x", padx=14, pady=(6,14))
 
-    def on_select(event=None):
-        sel = listbox.curselection()
-        if not sel:
-            return
-        item = listbox.get(sel[0])
-        # формат: "[tag] слово  →  замена"
-        try:
-            _, rest = item.split("] ", 1)
-        except ValueError:
-            rest = item
-        word, text = rest.split("  →  ")
-        word = word.strip()
-        text = text.strip()
-        _selected_word["word"] = word
+    input_row = tk.Frame(input_card, bg=Colors.BG_CARD)
+    input_row.pack(fill="x", padx=18, pady=(16,6))
 
-        category, entry = _find_entry(word)
-        _selected_word["category"] = category
+    tk.Label(input_row, text="Слово:", bg=Colors.BG_CARD, fg=Colors.TEXT_MAIN,
+             font=("Segoe UI", scaled_font_size(11))).pack(side="left")
+    entry_word = tk.Entry(input_row, width=18, font=("Segoe UI", scaled_font_size(12)),
+                          bg=Colors.BG_INPUT, fg=Colors.TEXT_MAIN,
+                          insertbackground=Colors.TEXT_MAIN, relief="flat",
+                          highlightthickness=1, highlightbackground=Colors.BORDER)
+    entry_word.pack(side="left", padx=8)
 
-        entry_word.delete(0, tk.END)
-        entry_word.insert(0, word)
-        entry_replacement.delete(0, tk.END)
-        entry_replacement.insert(0, text)
+    tk.Label(input_row, text="Замена:", bg=Colors.BG_CARD, fg=Colors.TEXT_MAIN,
+             font=("Segoe UI", scaled_font_size(11))).pack(side="left", padx=(8,0))
+    entry_replacement = tk.Entry(input_row, width=18, font=("Segoe UI", scaled_font_size(12)),
+                                 bg=Colors.BG_INPUT, fg=Colors.TEXT_MAIN,
+                                 insertbackground=Colors.TEXT_MAIN, relief="flat",
+                                 highlightthickness=1, highlightbackground=Colors.BORDER)
+    entry_replacement.pack(side="left", padx=8, fill="x", expand=True)
 
-        # Показываем метаданные, если это словарная запись (не просто строка)
-        if isinstance(entry, dict):
-            parts = []
-            if entry.get("added_at"):
-                parts.append(f"Добавлено: {entry['added_at']}")
-            if entry.get("occurrences"):
-                parts.append(f"встреч: {entry['occurrences']}")
-            if entry.get("context"):
-                parts.append(f"контекст: «{entry['context']}»")
-            meta_label.config(text="  •  ".join(parts) if parts else "")
-        else:
-            meta_label.config(text="")
+    meta_lbl = CompatCTkLabel(input_card, textvariable=meta_var, fg_color=Colors.BG_CARD,
+                             text_color=Colors.TEXT_DIM, font=("Segoe UI", scaled_font_size(10)),
+                             anchor="w")
+    meta_lbl.pack(fill="x", padx=18, pady=(0,10))
 
-    listbox.bind("<<ListboxSelect>>", on_select)
-    refresh()
-
-    tk.Label(
-        input_frame, text="Слово:", bg=colors.BG_CARD, fg=colors.TEXT_MAIN,
-        font=("Segoe UI", scaled_font_size(10))
-    ).grid(row=0, column=0, sticky="w", padx=(0, 10))
-
-    entry_word = tk.Entry(
-        input_frame, width=20, font=("Segoe UI", scaled_font_size(10)),
-        bg=colors.BG_INPUT, fg=colors.TEXT_MAIN,
-        insertbackground=colors.TEXT_MAIN, relief="flat",
-        highlightthickness=1, highlightbackground=colors.BORDER
-    )
-    entry_word.grid(row=0, column=1, padx=5, sticky="ew")
-
-    tk.Label(
-        input_frame, text="Замена:", bg=colors.BG_CARD, fg=colors.TEXT_MAIN,
-        font=("Segoe UI", scaled_font_size(10))
-    ).grid(row=0, column=2, sticky="w", padx=(10, 10))
-
-    entry_replacement = tk.Entry(
-        input_frame, width=20, font=("Segoe UI", scaled_font_size(10)),
-        bg=colors.BG_INPUT, fg=colors.TEXT_MAIN,
-        insertbackground=colors.TEXT_MAIN, relief="flat",
-        highlightthickness=1, highlightbackground=colors.BORDER
-    )
-    entry_replacement.grid(row=0, column=3, padx=5, sticky="ew")
-    # поля ввода растягиваются при увеличении окна
-    input_frame.grid_columnconfigure(1, weight=1)
-    input_frame.grid_columnconfigure(3, weight=1)
+    ctrl_pill = CompatCTkFrame(input_card, fg_color=Colors.BG_INPUT, corner_radius=26)
+    ctrl_pill.pack(pady=(2,18))
+    ctrl_row = tk.Frame(ctrl_pill, bg=Colors.BG_INPUT)
+    ctrl_row.pack(padx=12, pady=8)
 
     def add_rule():
         word = entry_word.get().strip()
@@ -266,146 +269,93 @@ def open_word_replacer():
             messagebox.showwarning("⚠ Поля пусты", "Заполните слово и замену", parent=win)
             return
         if word_replacer.get_category(word) is not None:
-            messagebox.showwarning(
-                "⚠ Слово уже есть",
-                f"«{word}» уже есть в словаре.\nИспользуйте «✏ Сохранить изменения».",
-                parent=win
-            )
+            messagebox.showwarning("⚠ Слово уже есть", f"«{word}» уже есть.", parent=win)
             return
         word_replacer.add_rule(word, replacement, category="custom")
         entry_word.delete(0, tk.END)
         entry_replacement.delete(0, tk.END)
         _selected_word["word"] = None
-        _selected_word["category"] = None
         refresh()
 
     def save_changes():
-        original_word = _selected_word["word"]
-        if not original_word:
-            messagebox.showwarning(
-                "⚠ Ничего не выбрано", "Выберите слово в списке для редактирования", parent=win
-            )
+        original = _selected_word["word"]
+        if not original:
+            messagebox.showwarning("⚠ Ничего не выбрано", "Выберите слово в списке", parent=win)
             return
         new_word = entry_word.get().strip()
         new_text = entry_replacement.get().strip()
         if not new_word or not new_text:
             messagebox.showwarning("⚠ Поля пусты", "Заполните слово и замену", parent=win)
             return
-        if new_word != original_word:
-            word_replacer.remove_rule(original_word)
+        if new_word != original:
+            word_replacer.remove_rule(original)
         word_replacer.add_rule(new_word, new_text, category="custom")
         entry_word.delete(0, tk.END)
         entry_replacement.delete(0, tk.END)
         _selected_word["word"] = None
-        _selected_word["category"] = None
         refresh()
 
     def remove_rule():
-        sel = listbox.curselection()
-        if sel:
-            item = listbox.get(sel[0])
-            try:
-                _, rest = item.split("] ", 1)
-            except ValueError:
-                rest = item
-            word = rest.split("  →  ")[0].strip()
-            word_replacer.remove_rule(word)
-            entry_word.delete(0, tk.END)
-            entry_replacement.delete(0, tk.END)
-            _selected_word["word"] = None
-            _selected_word["category"] = None
-            refresh()
-
-    def reset_pronunciation():
-        """
-        Сбрасывает произношение выбранного слова: удаляет правило замены
-        полностью, слово перестаёт транслитерироваться и читается моделью
-        как есть (в своём исходном языке). Используется, когда слово
-        произносится с акцентом/искажением из-за неверной транслитерации
-        (обычно auto-записи от эвристики).
-        """
-        word = _selected_word["word"]
+        word = _selected_word["word"] or entry_word.get().strip()
         if not word:
-            messagebox.showwarning(
-                "⚠ Ничего не выбрано",
-                "Выберите слово в списке, произношение которого нужно сбросить",
-                parent=win
-            )
             return
-
-        category = _selected_word.get("category") or word_replacer.get_category(word)
-        replacement = entry_replacement.get().strip()
-
-        confirm = messagebox.askyesno(
-            "↺ Сбросить произношение",
-            f"Сбросить произношение для «{word}»?\n\n"
-            f"Текущая замена: «{replacement}»\n\n"
-            "Слово перестанет принудительно транслитерироваться в кириллицу "
-            "и будет прочитано моделью как есть, в своём исходном языке.\n\n"
-            "Используйте это, если сейчас слышите акцент или искажение "
-            "именно на этом слове.",
-            icon="warning",
-            parent=win
-        )
-        if not confirm:
-            return
-
         word_replacer.remove_rule(word)
         entry_word.delete(0, tk.END)
         entry_replacement.delete(0, tk.END)
         _selected_word["word"] = None
-        _selected_word["category"] = None
         refresh()
 
-    # ── Кнопки: авто-ширина по тексту (width=0) — не выталкивают соседей ──
-    def _wr_btn(parent, text, cmd, **kw):
-        b = _create_button(parent, text, cmd, **kw)
-        try:
-            b.configure(width=0)
-        except Exception:
-            pass
-        try:
-            b.configure(padx=6, pady=2)
-        except Exception:
-            pass
-        return b
+    def reset_pronunciation():
+        word = _selected_word["word"]
+        if not word:
+            messagebox.showwarning("⚠ Ничего не выбрано", "Выберите слово", parent=win)
+            return
+        if not messagebox.askyesno("↺ Сбросить", f"Сбросить «{word}»?", parent=win):
+            return
+        word_replacer.remove_rule(word)
+        entry_word.delete(0, tk.END)
+        entry_replacement.delete(0, tk.END)
+        _selected_word["word"] = None
+        refresh()
 
-    _wr_btn(btn_row_top, "➕ Добавить", add_rule,
-            bg=colors.BG_INPUT).pack(side="left", padx=(0, 5))
-    reset_btn = _wr_btn(btn_row_top, "↺ Сбросить произношение", reset_pronunciation,
-                         bg=colors.BG_INPUT)
-    reset_btn.pack(side="left")
-    _ToolTip(
-        reset_btn,
-        "Удаляет правило замены для выбранного слова.\n\n"
-        "Слово перестанет транслитерироваться и будет\n"
-        "прочитано моделью как есть — используйте, если\n"
-        "слышите акцент/искажение именно на этом слове."
-    )
+    b_add = _round_btn(ctrl_row, "➕", add_rule, diameter=38)
+    b_add.pack(side="left", padx=4)
+    ToolTip(b_add, "Добавить новое правило")
 
-    _wr_btn(btn_row_bottom, "✏ Сохранить изменения", save_changes,
-            bg=colors.BG_INPUT).pack(side="left", padx=(0, 5))
-    _wr_btn(btn_row_bottom, "🗑 Удалить", remove_rule, bg=colors.BG_DANGER,
-            fg=colors.TEXT_MAIN).pack(side="left")
+    b_save = _round_btn(ctrl_row, "✏", save_changes, diameter=38)
+    b_save.pack(side="left", padx=4)
+    ToolTip(b_save, "Сохранить изменения")
 
-    # ── Чекбокс «Словарь активен» — отдельный ряд, кнопки его не двигают ──
+    b_reset = _round_btn(ctrl_row, "↺", reset_pronunciation, diameter=38)
+    b_reset.pack(side="left", padx=4)
+    ToolTip(b_reset, "Сбросить произношение — читается как есть")
+
+    b_del = _round_btn(ctrl_row, "🗑", remove_rule, diameter=38, danger=True)
+    b_del.pack(side="left", padx=(16,4))
+    ToolTip(b_del, "Удалить правило")
+
+    # bottom toggle
+    toggle_row = tk.Frame(win, bg=Colors.BG_DARK, pady=6)
+    toggle_row.pack(fill="x", side="bottom", padx=12, pady=6)
+    count_lbl = CompatCTkLabel(toggle_row, textvariable=count_var, fg_color=Colors.BG_DARK,
+                               text_color=Colors.TEXT_DIM, font=("Segoe UI", scaled_font_size(11)))
+    count_lbl.pack(side="left")
+
     wr_cb = ctk.CTkCheckBox(
-        toggle_frame_wr, text="Словарь активен", variable=_word_replacer_enabled_var,
-        fg_color=colors.BG_ACTIVE, hover_color=colors.BG_HOVER,
-        border_color=colors.BORDER, text_color=colors.TEXT_MAIN,
-        font=("Segoe UI", scaled_font_size(10))
+        toggle_row, text="Словарь активен", variable=_word_replacer_enabled_var,
+        fg_color=Colors.BG_ACTIVE, hover_color=Colors.BG_HOVER,
+        border_color=Colors.BORDER, text_color=Colors.TEXT_MAIN,
+        font=("Segoe UI", scaled_font_size(12))
     )
     wr_cb.pack(side="right")
-    _ToolTip(
-        wr_cb,
-        "Включает замену слов по словарю перед синтезом.\n\n"
-        "При отключении аббревиатуры, числа и иностранные\n"
-        "термины могут читаться некорректно или вызывать\n"
-        "артефакты — повторы, обрывы, «каша» в речи."
-    )
+    _ToolTip(wr_cb, "Включает замену слов перед синтезом")
 
     def close_window():
         _save_settings()
         win.destroy()
-
     win.protocol("WM_DELETE_WINDOW", close_window)
+    refresh()
+    try:
+        win.after(150, lambda: _apply_window_icon(win))
+    except Exception:
+        pass
