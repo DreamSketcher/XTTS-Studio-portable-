@@ -1,5 +1,5 @@
 {
-  "version": "1.1.140",
+  "version": "1.1.145",
   "files": [
     ".llama_broken_backends.json",
     "XTTS Studio.exe",
@@ -171,7 +171,6 @@
     "engine/gui/tooltip.py": "af5175173b2fd9d48a29d7e5bb122a8ee061a061a5a1ab216963d8fa4615117a",
     "engine/gui/updates.py": "e5f38668db40a72e6873b135d3c5908dccfc190ba42bc53a80bbce71e17e1eeb",
     "engine/gui/voice_panel.py": "0ad37151666dcefa6822a77df07f9c3d2691a23be34cf92765f5aaba9e7d482c",
-    "engine/gui/voice_panel.py.bak": "b1d27ea1d647188fcfac50876bc1987d396269720487980ca9c4a57fd42f1032",
     "engine/gui/widgets.py": "bd6249b7f7c62eddcc98bdcf4d742c3a1f7354981e31638c40f68248620faf22",
     "engine/gui/word_replacer_panel.py": "eae6a910e1ce9d3d9d04fafef418f09b6ecb90a782526d2e8ef55377101406b9",
     "engine/gui/word_replacer_window.py": "e518247c428eff6734789ee08473e7949c67c7976d909af2c8e726551f2ac81c",
