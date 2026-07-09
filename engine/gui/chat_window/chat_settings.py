@@ -1,6 +1,7 @@
 from __future__ import annotations
 import json
 import os
+import sys
 import threading
 import uuid
 from datetime import datetime
@@ -118,8 +119,15 @@ def open_gpt_settings(event=None):
     canvas_frame.bind("<Configure>", update_scroll_region)
     canvas.bind("<Configure>", on_canvas_configure)
 
+    # Виджеты, которые хотят свой скролл (лог env, listbox и т.п.)
+    # при Enter/Leave помечаются; page-wheel их не перехватывает.
+    _scroll_over_child = {"widget": None}
+
     def _on_mousewheel(event):
         try:
+            # если курсор над дочерним scrollable (лог-консоль) — не скроллим страницу
+            if _scroll_over_child["widget"] is not None:
+                return None
             if getattr(event, "num", None) == 4: units = -3
             elif getattr(event, "num", None) == 5: units = 3
             else:
@@ -128,14 +136,16 @@ def open_gpt_settings(event=None):
                 units = -3 if delta > 0 else 3
             canvas.yview_scroll(units, "units")
             return "break"
-        except Exception: return None
+        except Exception:
+            return None
 
     for target in (win, canvas, canvas_frame):
         try:
             target.bind("<MouseWheel>", _on_mousewheel, add="+")
             target.bind("<Button-4>", _on_mousewheel, add="+")
             target.bind("<Button-5>", _on_mousewheel, add="+")
-        except Exception: pass
+        except Exception:
+            pass
 
     # ── Page Management ───────────────────────────────────────────────────────
     current_page = [None]
@@ -510,10 +520,92 @@ def open_gpt_settings(event=None):
         download_thread = [None]
         download_cancelled = [False]
         download_in_progress = [False]
+        # id модели, которую сейчас качаем (чтобы Стоп/UI не путались при смене selection)
+        downloading_model_id = [None]
 
         def _has_incomplete_download(filename: str) -> bool:
-            chk = local_llm_client._load_download_checkpoint(filename)
-            return bool(chk and chk.get("offset", 0) > 0 and chk.get("url"))
+            if not filename:
+                return False
+            try:
+                chk = local_llm_client._load_download_checkpoint(filename)
+                if chk and chk.get("offset", 0) > 0 and chk.get("url"):
+                    return True
+            except Exception:
+                pass
+            # также считаем «незавершённым», если рядом лежит .part/.tmp/.download
+            try:
+                path = local_llm_client.get_model_file_path(filename)
+                base = path if path else filename
+                for suf in (".part", ".tmp", ".download", ".crdownload", ".partial"):
+                    if os.path.isfile(str(base) + suf) or os.path.isfile(str(base).replace(".gguf", "") + suf):
+                        return True
+                # файл существует, но меньше «ожидаемого» из checkpoint total
+                if path and os.path.isfile(path):
+                    try:
+                        chk = local_llm_client._load_download_checkpoint(filename) or {}
+                        total = int(chk.get("total") or chk.get("size") or 0)
+                        if total > 0 and os.path.getsize(path) < total:
+                            return True
+                    except Exception:
+                        pass
+            except Exception:
+                pass
+            return False
+
+        def _models_dir() -> str:
+            """Папка /models/ проекта — туда кладутся gguf и partial-кэш."""
+            try:
+                # если client отдаёт путь к файлу каталога — берём dirname
+                for m in catalog_items:
+                    fn = m.get("filename")
+                    if not fn:
+                        continue
+                    p = local_llm_client.get_model_file_path(fn)
+                    if p:
+                        d = os.path.dirname(str(p))
+                        if d:
+                            return d
+            except Exception:
+                pass
+            try:
+                d = local_llm_client.get_last_model_dir()
+                if d and os.path.isdir(d):
+                    # если last_dir — файл, dirname
+                    return d if os.path.isdir(d) else os.path.dirname(d)
+            except Exception:
+                pass
+            try:
+                from engine.paths import BASE_DIR
+                d = os.path.join(str(BASE_DIR), "models")
+                os.makedirs(d, exist_ok=True)
+                return d
+            except Exception:
+                return os.getcwd()
+
+        def _set_download_ui(active: bool):
+            """Показать/скрыть кнопку Стоп и залочить «Из папки» на время загрузки."""
+            if active:
+                try:
+                    stop_btn.pack(side="right", padx=(0, 4))
+                except Exception:
+                    pass
+                try:
+                    from_folder_btn.config(state="disabled")
+                except Exception:
+                    pass
+                try:
+                    discard_btn.pack_forget()
+                except Exception:
+                    pass
+            else:
+                try:
+                    stop_btn.pack_forget()
+                except Exception:
+                    pass
+                try:
+                    from_folder_btn.config(state="normal")
+                except Exception:
+                    pass
 
         def _update_catalog_info(e=None):
             sel = lb.curselection()
@@ -521,57 +613,100 @@ def open_gpt_settings(event=None):
                 return
             m = catalog_items[sel[0]]
             selected_model[0] = m
-            desc_lbl.config(text=t("local_model_meta_desc").format(m.get('description', '')))
-            mem_lbl.config(text=t("local_catalog_memory").format(m.get('memory_gb', 0)))
+            desc_lbl.config(text=t("local_model_meta_desc").format(m.get("description", "")))
+            mem_lbl.config(text=t("local_catalog_memory").format(m.get("memory_gb", 0)))
 
-            if m.get("installed"):
+            # во время загрузки — action_btn показывает статус/не стартует вторую загрузку
+            if download_in_progress[0]:
+                status_cat_lbl.config(text=t("local_catalog_downloading"), fg=_c("TEXT_DIM"))
+                # если выбрана та же модель, что качается — action disabled; иначе можно смотреть инфо
+                same = (downloading_model_id[0] is not None and m.get("id") == downloading_model_id[0])
+                action_btn.config(
+                    text=t("local_catalog_downloading") if same else t("local_catalog_download_btn"),
+                    state="disabled" if same else "disabled",
+                    bg=_c("BG_INPUT"),
+                )
+                discard_btn.pack_forget()
+                _set_download_ui(True)
+            elif m.get("installed"):
                 status_cat_lbl.config(text=t("local_catalog_installed"), fg=_c("TEXT_SUCCESS"))
                 action_btn.config(text=t("local_catalog_activate_btn"), state="normal", bg=_c("BG_ACTIVE"))
                 discard_btn.pack_forget()
+                _set_download_ui(False)
             elif not m.get("compatible"):
                 status_cat_lbl.config(text=t("local_catalog_too_large"), fg=_c("TEXT_ERROR"))
                 action_btn.config(text=t("local_model_install_btn"), state="disabled", bg=_c("BG_INPUT"))
                 discard_btn.pack_forget()
+                _set_download_ui(False)
             elif _has_incomplete_download(m.get("filename", "")):
-                status_cat_lbl.config(text=t("local_catalog_downloading"), fg=_c("TEXT_DIM"))
+                status_cat_lbl.config(text=t("local_catalog_partial"), fg=_c("TEXT_DIM"))
                 action_btn.config(text=t("local_catalog_resume_btn"), state="normal", bg=_c("BG_ACTIVE"))
-                if not download_in_progress[0]:
-                    discard_btn.pack(side="right", padx=(0, 4))
-                else:
-                    discard_btn.pack_forget()
+                discard_btn.pack(side="right", padx=(0, 4))
+                _set_download_ui(False)
             else:
                 status_cat_lbl.config(text=t("local_catalog_compatible"), fg=_c("TEXT_SUCCESS"))
                 action_btn.config(text=t("local_catalog_download_btn"), state="normal", bg=_c("BG_ACTIVE"))
                 discard_btn.pack_forget()
+                _set_download_ui(False)
 
             link_lbl.config(text=t("local_model_meta_link"))
-            link_lbl.bind("<Button-1>", lambda e, u=m.get('download_link', ''): webbrowser.open(u) if u else None)
+            link_lbl.bind("<Button-1>", lambda e, u=m.get("download_link", ""): webbrowser.open(u) if u else None)
             if not download_in_progress[0]:
-                action_status_lbl.config(text="")
+                # не затираем progress-строку во время загрузки
+                pass
 
         lb.bind("<<ListboxSelect>>", _update_catalog_info)
 
         def _finish_download(entry, m):
             sel = lb.curselection()
             if sel:
-                lb.delete(sel[0])
-                lb.insert(sel[0], f"✅ {m['label']}")
-            action_status_lbl.config(text=t("local_model_added_msg", entry['label']), fg=_c("TEXT_SUCCESS"))
+                try:
+                    lb.delete(sel[0])
+                    lb.insert(sel[0], f"✅ {m['label']}")
+                except Exception:
+                    pass
+            action_status_lbl.config(text=t("local_model_added_msg", entry["label"]), fg=_c("TEXT_SUCCESS"))
             action_btn.config(text=t("local_catalog_activate_btn"), state="normal", bg=_c("BG_ACTIVE"))
             local_llm_client.set_active_model_id(entry["id"])
             gpt_client.set_model(entry["id"], "local")
             gpt_client.set_provider("local")
             download_in_progress[0] = False
             download_cancelled[0] = False
+            downloading_model_id[0] = None
+            _set_download_ui(False)
             _invalidate_page("local")
             _safe_after(900, lambda: show_page_with_style("local"))
+
+        def _stop_download():
+            """Явная кнопка «Остановить» во время загрузки."""
+            if not download_in_progress[0]:
+                return
+            # без лишнего confirm, если уже жмут Стоп — но с лёгким подтверждением
+            if not messagebox.askyesno(
+                t("local_catalog_cancel_confirm_title"),
+                t("local_catalog_cancel_confirm_msg"),
+                parent=win,
+            ):
+                return
+            download_cancelled[0] = True
+            try:
+                stop_btn.config(state="disabled", text=t("local_catalog_stopping_btn"))
+            except Exception:
+                pass
+            try:
+                action_btn.config(state="disabled")
+            except Exception:
+                pass
+            action_status_lbl.config(text=t("local_catalog_stopping"), fg=_c("TEXT_DIM"))
 
         def _action_model():
             m = selected_model[0]
             if not m:
                 return
+            if download_in_progress[0]:
+                # основная кнопка во время загрузки не стартует второе — Стоп отдельный
+                return
             if m.get("installed"):
-                # Активировать уже скачанную модель
                 path = local_llm_client.get_model_file_path(m["filename"])
                 entry = next((x for x in local_llm_client.list_installed_models() if x.get("path") == path), None)
                 if not entry:
@@ -587,73 +722,327 @@ def open_gpt_settings(event=None):
             if not m.get("compatible"):
                 return
 
-            # Если скачивание уже идёт — кнопка работает как "Отменить"
-            if download_in_progress[0]:
-                if messagebox.askyesno(t("local_catalog_cancel_confirm_title"), t("local_catalog_cancel_confirm_msg"), parent=win):
-                    download_cancelled[0] = True
-                    action_btn.config(state="disabled")
-                    action_status_lbl.config(text="Отмена...", fg=_c("TEXT_DIM"))
-                return
-
             resume = _has_incomplete_download(m.get("filename", ""))
             download_cancelled[0] = False
             download_in_progress[0] = True
-            action_btn.config(text=t("local_catalog_cancel_btn"), state="normal", bg=_c("BG_INPUT"))
-            action_status_lbl.config(text=t("local_catalog_downloading") if not resume else "Продолжаю скачивание...", fg=_c("TEXT_DIM"))
+            downloading_model_id[0] = m.get("id")
+            action_btn.config(text=t("local_catalog_downloading"), state="disabled", bg=_c("BG_INPUT"))
+            try:
+                stop_btn.config(state="normal", text=t("local_catalog_stop_btn"))
+            except Exception:
+                pass
+            _set_download_ui(True)
+            action_status_lbl.config(
+                text=t("local_catalog_downloading") if not resume else t("local_catalog_resuming"),
+                fg=_c("TEXT_DIM"),
+            )
 
             def worker():
                 try:
                     entry = local_llm_client.install_catalog_model(
                         m["id"],
-                        progress_cb=lambda line: _safe_after(0, lambda: action_status_lbl.config(text=line, fg=_c("TEXT_DIM"))),
+                        progress_cb=lambda line: _safe_after(
+                            0, lambda ln=line: action_status_lbl.config(text=ln, fg=_c("TEXT_DIM"))
+                        ),
                         cancelled_flag=download_cancelled,
                         resume=resume,
                     )
                     _safe_after(0, lambda: _finish_download(entry, m))
                 except InterruptedError:
-                    _safe_after(0, lambda: (
-                        action_status_lbl.config(text="⏸ Скачивание приостановлено. Нажмите ▶ Продолжить.", fg=_c("TEXT_DIM")),
-                        action_btn.config(text=t("local_catalog_resume_btn"), state="normal", bg=_c("BG_ACTIVE")),
-                        download_in_progress.__setitem__(0, False),
-                    ))
+                    def _on_pause():
+                        download_in_progress[0] = False
+                        downloading_model_id[0] = None
+                        action_status_lbl.config(text=t("local_catalog_paused"), fg=_c("TEXT_DIM"))
+                        action_btn.config(text=t("local_catalog_resume_btn"), state="normal", bg=_c("BG_ACTIVE"))
+                        try:
+                            stop_btn.config(state="normal", text=t("local_catalog_stop_btn"))
+                        except Exception:
+                            pass
+                        _set_download_ui(False)
+                        # показать discard для partial
+                        try:
+                            discard_btn.pack(side="right", padx=(0, 4))
+                        except Exception:
+                            pass
+                    _safe_after(0, _on_pause)
                 except Exception as e:
                     err_msg = str(e)
-                    _safe_after(0, lambda msg=err_msg: (
-                        action_status_lbl.config(text=msg, fg=_c("TEXT_ERROR")),
-                        action_btn.config(text=t("local_catalog_download_btn") if not _has_incomplete_download(m.get("filename", "")) else t("local_catalog_resume_btn"), state="normal", bg=_c("BG_ACTIVE")),
-                        download_in_progress.__setitem__(0, False),
-                    ))
+                    def _on_err(msg=err_msg):
+                        download_in_progress[0] = False
+                        downloading_model_id[0] = None
+                        action_status_lbl.config(text=msg, fg=_c("TEXT_ERROR"))
+                        has_part = _has_incomplete_download(m.get("filename", ""))
+                        action_btn.config(
+                            text=t("local_catalog_resume_btn") if has_part else t("local_catalog_download_btn"),
+                            state="normal",
+                            bg=_c("BG_ACTIVE"),
+                        )
+                        _set_download_ui(False)
+                        if has_part:
+                            try:
+                                discard_btn.pack(side="right", padx=(0, 4))
+                            except Exception:
+                                pass
+                    _safe_after(0, _on_err)
 
             download_thread[0] = threading.Thread(target=worker, daemon=True)
             download_thread[0].start()
 
+        def _is_partial_model_file(path: str) -> bool:
+            name = os.path.basename(path).lower()
+            if name.endswith((".part", ".tmp", ".download", ".crdownload", ".partial")):
+                return True
+            # checkpoint рядом
+            base = os.path.basename(path)
+            try:
+                if _has_incomplete_download(base):
+                    return True
+            except Exception:
+                pass
+            return False
+
         def _select_from_folder():
-            last_dir = local_llm_client.get_last_model_dir()
+            """Диалог выбора модели: показывает и готовые .gguf, и partial/недокачанный мусор."""
+            models_dir = _models_dir()
+            last_dir = None
+            try:
+                last_dir = local_llm_client.get_last_model_dir()
+            except Exception:
+                pass
+            initial = last_dir if (last_dir and os.path.isdir(last_dir)) else models_dir
+
             file_path = filedialog.askopenfilename(
                 title=t("local_select_model_file_title"),
-                filetypes=[("Model files", "*.gguf *.bin *.pt *.safetensors"), ("All files", "*.*")],
-                initialdir=last_dir or None,
+                filetypes=[
+                    ("Models & partial", "*.gguf *.bin *.pt *.safetensors *.part *.tmp *.download *.partial"),
+                    ("GGUF models", "*.gguf"),
+                    ("Partial / incomplete", "*.part *.tmp *.download *.partial *.crdownload"),
+                    ("All files", "*.*"),
+                ],
+                initialdir=initial or None,
             )
-            if file_path:
+            if not file_path:
+                return
+            try:
                 local_llm_client.set_last_model_dir(file_path)
-                if messagebox.askyesno(t("local_move_model_title"), t("local_move_model_msg"), parent=win):
+            except Exception:
+                pass
+
+            # Недокачанный/мусорный файл — предложить удалить, а не «установить»
+            if _is_partial_model_file(file_path):
+                size_mb = 0.0
+                try:
+                    size_mb = os.path.getsize(file_path) / (1024 * 1024)
+                except Exception:
+                    pass
+                if messagebox.askyesno(
+                    t("local_partial_file_title"),
+                    t("local_partial_file_msg", os.path.basename(file_path), f"{size_mb:.1f}"),
+                    parent=win,
+                ):
                     try:
-                        entry = local_llm_client.move_model_file(file_path)
-                        local_llm_client.set_active_model_id(entry["id"])
-                        gpt_client.set_model(entry["id"], "local")
-                        gpt_client.set_provider("local")
-                        messagebox.showinfo(t("local_model_added_title"), t("local_model_added_msg", entry['label']), parent=win)
-                        _invalidate_page("local")
-                        show_page_with_style("local")
+                        # сначала API discard по basename (checkpoint + part)
+                        base = os.path.basename(file_path)
+                        # срезаем суффиксы partial
+                        for suf in (".part", ".tmp", ".download", ".crdownload", ".partial"):
+                            if base.lower().endswith(suf):
+                                base = base[: -len(suf)]
+                                break
+                        try:
+                            local_llm_client.discard_incomplete_download(base)
+                        except Exception:
+                            pass
+                        # сам файл
+                        if os.path.isfile(file_path):
+                            os.remove(file_path)
+                        # checkpoint json рядом, если есть
+                        for side in (
+                            file_path + ".checkpoint",
+                            file_path + ".ckpt",
+                            file_path + ".json",
+                            os.path.join(os.path.dirname(file_path), base + ".download.json"),
+                            os.path.join(os.path.dirname(file_path), "." + base + ".download"),
+                        ):
+                            try:
+                                if os.path.isfile(side):
+                                    os.remove(side)
+                            except Exception:
+                                pass
+                        messagebox.showinfo(
+                            t("local_partial_deleted_title"),
+                            t("local_partial_deleted_msg", os.path.basename(file_path)),
+                            parent=win,
+                        )
+                        action_status_lbl.config(text=t("local_catalog_discard_done"), fg=_c("TEXT_DIM"))
+                        _update_catalog_info()
                     except Exception as e:
                         messagebox.showerror(t("chat_err_title"), str(e), parent=win)
+                return
+
+            # Обычный полный файл модели — как раньше: перенос в /models/
+            if messagebox.askyesno(t("local_move_model_title"), t("local_move_model_msg"), parent=win):
+                try:
+                    entry = local_llm_client.move_model_file(file_path)
+                    local_llm_client.set_active_model_id(entry["id"])
+                    gpt_client.set_model(entry["id"], "local")
+                    gpt_client.set_provider("local")
+                    messagebox.showinfo(
+                        t("local_model_added_title"),
+                        t("local_model_added_msg", entry["label"]),
+                        parent=win,
+                    )
+                    _invalidate_page("local")
+                    show_page_with_style("local")
+                except Exception as e:
+                    messagebox.showerror(t("chat_err_title"), str(e), parent=win)
+
+        def _browse_models_folder_trash():
+            """Окно: все файлы в /models/ включая partial — можно удалить мусор."""
+            models_dir = _models_dir()
+            dlg = tk.Toplevel(win)
+            try:
+                _set_dark_titlebar(dlg)
+            except Exception:
+                pass
+            dlg.title(t("local_models_folder_title"))
+            dlg.geometry("560x420")
+            dlg.configure(bg=_c("BG_CARD"))
+            dlg.transient(win)
+            dlg.grab_set()
+
+            TkLabel(
+                dlg, text=t("local_models_folder_desc", models_dir),
+                bg=_c("BG_CARD"), fg=_c("TEXT_DIM"), font=("Segoe UI", 11),
+                anchor="w", wraplength=520, justify="left",
+            ).pack(fill="x", padx=14, pady=(12, 6))
+
+            list_outer = TkFrame(dlg, bg=_c("BORDER"), padx=1, pady=1)
+            list_outer.pack(fill="both", expand=True, padx=14, pady=(0, 8))
+            sc2 = tk.Scrollbar(list_outer)
+            sc2.pack(side="right", fill="y")
+            lb2 = tk.Listbox(
+                list_outer, bg=_c("BG_INPUT"), fg=_c("TEXT_MAIN"),
+                selectbackground=_c("ACCENT"), selectforeground="#ffffff",
+                activestyle="none", relief="flat", highlightthickness=0,
+                font=("Consolas", 11), yscrollcommand=sc2.set,
+            )
+            lb2.pack(fill="both", expand=True)
+            sc2.config(command=lb2.yview)
+
+            # entries: list[(display, fullpath, kind)]
+            entries = []
+
+            def _refresh_folder_list():
+                lb2.delete(0, tk.END)
+                entries.clear()
+                try:
+                    names = sorted(os.listdir(models_dir), key=lambda s: s.lower())
+                except Exception as e:
+                    lb2.insert(tk.END, f"! {e}")
+                    return
+                for name in names:
+                    full = os.path.join(models_dir, name)
+                    if not os.path.isfile(full):
+                        continue
+                    low = name.lower()
+                    # показываем модели + partial + checkpoint-мусор
+                    interesting = low.endswith((
+                        ".gguf", ".bin", ".pt", ".safetensors",
+                        ".part", ".tmp", ".download", ".partial", ".crdownload",
+                        ".ckpt", ".checkpoint",
+                    )) or ".download" in low or low.startswith(".")
+                    if not interesting:
+                        # json checkpoint рядом
+                        if not (low.endswith(".json") and ("download" in low or "ckpt" in low)):
+                            continue
+                    try:
+                        sz = os.path.getsize(full)
+                        size_s = f"{sz/1024/1024:.1f} MB" if sz >= 1024*1024 else f"{sz/1024:.1f} KB"
+                    except Exception:
+                        size_s = "?"
+                    if _is_partial_model_file(full) or low.endswith((
+                        ".part", ".tmp", ".download", ".partial", ".crdownload", ".ckpt", ".checkpoint"
+                    )):
+                        kind = "partial"
+                        mark = "⚠"
+                    else:
+                        kind = "model"
+                        mark = "✅"
+                    display = f"{mark}  {name}   ({size_s})"
+                    entries.append((display, full, kind, name))
+                    lb2.insert(tk.END, display)
+
+            def _delete_selected():
+                sel = lb2.curselection()
+                if not sel:
+                    return
+                idx = sel[0]
+                if idx < 0 or idx >= len(entries):
+                    return
+                _disp, full, kind, name = entries[idx]
+                if not messagebox.askyesno(
+                    t("local_models_folder_delete_title"),
+                    t("local_models_folder_delete_msg", name),
+                    parent=dlg,
+                ):
+                    return
+                try:
+                    # discard checkpoint API if possible
+                    base = name
+                    for suf in (".part", ".tmp", ".download", ".crdownload", ".partial"):
+                        if base.lower().endswith(suf):
+                            base = base[: -len(suf)]
+                            break
+                    try:
+                        local_llm_client.discard_incomplete_download(base)
+                    except Exception:
+                        pass
+                    if os.path.isfile(full):
+                        os.remove(full)
+                    _refresh_folder_list()
+                    try:
+                        _update_catalog_info()
+                    except Exception:
+                        pass
+                except Exception as e:
+                    messagebox.showerror(t("chat_err_title"), str(e), parent=dlg)
+
+            def _open_dir():
+                try:
+                    if hasattr(os, "startfile"):
+                        os.startfile(models_dir)  # type: ignore[attr-defined]
+                    elif sys.platform == "darwin":
+                        import subprocess
+                        subprocess.Popen(["open", models_dir])
+                    else:
+                        import subprocess
+                        subprocess.Popen(["xdg-open", models_dir])
+                except Exception as e:
+                    messagebox.showerror(t("chat_err_title"), str(e), parent=dlg)
+
+            btn_row = TkFrame(dlg, bg=_c("BG_CARD"))
+            btn_row.pack(fill="x", padx=14, pady=(0, 12))
+            _make_button(btn_row, t("local_models_folder_refresh"), _refresh_folder_list,
+                         bg=_c("BG_INPUT"), font_size=11, height=1, padx=6, pady=3).pack(side="left")
+            _make_button(btn_row, t("local_models_folder_open"), _open_dir,
+                         bg=_c("BG_INPUT"), font_size=11, height=1, padx=6, pady=3).pack(side="left", padx=(6, 0))
+            _make_button(btn_row, t("local_models_folder_delete"), _delete_selected,
+                         bg=_c("BG_INPUT"),
+                         font_size=11, height=1, padx=6, pady=3).pack(side="right")
+            _make_button(btn_row, t("chat_btn_cancel_x"), lambda: dlg.destroy(),
+                         bg=_c("BG_INPUT"), font_size=11, height=1, padx=6, pady=3).pack(side="right", padx=(0, 6))
+
+            _refresh_folder_list()
 
         def _discard_cached_download():
             m = selected_model[0]
             if not m:
                 return
             filename = m.get("filename", "")
-            if not filename or not _has_incomplete_download(filename):
+            if not filename:
+                return
+            # разрешаем discard даже если checkpoint «странный», но partial-файл есть
+            if not _has_incomplete_download(filename):
                 return
             if not messagebox.askyesno(
                 t("local_catalog_discard_confirm_title"),
@@ -661,18 +1050,54 @@ def open_gpt_settings(event=None):
                 parent=win,
             ):
                 return
-            local_llm_client.discard_incomplete_download(filename)
+            try:
+                local_llm_client.discard_incomplete_download(filename)
+            except Exception as e:
+                messagebox.showerror(t("chat_err_title"), str(e), parent=win)
+                return
+            # подчистить leftover .part рядом
+            try:
+                path = local_llm_client.get_model_file_path(filename)
+                if path:
+                    for suf in (".part", ".tmp", ".download", ".partial", ".crdownload"):
+                        p = str(path) + suf
+                        if os.path.isfile(p):
+                            os.remove(p)
+            except Exception:
+                pass
             _update_catalog_info()
             action_status_lbl.config(text=t("local_catalog_discard_done"), fg=_c("TEXT_DIM"))
 
         br = TkFrame(catalog_view, bg=_c("BG_CARD"))
         br.pack(fill="x", pady=(0, 15))
-        _make_button(br, t("chat_btn_from_folder"), _select_from_folder, bg=_c("BG_INPUT"), font_size=11, height=1, padx=6, pady=3).pack(side="right", padx=(0, 4))
-        action_btn = _make_button(br, t("local_model_install_btn"), _action_model, bg=_c("BG_ACTIVE"), font_size=11, height=1, padx=6, pady=3)
+        from_folder_btn = _make_button(
+            br, t("chat_btn_from_folder"), _select_from_folder,
+            bg=_c("BG_INPUT"), font_size=11, height=1, padx=6, pady=3,
+        )
+        from_folder_btn.pack(side="right", padx=(0, 4))
+        # Обзор /models/ — видны partial и мусор
+        manage_btn = _make_button(
+            br, t("local_models_folder_btn"), _browse_models_folder_trash,
+            bg=_c("BG_INPUT"), font_size=11, height=1, padx=6, pady=3,
+        )
+        manage_btn.pack(side="right", padx=(0, 4))
+        action_btn = _make_button(
+            br, t("local_model_install_btn"), _action_model,
+            bg=_c("BG_ACTIVE"), font_size=11, height=1, padx=6, pady=3,
+        )
         action_btn.pack(side="right")
-        discard_btn = _make_button(br, "🗑 " + t("local_catalog_discard_btn"), _discard_cached_download, bg=_c("BG_INPUT"), font_size=11, height=1, padx=6, pady=3)
-        # discard_btn изначально скрыта — показывается через _update_catalog_info только
-        # когда у выбранной модели есть незавершённая (кэшированная) закачка
+        # Стоп — видна только во время загрузки
+        stop_btn = _make_button(
+            br, t("local_catalog_stop_btn"), _stop_download,
+            bg="#c0392b",
+            font_size=11, height=1, padx=6, pady=3,
+        )
+        # изначально скрыта
+        discard_btn = _make_button(
+            br, "🗑 " + t("local_catalog_discard_btn"), _discard_cached_download,
+            bg=_c("BG_INPUT"), font_size=11, height=1, padx=6, pady=3,
+        )
+        # discard_btn / stop_btn изначально скрыты — pack через _update_catalog_info / _set_download_ui
         lb.bind("<Double-Button-1>", _action_model)
 
         return container
@@ -795,12 +1220,21 @@ def open_gpt_settings(event=None):
 
     def _build_environment_section(container):
         """Карточка «Системное окружение»: проверка CPU/GPU, статус llama-cpp-python
-        и (пере)установка библиотеки. Логика вынесена в auto_install_local_ai."""
-        from engine.gui.chat_window.auto_install_local_ai import LocalAIInstallController
+        и (пере)установка библиотеки. Логика вынесена в auto_install_local_ai.
+
+        ВАЖНО: контроллер — singleton (get_or_create_controller). При rebuild
+        страницы (show_page / _invalidate_page) прогресс и лог НЕ сбрасываются:
+        UI переподписывается и делает replay_to_ui()."""
+        from engine.gui.chat_window.auto_install_local_ai import (
+            get_or_create_controller,
+            get_shared_state,
+            clear_shared_log,
+        )
 
         # Очистить "залипший" чекпоинт, если библиотека уже установлена
+        # (не создаём новый контроллер — только cleanup через shared)
         try:
-            LocalAIInstallController().cleanup_orphaned_checkpoint()
+            get_or_create_controller().cleanup_orphaned_checkpoint()
         except Exception:
             pass
 
@@ -840,6 +1274,39 @@ def open_gpt_settings(event=None):
         log_txt.pack(fill="both", expand=True, padx=6, pady=6)
         log_sc.config(command=log_txt.yview)
         _bind_text_hotkeys(log_txt)
+
+        # ── Скролл: при наведении на консоль — крутим лог; вне — страницу ──
+        def _log_wheel(event):
+            try:
+                if getattr(event, "num", None) == 4:
+                    log_txt.yview_scroll(-3, "units")
+                elif getattr(event, "num", None) == 5:
+                    log_txt.yview_scroll(3, "units")
+                else:
+                    delta = int(getattr(event, "delta", 0) or 0)
+                    if delta == 0:
+                        return "break"
+                    log_txt.yview_scroll(-3 if delta > 0 else 3, "units")
+                return "break"
+            except Exception:
+                return "break"
+
+        def _log_enter(_e=None):
+            _scroll_over_child["widget"] = log_txt
+
+        def _log_leave(_e=None):
+            if _scroll_over_child["widget"] is log_txt:
+                _scroll_over_child["widget"] = None
+
+        for _w in (log_txt, log_inner, log_frame, log_sc):
+            try:
+                _w.bind("<Enter>", _log_enter, add="+")
+                _w.bind("<Leave>", _log_leave, add="+")
+                _w.bind("<MouseWheel>", _log_wheel, add="+")
+                _w.bind("<Button-4>", _log_wheel, add="+")
+                _w.bind("<Button-5>", _log_wheel, add="+")
+            except Exception:
+                pass
 
         log_visible = [False]
         log_was_shown = [False]
@@ -959,6 +1426,24 @@ def open_gpt_settings(event=None):
             sc.config(command=txt.yview)
             _bind_text_hotkeys(txt)
 
+            def _full_wheel(event):
+                try:
+                    if getattr(event, "num", None) == 4:
+                        txt.yview_scroll(-3, "units")
+                    elif getattr(event, "num", None) == 5:
+                        txt.yview_scroll(3, "units")
+                    else:
+                        delta = int(getattr(event, "delta", 0) or 0)
+                        if delta == 0:
+                            return "break"
+                        txt.yview_scroll(-3 if delta > 0 else 3, "units")
+                    return "break"
+                except Exception:
+                    return "break"
+            txt.bind("<MouseWheel>", _full_wheel, add="+")
+            txt.bind("<Button-4>", _full_wheel, add="+")
+            txt.bind("<Button-5>", _full_wheel, add="+")
+
             txt.insert("1.0", full_text)
             txt.see("end")
 
@@ -1028,12 +1513,37 @@ def open_gpt_settings(event=None):
             }
             _safe_config(status_lbl, text=text, fg=color_map.get(color_key, _c("TEXT_DIM")))
 
-        controller = LocalAIInstallController(
+        controller = get_or_create_controller(
             log_cb=_append_log,
             status_cb=_set_status,
             buttons_cb=lambda c, i: _set_buttons(checking=c, installing=i),
             error_cb=lambda title, tb: _log_env_error(title, tb),
         )
+
+        # Восстановить лог/статус/кнопки после rebuild страницы (не сбрасывать прогресс)
+        def _restore_from_shared():
+            st = get_shared_state()
+            if st["log_lines"] or st["running"] or st["status_text"]:
+                # не дублируем в _full_log_lines через _append_log — наполним напрямую
+                _full_log_lines.clear()
+                _full_log_lines.extend(st["log_lines"])
+                try:
+                    log_txt.config(state="normal")
+                    log_txt.delete("1.0", "end")
+                    for line in st["log_lines"]:
+                        log_txt.insert("end", line + "\n")
+                    log_txt.see("end")
+                    log_txt.config(state="disabled")
+                except Exception:
+                    pass
+                if st["log_lines"] or st["running"]:
+                    _show_log(True)
+                if st["status_text"]:
+                    _set_status(st["status_text"], st["status_color"] or "dim")
+                _set_buttons(checking=st["checking"], installing=st["installing"])
+            # live callbacks already bound via get_or_create_controller
+
+        _restore_from_shared()
 
         def _run_check():
             _show_log(True)
@@ -1049,11 +1559,13 @@ def open_gpt_settings(event=None):
                 )
             else:
                 resume = False
+            _show_log(True)
             controller.install(resume=resume)
 
         def _run_uninstall():
             if not messagebox.askyesno(t("env_uninstall_title"), t("env_uninstall_msg"), parent=win):
                 return
+            _show_log(True)
             controller.uninstall()
 
         def _cancel_process():
@@ -1064,6 +1576,10 @@ def open_gpt_settings(event=None):
             log_txt.delete("1.0", "end")
             log_txt.config(state="disabled")
             _full_log_lines.clear()
+            try:
+                clear_shared_log()
+            except Exception:
+                pass
             full_widget = _full_log_ref.get("txt")
             if full_widget is not None:
                 try:

@@ -17,6 +17,8 @@ class CompatCTkButton(ctk.CTkButton):
             kwargs.setdefault("text_color", fg)
         if activebackground is not None:
             kwargs.setdefault("hover_color", activebackground)
+        kwargs.setdefault("corner_radius", 10)
+        kwargs.setdefault("border_width", 0)
         super().__init__(*args, **kwargs)
     def configure(self, cnf=None, **kwargs):
         if cnf:
@@ -110,8 +112,7 @@ def create_button(parent, text, command, bg=None, fg=None,
     # текстом внутри неё. min_size=design-значение — кнопка не должна
     # становиться мельче исходного дизайнерского размера.
     design_height = int(height * 28) if height else 28
-    btn = CompatCTkButton(
-        parent,
+    kwargs = dict(
         text=text,
         command=command,
         fg_color=bg,
@@ -119,11 +120,15 @@ def create_button(parent, text, command, bg=None, fg=None,
         hover_color=active_bg,
         border_width=0,
         corner_radius=10,
+        # единый центр текста на всех кнопках (Язык генерации / Высокое качество и др.)
+        anchor="center",
         font=ctk.CTkFont(family="Segoe UI", size=scaled_font_size(font_size + 2), weight="bold" if is_bold else "normal"),
-        height=scaled_size(design_height, min_size=design_height)
+        height=scaled_size(design_height, min_size=design_height),
     )
+    # width в конструкторе — CTk иначе может игнорировать поздний configure(width=…)
     if width:
-        btn.configure(width=scaled_size(width, min_size=width))
+        kwargs["width"] = scaled_size(int(width), min_size=int(width))
+    btn = CompatCTkButton(parent, **kwargs)
     return btn
 def create_entry(parent, textvariable, bg=None, fg=None):
     # ЛЕНИВЫЕ дефолты (см. create_card)

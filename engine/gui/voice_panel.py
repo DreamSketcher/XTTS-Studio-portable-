@@ -1,5 +1,9 @@
 # -*- coding: utf-8 -*-
-"""engine/gui/voice_panel.py — карточки «Голос-референс» и «Библиотека» — единый размер"""
+"""engine/gui/voice_panel.py — карточки «Голос-референс» и «Библиотека» — единый размер
+
+Библиотека голосов читается из VoiceManager → library/<voice>/normalized.wav
+(НЕ reference/backup). Кеш эмбеддинга лежит рядом с normalized.wav.
+"""
 import os
 import tkinter as tk
 import pygame
@@ -16,6 +20,7 @@ root = None
 PYGAME_OK = False
 ref_var = None
 voice_manager = None
+LIBRARY_DIR = None  # внедряется из main_window → BASE_DIR/library
 
 voice_map = {}
 
@@ -44,12 +49,84 @@ def set_ref_info_font_size(base_size: int):
         pass
 
 def refresh_voice_list():
+    # Перескан library/ (VoiceManager.library_dir / backup_dir / root)
+    try:
+        # если main_window поправил путь — подтянем
+        for attr in ("library_dir", "backup_dir", "root", "voices_dir", "base_dir"):
+            if voice_manager is not None and hasattr(voice_manager, attr):
+                cur = getattr(voice_manager, attr, None)
+                if cur and ("reference" in str(cur).replace("\\", "/").lower()) and ("library" not in str(cur).replace("\\", "/").lower()):
+                    try:
+                        fixed = LIBRARY_DIR
+                        if not fixed:
+                            from engine.paths import BASE_DIR
+                            fixed = os.path.join(str(BASE_DIR), "library")
+                        setattr(voice_manager, attr, fixed)
+                    except Exception:
+                        pass
+    except Exception:
+        pass
     voice_manager.scan_voices()
     voice_listbox.delete(0, tk.END)
     voice_map.clear()
     for voice in voice_manager.list_voices():
         voice_map[voice.name] = voice
         voice_listbox.insert(tk.END, f"🎤 {voice.name}")
+
+def _voice_dir(voice) -> str | None:
+    """Папка голоса: library/<name>/ (из Voice.path / .dir / .folder)."""
+    for attr in ("path", "dir", "folder", "voice_dir", "directory"):
+        p = getattr(voice, attr, None)
+        if p and os.path.isdir(str(p)):
+            return str(p)
+    return None
+
+
+def _resolve_normalized_path(voice) -> str | None:
+    """Ищет library/<voice>/normalized.wav (и совместимые варианты).
+
+    VoiceManager может отдавать:
+      - voice.normalized = "normalized.wav"  + voice.path = ".../library/Name"
+      - voice.normalized = полный путь
+      - только voice.path — тогда сканируем папку
+    """
+    voice_path = _voice_dir(voice)
+    normalized_file = getattr(voice, "normalized", None) or getattr(voice, "normalized_path", None)
+
+    candidates = []
+    if normalized_file:
+        nf = str(normalized_file)
+        if os.path.isabs(nf) or os.path.dirname(nf):
+            candidates.append(nf)
+        if voice_path:
+            candidates.append(os.path.join(voice_path, os.path.basename(nf)))
+            candidates.append(os.path.join(voice_path, nf))
+    if voice_path:
+        candidates.append(os.path.join(voice_path, "normalized.wav"))
+        candidates.append(os.path.join(voice_path, "normalized.mp3"))
+
+    seen = set()
+    for c in candidates:
+        c = os.path.normpath(c)
+        if c in seen:
+            continue
+        seen.add(c)
+        if os.path.isfile(c):
+            return c
+
+    # fallback: любой wav/mp3 в папке голоса (кроме явных кеш-файлов)
+    if voice_path and os.path.isdir(voice_path):
+        skip_ext = {".pt", ".pth", ".npy", ".json", ".txt", ".pkl"}
+        # сначала normalized*, потом остальные
+        files = sorted(os.listdir(voice_path), key=lambda f: (0 if f.lower().startswith("normalized") else 1, f.lower()))
+        for f in files:
+            fl = f.lower()
+            if fl.endswith((".wav", ".mp3", ".flac", ".ogg")):
+                return os.path.join(voice_path, f)
+            # не цепляем кеш эмбеддинга как «аудио»
+            if os.path.splitext(fl)[1] in skip_ext:
+                continue
+    return None
 
 def on_voice_select(event):
     selection = voice_listbox.curselection()
@@ -65,19 +142,10 @@ def on_voice_select(event):
     except Exception:
         pass
     ref_loaded = False
-    normalized_file = getattr(voice, "normalized", None)
-    voice_path = getattr(voice, "path", None)
-    if normalized_file and voice_path:
-        normalized_path = os.path.join(voice_path, normalized_file)
-        if os.path.isfile(normalized_path):
-            ref_var.set(normalized_path)
-            ref_loaded = True
-    if not ref_loaded and voice_path and os.path.isdir(voice_path):
-        for f in os.listdir(voice_path):
-            if f.lower().endswith((".wav", ".mp3")):
-                ref_var.set(os.path.join(voice_path, f))
-                ref_loaded = True
-                break
+    normalized_path = _resolve_normalized_path(voice)
+    if normalized_path:
+        ref_var.set(normalized_path)
+        ref_loaded = True
     if ref_loaded:
         if PYGAME_OK and pygame.mixer.music.get_busy():
             pygame.mixer.music.stop()

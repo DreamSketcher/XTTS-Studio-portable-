@@ -15,7 +15,64 @@ from tkinterdnd2 import TkinterDnD
 
 from i18n import t, set_language, LANGUAGES
 
-from engine.paths import BASE_DIR, BACKUP_DIR, OUTPUT_DIR, ICON_PATH
+try:
+    # LIBRARY_DIR — папка library/ (normalized.wav + кеш эмбеддингов).
+    # BACKUP_DIR — legacy-алиас; если paths.py ещё отдаёт reference/backup,
+    # ниже принудительно предпочитаем LIBRARY_DIR.
+    from engine.paths import BASE_DIR, OUTPUT_DIR, ICON_PATH
+    try:
+        from engine.paths import LIBRARY_DIR as _LIBRARY_DIR
+    except ImportError:
+        _LIBRARY_DIR = None
+    try:
+        from engine.paths import BACKUP_DIR as _BACKUP_DIR
+    except ImportError:
+        _BACKUP_DIR = None
+except ImportError:
+    # Fallback: paths.py в некоторых сборках экспортирует только BASE_DIR
+    from engine.paths import BASE_DIR
+    import os as _os_paths
+    _LIBRARY_DIR = _os_paths.path.join(str(BASE_DIR), "library")
+    _BACKUP_DIR = None
+    OUTPUT_DIR = _os_paths.path.join(str(BASE_DIR), "outputs")
+    ICON_PATH = _os_paths.path.join(str(BASE_DIR), "icon.ico")
+
+import os as _os_paths_lib
+
+def _resolve_voice_library_dir() -> str:
+    """Каталог библиотеки голосов: C:\\XTTS Studio\\library\\<voice>\\normalized.wav
+
+    Приоритет:
+      1) LIBRARY_DIR из engine.paths (если существует / задан)
+      2) BASE_DIR/library
+      3) BACKUP_DIR — только если он уже указывает внутрь .../library
+         (не reference/, не reference/backup)
+    """
+    candidates = []
+    if _LIBRARY_DIR:
+        candidates.append(str(_LIBRARY_DIR))
+    candidates.append(_os_paths_lib.path.join(str(BASE_DIR), "library"))
+    if _BACKUP_DIR:
+        candidates.append(str(_BACKUP_DIR))
+
+    def _looks_like_library(p: str) -> bool:
+        if not p:
+            return False
+        norm = _os_paths_lib.path.normpath(p).replace("\\", "/").lower()
+        # Явно отклоняем старые пути reference/backup
+        if "/reference/backup" in norm or norm.endswith("/reference") or "/reference/" in norm and "/library" not in norm:
+            return False
+        return norm.rstrip("/").endswith("/library") or "/library/" in norm or _os_paths_lib.path.basename(norm) == "library"
+
+    for c in candidates:
+        if _looks_like_library(c):
+            return c
+    # Жёсткий дефолт — всегда library рядом с приложением
+    return _os_paths_lib.path.join(str(BASE_DIR), "library")
+
+LIBRARY_DIR = _resolve_voice_library_dir()
+# BACKUP_DIR оставляем как алиас на library для старого кода (player.pick_backup_reference и т.п.)
+BACKUP_DIR = LIBRARY_DIR
 from engine.voice_manager import VoiceManager
 from engine.task_manager import TaskManager
 from engine.settings_store import load_settings
@@ -52,6 +109,26 @@ def apply_layout_preset_to_all(preset: dict):
     global _current_layout_preset
     _current_layout_preset = preset.copy()
     applied = False
+
+    # 0. Боковая панель: сторона
+    try:
+        from engine.gui.layout import apply_sidebar_side
+        side = theme_manager.get_sidebar_side()
+        if apply_sidebar_side(side):
+            applied = True
+    except Exception:
+        pass
+
+    # 0b. Порядок тулбара
+    try:
+        order = theme_manager.get_toolbar_order()
+        if hasattr(toolbar, "apply_toolbar_order"):
+            res = toolbar.apply_toolbar_order(order)
+            # res True означает что live-apply сработал (или нужен перезапуск — тоже считаем applied)
+            if res:
+                applied = True
+    except Exception:
+        pass
 
     # 1. layout.py (toggle_strip и т.п.)
     try:
@@ -139,7 +216,11 @@ def create_main_window(startup_status: str = None):
 
     # ── LAYOUT (градиент + панели) ──
     # Передаём пресет раскладки вместо хардкода
-    main_container, left_panel, right_panel = build_layout(root, preset=_current_layout_preset)
+    try:
+        sidebar_side = theme_manager.get_sidebar_side()
+    except Exception:
+        sidebar_side = "left"
+    main_container, left_panel, right_panel = build_layout(root, preset=_current_layout_preset, sidebar_side=sidebar_side)
 
     # ── CONSOLE REDIRECT (как в gui.py: сразу после layout) ──
     console.install()
@@ -163,7 +244,18 @@ def create_main_window(startup_status: str = None):
     # UI language variable (stored in settings.json)
     ui_lang_var = tk.StringVar(value="ru")
 
-    voice_manager = VoiceManager(BACKUP_DIR)
+    # Библиотека голосов: library/<name>/normalized.wav (+ embedding cache рядом)
+    # НЕ reference/backup — туда раньше ошибочно смотрел VoiceManager.
+    voice_manager = VoiceManager(LIBRARY_DIR)
+    try:
+        # если VoiceManager умеет принимать явный library_dir / backup_dir
+        if hasattr(voice_manager, "library_dir"):
+            voice_manager.library_dir = LIBRARY_DIR
+        if hasattr(voice_manager, "backup_dir"):
+            # не даём legacy-полю утянуть скан в reference/
+            voice_manager.backup_dir = LIBRARY_DIR
+    except Exception:
+        pass
     voice_manager.scan_voices()
 
     # ── ВНЕДРЕНИЕ ЗАВИСИМОСТЕЙ (порядок: сначала базовые модули) ──
@@ -174,9 +266,11 @@ def create_main_window(startup_status: str = None):
                    progress_value=progress_value)
     console.init(root=root, console_visible=console_visible)
     player.init(root=root, PYGAME_OK=PYGAME_OK, ref_var=ref_var,
-                clean_path=clean_path)
+                clean_path=clean_path,
+                LIBRARY_DIR=LIBRARY_DIR, BACKUP_DIR=BACKUP_DIR)
     voice_panel.init(root=root, PYGAME_OK=PYGAME_OK, ref_var=ref_var,
-                     voice_manager=voice_manager)
+                     voice_manager=voice_manager,
+                     LIBRARY_DIR=LIBRARY_DIR)
     history_window.init(root=root, PYGAME_OK=PYGAME_OK)
     output_window.init(root=root, PYGAME_OK=PYGAME_OK)
     ai_status_window.init(root=root)
@@ -328,7 +422,7 @@ def create_main_window(startup_status: str = None):
         # grab_set при вложенных модальных окнах) — показываем через
         # статус-бар и консоль, как более безопасный inline-вариант.
         try:
-            status_var.set("Обновление не удалось — версия автоматически откачена")
+            status_var.set(t("status_update_rolled_back"))
         except Exception:
             pass
         try:

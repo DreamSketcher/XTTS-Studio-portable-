@@ -3,6 +3,7 @@
 
 Добавлено в патче 2026-07-09:
 - сохранение состояния кнопки повтора аудио-окна (audio_repeat_one)
+- header_rainbow + header_rainbow_style (кастомизация радужного заголовка)
 """
 
 import json
@@ -105,6 +106,39 @@ DEFAULT_THEME = {
     "saved_presets": {},
     # NEW: состояние кнопки повтора аудио-окна
     "audio_repeat_one": False,
+    # ── Расположение интерфейса (patch 2026-07-09) ──
+    "sidebar_side": "left",
+    "toolbar_order": ["file", "output", "ai", "action"],
+    "header_rainbow": False,
+    "header_author_rainbow": False,
+    # Параметры радужного заголовка (см. get/set_header_rainbow_style)
+    # target: "title" (XTTS Studio) / "author" (by EXIZ10TION)
+    "header_rainbow_style": {
+        "speed_ms": 40,
+        "saturation": 1.0,
+        "brightness": 1.0,
+        "hue_offset": 0.0,
+        "spread": 1.0,
+        "mode": "hsv",          # "hsv" | "custom"
+        "colors": [],           # hex-цвета для mode=custom (цикл градиента)
+    },
+    "header_author_rainbow_style": {
+        "speed_ms": 50,
+        "saturation": 0.75,
+        "brightness": 0.95,
+        "hue_offset": 0.15,
+        "spread": 1.0,
+        "mode": "hsv",
+        "colors": [],
+    },
+    # Неон тулбара: у каждой кнопки свой enabled + style
+    "neon_buttons": {
+        "chat": {"enabled": True, "style": {}},
+        "ai": {"enabled": True, "style": {}},
+        "styles": {"enabled": True, "style": {}},
+        "quality": {"enabled": True, "style": {}},
+        "generate": {"enabled": True, "style": {}},
+    },
 }
 
 
@@ -301,6 +335,314 @@ def set_font_base_size(base_size: int) -> bool:
         return False
 
 
+# ── Расположение интерфейса: боковая панель + порядок тулбара ──
+TOOLBAR_PANELS = ["file", "output", "ai", "action"]
+DEFAULT_TOOLBAR_ORDER = ["file", "output", "ai", "action"]
+
+def get_sidebar_side() -> str:
+    """Возвращает 'left' или 'right'. По умолчанию 'left'."""
+    data = load_theme()
+    side = data.get("sidebar_side", "left")
+    return side if side in ("left", "right") else "left"
+
+def set_sidebar_side(side: str) -> bool:
+    side = (side or "left").lower()
+    if side not in ("left", "right"):
+        return False
+    try:
+        data = _read_json()
+        data["sidebar_side"] = side
+        with open(THEME_FILE, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+        return True
+    except Exception as e:
+        print(f"[ThemeManager] set_sidebar_side error: {e}")
+        return False
+
+def get_toolbar_order() -> list:
+    """Возвращает порядок панелей тулбара. Гарантирует валидность."""
+    data = load_theme()
+    order = data.get("toolbar_order")
+    if not isinstance(order, list):
+        return DEFAULT_TOOLBAR_ORDER.copy()
+    # Фильтрация + дополнение недостающими
+    clean = []
+    seen = set()
+    for x in order:
+        if x in TOOLBAR_PANELS and x not in seen:
+            clean.append(x)
+            seen.add(x)
+    # Добавляем недостающие в порядке по умолчанию
+    for x in DEFAULT_TOOLBAR_ORDER:
+        if x not in seen:
+            clean.append(x)
+            seen.add(x)
+    # Обрезаем лишнее
+    return clean[:len(TOOLBAR_PANELS)]
+
+def set_toolbar_order(order: list) -> bool:
+    """Сохраняет порядок панелей тулбара. Принимает list[str]."""
+    if not isinstance(order, (list, tuple)):
+        return False
+    clean = []
+    seen = set()
+    for x in order:
+        if x in TOOLBAR_PANELS and x not in seen:
+            clean.append(x)
+            seen.add(x)
+    # Дополняем недостающими
+    for x in DEFAULT_TOOLBAR_ORDER:
+        if x not in seen:
+            clean.append(x)
+    try:
+        data = _read_json()
+        data["toolbar_order"] = clean
+        with open(THEME_FILE, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+        return True
+    except Exception as e:
+        print(f"[ThemeManager] set_toolbar_order error: {e}")
+        return False
+
+
+DEFAULT_HEADER_RAINBOW_STYLE = {
+    "speed_ms": 40,
+    "saturation": 1.0,
+    "brightness": 1.0,
+    "hue_offset": 0.0,
+    "spread": 1.0,
+    "mode": "hsv",       # "hsv" (классическая радуга) | "custom" (палитра colors)
+    "colors": [],        # ["#ff006e", "#8338ec", ...] — для mode=custom
+}
+
+DEFAULT_HEADER_AUTHOR_RAINBOW_STYLE = {
+    "speed_ms": 50,
+    "saturation": 0.75,
+    "brightness": 0.95,
+    "hue_offset": 0.15,
+    "spread": 1.0,
+    "mode": "hsv",
+    "colors": [],
+}
+
+_HEX_RE = __import__("re").compile(r"^#?[0-9A-Fa-f]{6}$")
+
+
+def _clamp(v, lo, hi, default):
+    try:
+        v = float(v)
+    except Exception:
+        return default
+    return max(lo, min(hi, v))
+
+
+def _norm_hex(c) -> str | None:
+    if not isinstance(c, str):
+        return None
+    s = c.strip()
+    if not s:
+        return None
+    if not s.startswith("#"):
+        s = "#" + s
+    if _HEX_RE.match(s):
+        return s.lower()
+    return None
+
+
+def _normalize_rainbow_style(raw, defaults: dict | None = None) -> dict:
+    """Валидирует/нормализует dict стиля радуги. Неизвестные ключи отбрасываются."""
+    base = dict(defaults or DEFAULT_HEADER_RAINBOW_STYLE)
+    if not isinstance(raw, dict):
+        return base
+    base["speed_ms"] = int(_clamp(raw.get("speed_ms", base["speed_ms"]), 16, 200, base["speed_ms"]))
+    base["saturation"] = round(_clamp(raw.get("saturation", base["saturation"]), 0.0, 1.0, base["saturation"]), 3)
+    base["brightness"] = round(_clamp(raw.get("brightness", base["brightness"]), 0.15, 1.0, base["brightness"]), 3)
+    base["hue_offset"] = round(_clamp(raw.get("hue_offset", base["hue_offset"]), 0.0, 1.0, base["hue_offset"]), 3)
+    base["spread"] = round(_clamp(raw.get("spread", base["spread"]), 0.2, 2.0, base["spread"]), 3)
+    mode = str(raw.get("mode", base.get("mode", "hsv"))).lower().strip()
+    base["mode"] = mode if mode in ("hsv", "custom") else "hsv"
+    colors_in = raw.get("colors", base.get("colors", []))
+    colors = []
+    if isinstance(colors_in, (list, tuple)):
+        for c in colors_in:
+            hx = _norm_hex(c)
+            if hx and hx not in colors:
+                colors.append(hx)
+            if len(colors) >= 12:
+                break
+    base["colors"] = colors
+    # custom без цветов → откат на hsv при рендере, но mode сохраняем
+    return base
+
+
+def get_header_rainbow() -> bool:
+    """Возвращает True если радужный заголовок (XTTS Studio) включён"""
+    data = load_theme()
+    return bool(data.get("header_rainbow", False))
+
+
+def set_header_rainbow(enabled: bool) -> bool:
+    try:
+        data = _read_json()
+        data["header_rainbow"] = bool(enabled)
+        with open(THEME_FILE, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+        return True
+    except Exception as e:
+        print(f"[ThemeManager] set_header_rainbow error: {e}")
+        return False
+
+
+def get_header_author_rainbow() -> bool:
+    """Радужный подзаголовок «by EXIZ10TION»."""
+    data = load_theme()
+    return bool(data.get("header_author_rainbow", False))
+
+
+def set_header_author_rainbow(enabled: bool) -> bool:
+    try:
+        data = _read_json()
+        data["header_author_rainbow"] = bool(enabled)
+        with open(THEME_FILE, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+        return True
+    except Exception as e:
+        print(f"[ThemeManager] set_header_author_rainbow error: {e}")
+        return False
+
+
+def get_header_rainbow_style() -> dict:
+    """Стиль радуги для заголовка XTTS Studio."""
+    data = load_theme()
+    return _normalize_rainbow_style(data.get("header_rainbow_style"), DEFAULT_HEADER_RAINBOW_STYLE)
+
+
+def set_header_rainbow_style(style: dict) -> bool:
+    """Сохраняет параметры радужного заголовка (частичное обновление допускается)."""
+    try:
+        current = get_header_rainbow_style()
+        if isinstance(style, dict):
+            current.update(style)
+        normalized = _normalize_rainbow_style(current, DEFAULT_HEADER_RAINBOW_STYLE)
+        data = _read_json()
+        data["header_rainbow_style"] = normalized
+        with open(THEME_FILE, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+        return True
+    except Exception as e:
+        print(f"[ThemeManager] set_header_rainbow_style error: {e}")
+        return False
+
+
+def reset_header_rainbow_style() -> bool:
+    """Сброс параметров радуги заголовка к заводским (флаг on/off не трогаем)."""
+    return set_header_rainbow_style(dict(DEFAULT_HEADER_RAINBOW_STYLE))
+
+
+def get_header_author_rainbow_style() -> dict:
+    """Стиль радуги для подписи by EXIZ10TION."""
+    data = load_theme()
+    return _normalize_rainbow_style(
+        data.get("header_author_rainbow_style"),
+        DEFAULT_HEADER_AUTHOR_RAINBOW_STYLE,
+    )
+
+
+def set_header_author_rainbow_style(style: dict) -> bool:
+    try:
+        current = get_header_author_rainbow_style()
+        if isinstance(style, dict):
+            current.update(style)
+        normalized = _normalize_rainbow_style(current, DEFAULT_HEADER_AUTHOR_RAINBOW_STYLE)
+        data = _read_json()
+        data["header_author_rainbow_style"] = normalized
+        with open(THEME_FILE, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+        return True
+    except Exception as e:
+        print(f"[ThemeManager] set_header_author_rainbow_style error: {e}")
+        return False
+
+
+def reset_header_author_rainbow_style() -> bool:
+    return set_header_author_rainbow_style(dict(DEFAULT_HEADER_AUTHOR_RAINBOW_STYLE))
+
+
+# ── Neon toolbar buttons ─────────────────────────────────────────────────────
+NEON_BUTTON_IDS = ("chat", "ai", "styles", "quality", "generate")
+
+DEFAULT_NEON_BUTTON_ENTRY = {
+    "enabled": True,
+    "style": {},  # partial override of DEFAULT_HEADER_RAINBOW_STYLE
+}
+
+
+def _normalize_neon_buttons(raw) -> dict:
+    out = {}
+    src = raw if isinstance(raw, dict) else {}
+    for bid in NEON_BUTTON_IDS:
+        entry = src.get(bid, {})
+        if not isinstance(entry, dict):
+            # legacy: bool
+            if isinstance(entry, bool):
+                entry = {"enabled": entry, "style": {}}
+            else:
+                entry = {}
+        enabled = bool(entry.get("enabled", True))
+        style_raw = entry.get("style") if isinstance(entry.get("style"), dict) else {}
+        # merge with defaults then normalize
+        base = dict(DEFAULT_HEADER_RAINBOW_STYLE)
+        base.update(style_raw)
+        style = _normalize_rainbow_style(base, DEFAULT_HEADER_RAINBOW_STYLE)
+        out[bid] = {"enabled": enabled, "style": style}
+    return out
+
+
+def get_neon_buttons() -> dict:
+    data = load_theme()
+    return _normalize_neon_buttons(data.get("neon_buttons"))
+
+
+def set_neon_buttons(buttons: dict) -> bool:
+    try:
+        normalized = _normalize_neon_buttons(buttons)
+        data = _read_json()
+        data["neon_buttons"] = normalized
+        with open(THEME_FILE, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+        return True
+    except Exception as e:
+        print(f"[ThemeManager] set_neon_buttons error: {e}")
+        return False
+
+
+def get_neon_button_enabled(button_id: str) -> bool:
+    return bool(get_neon_buttons().get(button_id, {}).get("enabled", True))
+
+
+def set_neon_button_enabled(button_id: str, enabled: bool) -> bool:
+    if button_id not in NEON_BUTTON_IDS:
+        return False
+    buttons = get_neon_buttons()
+    buttons[button_id]["enabled"] = bool(enabled)
+    return set_neon_buttons(buttons)
+
+
+def get_neon_button_style(button_id: str) -> dict:
+    return dict(get_neon_buttons().get(button_id, {}).get("style") or DEFAULT_HEADER_RAINBOW_STYLE)
+
+
+def set_neon_button_style(button_id: str, style: dict) -> bool:
+    if button_id not in NEON_BUTTON_IDS:
+        return False
+    buttons = get_neon_buttons()
+    cur = dict(buttons[button_id].get("style") or {})
+    if isinstance(style, dict):
+        cur.update(style)
+    buttons[button_id]["style"] = _normalize_rainbow_style(cur, DEFAULT_HEADER_RAINBOW_STYLE)
+    return set_neon_buttons(buttons)
+
+
 def get_saved_presets() -> dict:
     data = load_theme()
     presets = data.get("saved_presets", {})
@@ -353,5 +695,25 @@ def apply_named_preset(preset_name: str) -> dict | None:
     set_custom_colors(theme_name, custom_colors)
     set_font_base_size(font_base_size)
     set_layout_preset(layout_preset_name)
+
+    # ── Расположение интерфейса ──
+    sidebar_side = snapshot.get("sidebar_side")
+    if sidebar_side in ("left", "right"):
+        set_sidebar_side(sidebar_side)
+    toolbar_order = snapshot.get("toolbar_order")
+    if isinstance(toolbar_order, list):
+        set_toolbar_order(toolbar_order)
+
+    # header rainbow (title + author)
+    if "header_rainbow" in snapshot:
+        set_header_rainbow(bool(snapshot.get("header_rainbow", False)))
+    if "header_rainbow_style" in snapshot:
+        set_header_rainbow_style(snapshot.get("header_rainbow_style") or {})
+    if "header_author_rainbow" in snapshot:
+        set_header_author_rainbow(bool(snapshot.get("header_author_rainbow", False)))
+    if "header_author_rainbow_style" in snapshot:
+        set_header_author_rainbow_style(snapshot.get("header_author_rainbow_style") or {})
+    if "neon_buttons" in snapshot:
+        set_neon_buttons(snapshot.get("neon_buttons") or {})
 
     return snapshot.copy()

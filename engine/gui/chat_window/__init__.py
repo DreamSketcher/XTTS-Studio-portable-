@@ -60,8 +60,9 @@ def open_chat_window():
 
     win = tk.Toplevel(state._root)
     win.title(t("chat_win_title"))
-    win.geometry("920x650")
-    win.minsize(520, 540)
+    # Главное окно «AI Чат — XTTS Studio»
+    win.geometry("1180x820")
+    win.minsize(760, 600)
     win.resizable(True, True)
     win.configure(bg=_c("BG_DARK"))
     _set_dark_titlebar(win)
@@ -148,7 +149,7 @@ def open_chat_window():
         activestyle="none",
         relief="flat",
         highlightthickness=0,
-        font=("Segoe UI", scaled_font_size(9)),
+        font=("Segoe UI", scaled_font_size(13)),
         yscrollcommand=list_scroll.set,
     )
     state.session_listbox.pack(fill="both", expand=True)

@@ -10,6 +10,67 @@ except Exception:
     def scaled_font_size(x): return x
     Colors = None
 
+
+
+def _bubble_max_width_px() -> int:
+    """Макс. ширина пузыря в px: ~62% canvas, clamp 220..640."""
+    try:
+        if _widget_exists(state.chat_canvas):
+            w = int(state.chat_canvas.winfo_width() or 0)
+            if w >= 80:
+                return max(220, min(640, int(w * 0.62)))
+    except Exception:
+        pass
+    return 420
+
+
+def _tk_font(font_spec):
+    """tkinter.font.Font из tuple/str."""
+    import tkinter.font as tkfont
+    try:
+        if isinstance(font_spec, (tuple, list)):
+            fam = font_spec[0] if len(font_spec) > 0 else "Segoe UI"
+            sz = int(font_spec[1]) if len(font_spec) > 1 else 11
+            weight = "bold" if (len(font_spec) > 2 and "bold" in str(font_spec[2]).lower()) else "normal"
+            return tkfont.Font(family=fam, size=sz, weight=weight)
+        return tkfont.Font(font=font_spec)
+    except Exception:
+        return tkfont.Font(family="Segoe UI", size=11)
+
+
+def _measure_text_px(text: str, font_spec) -> int:
+    """Ширина самой длинной строки текста в px (без wrap)."""
+    f = _tk_font(font_spec)
+    if not text:
+        return 0
+    widest = 0
+    for line in str(text).splitlines() or [""]:
+        try:
+            widest = max(widest, int(f.measure(line)))
+        except Exception:
+            widest = max(widest, len(line) * max(6, int(getattr(f, "cget", lambda k: 11)("size") or 11)))
+    return widest
+
+
+def _chars_for_width(px: int, font_pt: int) -> int:
+    """Оценка Text.width (в символах) по пикселям."""
+    avg = max(5.5, float(font_pt) * 0.55)
+    return max(8, min(100, int(px / avg)))
+
+
+def _bubble_needed_width_px(content: str, meta_text: str, font_body, font_meta, max_w: int) -> int:
+    """Ширина пузыря = max(текст, meta+кнопки), clamp [min_w, max_w].
+
+    Короткий «привет» → узкий пузырь; длинный абзац → до max_w с word-wrap.
+    """
+    pad = 40  # внутренние padx Text + frame
+    body_w = _measure_text_px(content, font_body) + pad
+    # meta + кнопки → / copy
+    meta_w = _measure_text_px(meta_text, font_meta) + 72 + pad
+    needed = max(body_w, meta_w, 96)
+    return max(96, min(int(max_w), int(needed)))
+
+
 def _add_message_bubble(message: dict, smooth_scroll: bool = True, force_scroll: bool = False):
     if not _widget_exists(state.chat_messages_frame):
         return
@@ -34,13 +95,19 @@ def _add_message_bubble(message: dict, smooth_scroll: bool = True, force_scroll:
     row._is_message_row = True
     row.pack(fill="x", padx=14, pady=8)
 
+    # Текст в пузырях: body 13 design pt (читаемо), meta чуть меньше
+    _font_body = ("Segoe UI", scaled_font_size(13))
+    _font_meta = ("Segoe UI", scaled_font_size(10))
+    _font_btn = ("Segoe UI", scaled_font_size(11))
+    _font_avatar = ("Segoe UI Emoji", scaled_font_size(18))
+
     avatar_text = "🧑" if is_user else "🤖"
     avatar = TkLabel(
         row,
         text=avatar_text,
         bg=_c("BG_DARK"),
         fg=_c("TEXT_MAIN"),
-        font=("Segoe UI Emoji", 22),
+        font=_font_avatar,
         width=2,
     )
 
@@ -48,42 +115,48 @@ def _add_message_bubble(message: dict, smooth_scroll: bool = True, force_scroll:
     bubble_fg = "#ffffff" if is_user else _c("TEXT_MAIN")
     bubble_hover = _lighten_color(bubble_bg, 0.10)
 
-    # Unified rounded card for bubble (like audio/history cards)
-    bubble = TkFrame(
-        row,
-        bg=bubble_bg,
-    )
-    # Use CTkFrame for rounded if available
+    # Ширина по содержимому (не на весь max) — короткий «привет» узкий, длинный текст до max.
+    max_bubble_w = _bubble_max_width_px()
+    author = t("chat_author_you") if is_user else _ai_display_name()
+    meta_text = t("chat_meta_format", author, ts, tokens)
+    bubble_w = _bubble_needed_width_px(content, meta_text, _font_body, _font_meta, max_bubble_w)
+
+    bubble = None
+    inner_bg = bubble_bg
     try:
-        bubble_outer = CTkFrame(row, fg_color=bubble_bg, corner_radius=18,
-                                border_width=1, border_color=_c("BORDER") if not is_user else bubble_bg)
-        bubble_outer.pack_propagate(False)
-        bubble = bubble_outer
-        inner_bg = bubble_bg
+        bubble = CTkFrame(
+            row,
+            fg_color=bubble_bg,
+            corner_radius=16,
+            border_width=1,
+            border_color=_c("BORDER") if not is_user else bubble_bg,
+            width=bubble_w,
+        )
+        # propagate True: высота по children; width= — запрошенная ширина CTk
+        bubble.pack_propagate(True)
     except Exception:
         bubble = tk.Frame(
             row,
             bg=bubble_bg,
             highlightthickness=1,
             highlightbackground=_c("BORDER") if not is_user else bubble_bg,
-            padx=14,
-            pady=10,
+            width=bubble_w,
         )
+        # для tk.Frame фиксируем ширину, высоту — по содержимому
+        bubble.pack_propagate(True)
         inner_bg = bubble_bg
 
-    # inner content
     meta = tk.Frame(bubble, bg=inner_bg)
-    meta.pack(fill="x", padx=14, pady=(10,4))
+    meta.pack(fill="x", padx=10, pady=(6, 2))
 
-    author = t("chat_author_you") if is_user else _ai_display_name()
     meta_fg = "#dbeafe" if is_user else _c("TEXT_DIM")
 
     tk.Label(
         meta,
-        text=t("chat_meta_format", author, ts, tokens),
+        text=meta_text,
         bg=inner_bg,
         fg=meta_fg,
-        font=("Segoe UI", scaled_font_size(11)),
+        font=_font_meta,
         anchor="w",
     ).pack(side="left")
 
@@ -112,7 +185,7 @@ def _add_message_bubble(message: dict, smooth_scroll: bool = True, force_scroll:
         relief="flat",
         bd=0,
         cursor="hand2",
-        font=("Segoe UI", scaled_font_size(11), "bold"),
+        font=(_font_btn[0], _font_btn[1], "bold"),
         width=3,
         padx=2,
         pady=0,
@@ -130,24 +203,28 @@ def _add_message_bubble(message: dict, smooth_scroll: bool = True, force_scroll:
         relief="flat",
         bd=0,
         cursor="hand2",
-        font=("Segoe UI", scaled_font_size(11)),
-        width=7,
+        font=_font_btn,
+        width=5,
         padx=2,
         pady=0,
     )
     copy_btn.pack(side="right")
 
+    # Text.width в символах — по фактической ширине пузыря (не max)
+    _char_w = _chars_for_width(bubble_w - 32, _font_body[1])
     text_label = tk.Text(
         bubble,
         bg=inner_bg,
         fg=bubble_fg,
-        font=("Segoe UI", scaled_font_size(13)),
+        font=_font_body,
         relief="flat",
         highlightthickness=0,
         bd=0,
         wrap="word",
-        padx=14,
-        pady=6,
+        width=_char_w,
+        height=1,
+        padx=10,
+        pady=3,
         cursor="arrow",
         takefocus=0,
     )
@@ -158,9 +235,16 @@ def _add_message_bubble(message: dict, smooth_scroll: bool = True, force_scroll:
     text_label.bind("<Button-2>", lambda e: "break")
     text_label.bind("<Button-1>", lambda e: _on_bubble_text_click(e))
     text_label.bind("<B1-Motion>", lambda e: "ignore_disabled_drag" or None)
-    text_label.pack(fill="x", padx=2, pady=(0,10))
+    # fill=x только внутри УЖЕ content-sized bubble — не раздувает row
+    text_label.pack(fill="x", padx=4, pady=(0, 6))
     text_label._bubble_content = content
     text_label._bubble_bg = inner_bg
+    text_label._bubble_max_w = max_bubble_w
+    text_label._bubble_w = bubble_w
+    text_label._bubble_frame = bubble
+    text_label._font_body = _font_body
+    text_label._font_meta = _font_meta
+    text_label._meta_text = meta_text
     state._message_labels.append(text_label)
 
     def _send_selected_or_full2():
@@ -181,16 +265,17 @@ def _add_message_bubble(message: dict, smooth_scroll: bool = True, force_scroll:
     text_label.bind("<Button-3>", lambda e, c=content: _show_bubble_context_menu(e, c, text_label))
     bubble.bind("<Button-3>", lambda e, c=content: _show_bubble_context_menu(e, c, text_label))
 
-    spacer_left = tk.Frame(row, bg=_c("BG_DARK"))
-    spacer_right = tk.Frame(row, bg=_c("BG_DARK"))
+    # spacer занимает свободное место; bubble БЕЗ expand — иначе Text тянет на всю ширину
+    spacer_left = tk.Frame(row, bg=_c("BG_DARK"), width=1)
+    spacer_right = tk.Frame(row, bg=_c("BG_DARK"), width=1)
 
     if is_user:
         spacer_left.pack(side="left", fill="x", expand=True)
-        bubble.pack(side="left", padx=(60, 12), anchor="e", fill="x", expand=False)
-        avatar.pack(side="left", anchor="n", pady=(2,0))
+        bubble.pack(side="left", padx=(40, 8), anchor="e", fill=None, expand=False)
+        avatar.pack(side="left", anchor="n", pady=(2, 0), padx=(0, 4))
     else:
-        avatar.pack(side="left", anchor="n", pady=(2,0))
-        bubble.pack(side="left", padx=(12, 60), anchor="w", fill="x", expand=False)
+        avatar.pack(side="left", anchor="n", pady=(2, 0), padx=(4, 0))
+        bubble.pack(side="left", padx=(8, 40), anchor="w", fill=None, expand=False)
         spacer_right.pack(side="left", fill="x", expand=True)
 
     def _select_this_bubble(_event=None):
@@ -273,7 +358,7 @@ def _add_system_message(content: str, ts: str):
         bg=_c("BG_CARD"),
         fg=_c("TEXT_DIM"),
         font=("Segoe UI", scaled_font_size(11), "italic"),
-        wraplength=560,
+        wraplength=480,
         justify="center",
         padx=16,
         pady=10,
@@ -283,16 +368,64 @@ def _add_system_message(content: str, ts: str):
 
 
 def _resize_bubble_text(text_widget):
+    """Ширина по тексту (clamp max), высота по display-lines."""
     if not _widget_exists(text_widget):
         return
     try:
+        max_w = int(getattr(text_widget, "_bubble_max_w", 0) or _bubble_max_width_px())
+        content = ""
+        try:
+            content = text_widget.get("1.0", "end-1c")
+        except Exception:
+            content = getattr(text_widget, "_bubble_content", "") or ""
+
+        font_body = getattr(text_widget, "_font_body", None)
+        if font_body is None:
+            try:
+                font_body = text_widget.cget("font")
+            except Exception:
+                font_body = ("Segoe UI", 11)
+        font_meta = getattr(text_widget, "_font_meta", ("Segoe UI", 9))
+        meta_text = getattr(text_widget, "_meta_text", "")
+
+        bubble_w = _bubble_needed_width_px(content, meta_text, font_body, font_meta, max_w)
+        text_widget._bubble_w = bubble_w
+
+        # pt for char estimate
+        try:
+            pt = int(font_body[1]) if isinstance(font_body, (tuple, list)) and len(font_body) > 1 else 11
+        except Exception:
+            pt = 11
+        char_w = _chars_for_width(bubble_w - 32, pt)
+        try:
+            text_widget.config(width=char_w)
+        except Exception:
+            pass
+
+        # подтянуть width CTk/Frame пузыря
+        bubble = getattr(text_widget, "_bubble_frame", None)
+        if bubble is not None and _widget_exists(bubble):
+            try:
+                bubble.configure(width=bubble_w)
+            except Exception:
+                try:
+                    bubble.config(width=bubble_w)
+                except Exception:
+                    pass
+
         text_widget.update_idletasks()
-        n = int(text_widget.tk.call(text_widget._w, "count", "-displaylines", "1.0", "end"))
-        text_widget.config(height=max(1, n))
+        try:
+            n = int(text_widget.tk.call(text_widget._w, "count", "-displaylines", "1.0", "end-1c"))
+        except Exception:
+            try:
+                n = int(text_widget.tk.call(text_widget._w, "count", "-displaylines", "1.0", "end"))
+            except Exception:
+                n = max(1, content.count("\n") + 1)
+        text_widget.config(height=max(1, min(80, n)))
     except Exception:
         try:
             content = text_widget.get("1.0", "end-1c")
-            text_widget.config(height=max(1, content.count("\n") + 1))
+            text_widget.config(height=max(1, min(80, content.count("\n") + 1)))
         except Exception:
             pass
 
@@ -408,22 +541,23 @@ def _show_bubble_context_menu(event, content: str, text_widget=None):
 
 
 def _update_wraplengths(event=None):
+    """При ресайзе canvas — обновить max и пересчитать content-sized ширину."""
     if not _widget_exists(state.chat_canvas):
         return
     try:
         width = state.chat_canvas.winfo_width()
         if width < 50:
             return
-        wrap_px = max(300, min(760, int(width * 0.66)))
-        char_width = max(32, wrap_px // 7)
+        max_w = max(220, min(640, int(width * 0.62)))
         for widget in list(state._message_labels):
             if not _widget_exists(widget):
                 continue
             try:
                 if isinstance(widget, tk.Text):
-                    widget.config(width=char_width)
+                    widget._bubble_max_w = max_w
+                    _resize_bubble_text(widget)
                 else:
-                    widget.config(wraplength=wrap_px)
+                    widget.config(wraplength=max_w)
             except Exception:
                 pass
         try:
@@ -467,12 +601,12 @@ def _add_empty_state():
     inner.pack(padx=24, pady=24)
 
     TkLabel(inner, text="💬", bg=_c("BG_CARD"), fg=_c("TEXT_DIM"),
-            font=("Segoe UI Emoji", 48)).pack(pady=(0, 12))
+            font=("Segoe UI Emoji", scaled_font_size(36))).pack(pady=(0, 12))
     TkLabel(inner, text=t("chat_new_chat_title"), bg=_c("BG_CARD"),
-            fg=_c("TEXT_MAIN"), font=("Segoe UI", 18, "bold")).pack()
+            fg=_c("TEXT_MAIN"), font=("Segoe UI", scaled_font_size(15), "bold")).pack()
     TkLabel(inner, text=t("chat_welcome"), bg=_c("BG_CARD"),
-            fg=_c("TEXT_DIM"), font=("Segoe UI", 13),
-            wraplength=440, justify="center").pack(pady=(10, 0))
+            fg=_c("TEXT_DIM"), font=("Segoe UI", scaled_font_size(11)),
+            wraplength=400, justify="center").pack(pady=(10, 0))
 
 
 def _destroy_empty_state_if_any():
