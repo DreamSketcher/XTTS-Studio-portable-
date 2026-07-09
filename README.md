@@ -47,6 +47,7 @@ The AI module is optional and connects through any OpenAI-compatible provider.
 - CUDA/CPU auto-detection with a CPU fallback if the graphics card isn't supported
 
 ### 🖥 Interface
+<<<<<<< HEAD
 - 🌗 **Themes:** dark and a soft light theme out of the box, plus a built-in **theme constructor** with full color customization
 - 🧩 **Customizable layout:** move the sidebar to the left or right, collapse panels, and save the layout automatically
 - 🪟 **Dockable interface panels:** show, hide, and rearrange interface sections to match your workflow
@@ -54,8 +55,16 @@ The AI module is optional and connects through any OpenAI-compatible provider.
 - 🌐 **Two UI languages:** Russian and English (RU/EN), including the AI chat and provider settings
 - 🔠 Adjustable text size in the input box (the "Aa" slider)
 - All view and layout settings persist between sessions
+=======
+- 🌗 **Themes:** dark and a soft light theme out of the box, plus a built-in **theme constructor** — build your own color scheme, not just toggle presets
+- 💡 **Neon button glow** — toggle on or off, glow color configurable to match your theme
+- 🔀 **Flexible panel layout** — panels (e.g. left and right) can be swapped to suit you
+- 🌐 **Two UI languages:** Russian and English (RU/EN), including the AI chat and provider settings
+- 📐 Adaptive toolbar — panels resize with the window
+- ◀ Collapsible side panel that remembers its position
+>>>>>>> 0fd4e64 (Update)
 - 🔠 Adjustable text size in the input box (the "Aa" slider)
-- All view settings persist between sessions
+- All view settings, including panel layout and neon glow, persist between sessions
 - 🔄 **Auto-update** — staged download of the new version, integrity check via **SHA256**, automatic backup and rollback on failure, full-reinstall detection via `min_app_version`
 
 ### 🧠 Text processing
@@ -212,7 +221,9 @@ XTTS Studio (portable)
 ├── version.json                  ← version and update-system data (min_app_version)
 ├── env_cache.cfg                  ← environment-scan cache (GPU/CUDA/libraries)
 ├── generate_version_manifest.py  ← generates the version manifest for the update system
-├── ProjectAnalyzer.ps1            ← project structure snapshot for AI context between dev sessions
+├── theme_settings.json           ← saved user theme/color scheme (from the theme constructor)
+├── checksums.txt                 ← file checksums for update verification (SHA256)
+├── .llama_broken_backends.json   ← list of llama.cpp backends that failed on this PC (auto-fallback next run)
 │
 ├── engine/                       ═══ TECHNICAL CORE (no tkinter) ═══
 │   │
@@ -244,7 +255,7 @@ XTTS Studio (portable)
 │   ├── task_manager.py           ← multithreaded, cancelable task queue
 │   ├── task_models.py            ← Task model
 │   ├── batch_window.py           ← batch-processing business logic
-│   ├── updater.py                ← Git-based auto-update (no re-downloading the archive), check/apply/restart
+│   ├── updater.py                ← update system: staged download, SHA256 verification, backup/rollback, self-restart
 │   ├── paths.py                  ← base project directories
 │   ├── settings_store.py         ← reads settings.json
 │   ├── history_store.py          ← generation-history storage
@@ -271,6 +282,7 @@ XTTS Studio (portable)
 │       ├── widgets.py            ← widget factories, CTk compatibility
 │       ├── tooltip.py            ← tooltips
 │       ├── gradient.py           ← gradient background
+│       ├── neon_widgets.py       ← neon button glow: on/off toggle, configurable glow color
 │       ├── helpers.py            ← shared GUI helpers
 │       │
 │       │   ── main window panels ──
@@ -305,6 +317,7 @@ XTTS Studio (portable)
 │       │
 │       └── chat_window/          ═══ modular AI chat window (package) ═══
 │           ├── chat_window.py    ← chat window assembly
+│           ├── auto_install_local_ai.py ← auto-installs the local LLM environment right from the chat window
 │           ├── chat_messages.py  ← message rendering
 │           ├── chat_input.py     ← input field
 │           ├── chat_actions.py   ← message actions (copy/delete/read aloud…)
@@ -401,7 +414,10 @@ If auto-update still fails, `XTTS_DIAG.bat` provides a forced recovery/reinstall
 | `chat_history.json` | AI chat session history |
 | `history.json` | generation history |
 | `version.json` | current version and update-system data (including `min_app_version`) |
+| `checksums.txt` | file checksums (SHA256) for update integrity verification |
 | `env_cache.cfg` | environment-scan cache (GPU/CUDA/libraries) |
+| `theme_settings.json` | saved user theme/color scheme from the theme constructor |
+| `.llama_broken_backends.json` | list of llama.cpp backends that failed on this PC, so they aren't retried |
 
 ---
 
@@ -413,7 +429,12 @@ Architecture refactoring (splitting into `engine/` + `engine/gui/`), RU/EN local
 
 Key modules (`updater.py`, `chunker.py`, `normalizer.py`, `smart_pauses.py`) are covered by **pytest** tests (`test/`, run via `RUN_TESTS.bat`).
 
-Development support tools live in `tools/`: generating `version.json` and the update manifest, converting `.py` to `.txt` for pasting into an AI chat, icon generation, a GitHub publishing script. `ProjectAnalyzer.ps1` at the project root builds a structure snapshot used as AI context across development sessions.
+Development support tools live in `tools/`:
+- `generate_version_files.py` — generates `version.json` and the update manifest
+- `convert_py_to_txt.bat` — converts `.py` to `.txt` for pasting into an AI chat
+- `analyze.ps1` — project structure snapshot for AI context between dev sessions (formerly `ProjectAnalyzer.ps1` at the project root)
+- `git_update.py` / `git_update.bat` — publishes a new version to GitHub (the app itself still updates independently, via `updater.py` and the SHA256/staged/rollback flow, not through Git)
+- `cleanup_project.ps1` / `restore_quarantine.ps1` — cleans up stray files by moving them to quarantine (`_quarantine/`) instead of deleting them outright, with a restore option
 
 ---
 
