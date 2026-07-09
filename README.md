@@ -62,7 +62,6 @@ The AI module is optional and connects through any OpenAI-compatible provider.
 - 🌐 **Two UI languages:** Russian and English (RU/EN), including the AI chat and provider settings
 - 📐 Adaptive toolbar — panels resize with the window
 - ◀ Collapsible side panel that remembers its position
->>>>>>> 0fd4e64 (Update)
 - 🔠 Adjustable text size in the input box (the "Aa" slider)
 - All view settings, including panel layout and neon glow, persist between sessions
 - 🔄 **Auto-update** — staged download of the new version, integrity check via **SHA256**, automatic backup and rollback on failure, full-reinstall detection via `min_app_version`
