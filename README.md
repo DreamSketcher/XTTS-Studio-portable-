@@ -47,7 +47,6 @@ The AI module is optional and connects through any OpenAI-compatible provider.
 - CUDA/CPU auto-detection with a CPU fallback if the graphics card isn't supported
 
 ### 🖥 Interface
-<<<<<<< HEAD
 - 🌗 **Themes:** dark and a soft light theme out of the box, plus a built-in **theme constructor** with full color customization
 - 🧩 **Customizable layout:** move the sidebar to the left or right, collapse panels, and save the layout automatically
 - 🪟 **Dockable interface panels:** show, hide, and rearrange interface sections to match your workflow
@@ -55,7 +54,6 @@ The AI module is optional and connects through any OpenAI-compatible provider.
 - 🌐 **Two UI languages:** Russian and English (RU/EN), including the AI chat and provider settings
 - 🔠 Adjustable text size in the input box (the "Aa" slider)
 - All view and layout settings persist between sessions
-=======
 - 🌗 **Themes:** dark and a soft light theme out of the box, plus a built-in **theme constructor** — build your own color scheme, not just toggle presets
 - 💡 **Neon button glow** — toggle on or off, glow color configurable to match your theme
 - 🔀 **Flexible panel layout** — panels (e.g. left and right) can be swapped to suit you
