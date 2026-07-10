@@ -2,7 +2,6 @@ XTTS Studio — контрольные суммы SHA256 для версии 1.1
 Проверка (Windows PowerShell): certutil -hashfile "имя_файла" SHA256
 Проверка (Linux/macOS): sha256sum имя_файла
 
-4577944796ab58f5e5228de34c504266395277bc4a35eba6e895835c0fab5725  .llama_broken_backends.json
 704a9b34cbf3f382c787da5c08db8cd2a6885ac183b43240d490c47d3602e0cf  XTTS Studio.exe
 8f3f84eec856e961941e6c44d7a9209bd27cf37f5922757500208ab8367bafb7  engine/__init__.py
 6581fdf989b6151c6c66d80563e39f2dd5e9c53ad9bc04d3881e0e5b9ab51650  engine/ai_conductor.py
