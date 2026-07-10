@@ -196,7 +196,8 @@ def _is_cancelled(cancelled_flag) -> bool:
 
 
 def _download_to_staging(relative_path: str, expected_sha256: str = None, cancelled_flag=None,
-                          raw_base: str = None) -> bool:
+                          raw_base: str = None, sha_mismatch_retries: int = 3,
+                          sha_mismatch_delay: float = 4.0) -> bool:
     """
     Скачивает файл во временный staging (НЕ в рабочую директорию) и
     проверяет его SHA256 перед тем как считать файл готовым к применению.
@@ -211,51 +212,73 @@ def _download_to_staging(relative_path: str, expected_sha256: str = None, cancel
     Скачивание читается блоками и проверяет cancelled_flag на каждом блоке,
     чтобы отмена пользователем срабатывала быстро даже на крупном файле,
     а не только между файлами.
+
+    SHA256-mismatch retry: даже с commit-pinned URL (см. _raw_base_for)
+    изредка попадается прогретый под старый контент участок CDN Fastly —
+    сам GitHub docs предупреждает, что инвалидация кеша не мгновенна.
+    Это не сетевая ошибка (соединение прошло успешно), поэтому обычный
+    _urlopen_with_retry тут не помогает — нужна отдельная пауза подольше
+    и повторное скачивание, а не просто повтор запроса.
     """
     base = raw_base or BRANCH_RAW_BASE
     url = f"{base}/{urllib.parse.quote(relative_path)}"
     dst = os.path.join(STAGING_DIR, relative_path.replace("/", os.sep))
     tmp = dst + ".part"
-    try:
-        os.makedirs(os.path.dirname(dst), exist_ok=True)
-        with _urlopen_with_retry(url, timeout=30) as resp:
-            with open(tmp, "wb") as f:
-                while True:
-                    if _is_cancelled(cancelled_flag):
-                        raise InterruptedError("Обновление отменено пользователем")
-                    chunk = resp.read(65536)
-                    if not chunk:
-                        break
-                    f.write(chunk)
 
-        if not expected_sha256:
-            print(f"[Updater] В манифесте нет SHA256 для {relative_path} — файл отклонён")
-            os.remove(tmp)
-            return False
-
-        actual = _sha256_of_file(tmp)
-        if actual.lower() != expected_sha256.lower():
-            print(f"[Updater] SHA256 не совпадает для {relative_path}: ожидалось {expected_sha256}, получено {actual}")
-            os.remove(tmp)
-            return False
-
-        if os.path.exists(dst):
-            os.remove(dst)
-        shutil.move(tmp, dst)
-        return True
-    except InterruptedError:
-        try:
-            os.remove(tmp)
-        except Exception:
-            pass
-        raise
-    except Exception as e:
-        print(f"[Updater] Ошибка загрузки {relative_path}: {e}")
-        try:
-            os.remove(tmp)
-        except Exception:
-            pass
+    if not expected_sha256:
+        print(f"[Updater] В манифесте нет SHA256 для {relative_path} — файл отклонён")
         return False
+
+    attempt = 0
+    while True:
+        attempt += 1
+        try:
+            os.makedirs(os.path.dirname(dst), exist_ok=True)
+            with _urlopen_with_retry(url, timeout=30) as resp:
+                with open(tmp, "wb") as f:
+                    while True:
+                        if _is_cancelled(cancelled_flag):
+                            raise InterruptedError("Обновление отменено пользователем")
+                        chunk = resp.read(65536)
+                        if not chunk:
+                            break
+                        f.write(chunk)
+
+            actual = _sha256_of_file(tmp)
+            if actual.lower() != expected_sha256.lower():
+                print(f"[Updater] SHA256 не совпадает для {relative_path} "
+                      f"(попытка {attempt}/{sha_mismatch_retries + 1}): "
+                      f"ожидалось {expected_sha256}, получено {actual}")
+                try:
+                    os.remove(tmp)
+                except Exception:
+                    pass
+                if attempt <= sha_mismatch_retries:
+                    delay = sha_mismatch_delay * attempt  # backoff: 4с, 8с, 12с...
+                    for _ in range(int(delay * 10)):
+                        if _is_cancelled(cancelled_flag):
+                            raise InterruptedError("Обновление отменено пользователем")
+                        time.sleep(0.1)
+                    continue
+                return False
+
+            if os.path.exists(dst):
+                os.remove(dst)
+            shutil.move(tmp, dst)
+            return True
+        except InterruptedError:
+            try:
+                os.remove(tmp)
+            except Exception:
+                pass
+            raise
+        except Exception as e:
+            print(f"[Updater] Ошибка загрузки {relative_path}: {e}")
+            try:
+                os.remove(tmp)
+            except Exception:
+                pass
+            return False
 
 
 def _delete_removed_files(removed_files: list):
