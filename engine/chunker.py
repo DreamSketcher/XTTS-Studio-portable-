@@ -44,7 +44,9 @@ class TextChunker:
     # =========================
     def _split_sentences(self, text):
         text = text.replace("...", "<ELL>")
-        parts = re.split(r"(?<=[.!?])\s+", text)
+        # Регулярное выражение с негативным просмотром назад (negative lookbehind),
+        # чтобы предотвратить ложную разбивку предложений на инициалах вроде "А. С. Пушкин"
+        parts = re.split(r"(?<!\b[A-ZА-ЯЁ])(?<=[.!?])\s+", text)
         return [p.replace("<ELL>", "...") for p in parts if p.strip()]
 
     # =========================

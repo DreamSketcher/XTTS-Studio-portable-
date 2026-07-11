@@ -1,4 +1,4 @@
-﻿# engine/prosody_layer.py
+# engine/prosody_layer.py
 
 import re
 from dataclasses import dataclass
@@ -177,6 +177,9 @@ class ProsodyLayer:
         return text.strip()
 
     def _cleanup(self, text: str) -> str:
+        # Убираем некрасивые конструкции вроде ". ... ." или ". ..." оставляя просто чистый стык "... "
+        text = re.sub(r"\.\s*\.\.\.\s*\.?\s*", "... ", text)
+        text = re.sub(r"\.\dots\s*\.\s*", "... ", text)
         text = re.sub(r"(\.\.\.\s*)+", "... ", text)
         text = re.sub(r"\s+", " ", text)
         return text.strip()

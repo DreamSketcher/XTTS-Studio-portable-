@@ -158,6 +158,33 @@ class TextNormalizer:
 
         return text
 
+    def _yoficator(self, text: str) -> str:
+        """
+        Автоматическая Ёфикация наиболее частотных и однозначных слов.
+        XTTS v2 значительно лучше интонирует и ставит ударения при явном наличии буквы Ё.
+        """
+        yo_words = {
+            "еще": "ещё", "Еще": "Ещё",
+            "ее": "её", "Ее": "Её",
+            "мое": "моё", "Мое": "Моё",
+            "твое": "твоё", "Твое": "Твоё",
+            "свое": "своё", "Свое": "Своё",
+            "нее": "неё", "Нее": "Неё",
+            "черт": "чёрт", "Черт": "Чёрт",
+            "идет": "идёт", "Идет": "Идёт",
+            "ждет": "ждёт", "Ждет": "Ждёт",
+            "бьет": "бьёт", "Бьет": "Бьёт",
+            "пьет": "пьёт", "Пьет": "Пьёт",
+            "поет": "поёт", "Поет": "Поёт",
+            "придет": "придёт", "Придет": "Придёт",
+            "уйдет": "уйдёт", "Уйдет": "Уйдёт",
+            "назовет": "назовёт", "Назовет": "Назовёт",
+            "смеется": "смеётся", "Смеется": "Смеётся",
+        }
+        for word, yo_word in yo_words.items():
+            text = re.sub(rf'\b{word}\b', yo_word, text)
+        return text
+
     def normalize(self, text: str) -> str:
         if not text:
             return ""
@@ -170,6 +197,22 @@ class TextNormalizer:
 
         text = text.replace("—", "...")
         text = re.sub(r'\s-\s', ', ', text)
+
+        # Разворачивание частых сокращений с точками (до очистки пунктуации)
+        text = re.sub(r"\bи\s+т\.\s*д\.\b", "и так далее", text, flags=re.IGNORECASE)
+        text = re.sub(r"\bи\s+т\s*п\.\b", "и тому подобное", text, flags=re.IGNORECASE)
+        text = re.sub(r"\bт\.\s*д\.\b", "так далее", text, flags=re.IGNORECASE)
+        text = re.sub(r"\bт\.\s*п\.\b", "тому подобное", text, flags=re.IGNORECASE)
+        text = re.sub(r"\bи\s+др\.\b", "и другие", text, flags=re.IGNORECASE)
+        text = re.sub(r"\bсм\.\b", "смотри", text, flags=re.IGNORECASE)
+        text = re.sub(r"\bстр\.\b", "страница", text, flags=re.IGNORECASE)
+        text = re.sub(r"\bруб\.\b", "рублей", text, flags=re.IGNORECASE)
+        text = re.sub(r"\bкоп\.\b", "копеек", text, flags=re.IGNORECASE)
+        text = re.sub(r"\bтыс\.\b", "тысяч", text, flags=re.IGNORECASE)
+        text = re.sub(r"\bмлн\b", "миллионов", text, flags=re.IGNORECASE)
+        text = re.sub(r"\bмлрд\b", "миллиардов", text, flags=re.IGNORECASE)
+        text = re.sub(r"\bкм/ч\b", "километров в час", text, flags=re.IGNORECASE)
+        text = re.sub(r"\bм/с\b", "метров в секунду", text, flags=re.IGNORECASE)
 
         # проценты: 87% → 87 процентов
         text = re.sub(r"(\d+)\s*%", r"\1 процентов", text)
@@ -185,6 +228,11 @@ class TextNormalizer:
         text = re.sub(r"(\.)([A-ZА-ЯЁ])", r"\1 \2", text)
 
         text = re.sub(r"\s+", " ", text).strip()
+
+        # =========================
+        # AUTOMATIC YO-FICATION
+        # =========================
+        text = self._yoficator(text)
 
         # =========================
         # ABBREV RHYTHM (латиница)

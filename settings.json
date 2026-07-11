@@ -1,11 +1,11 @@
 {
   "language": "auto",
   "quality": "Высокое качество",
-  "ref_path": "C:\\XTTS Studio\\library\\Диктор в Московском метро_ Каховская линия\\normalized.wav",
+  "ref_path": "D:\\XTTS_Studio\\XTTS CPU ZIP ONLY CPU\\XTTS Studio\\library\\Диктор в Московском метро_ Каховская линия\\normalized.wav",
   "use_gpt": false,
   "word_replacer_enabled": true,
   "lang_split_enabled": true,
-  "ui_language": "en",
+  "ui_language": "ru",
   "text_font_size": 14,
   "ai_conductor_enabled": false,
   "ai_conductor_context": "",
@@ -71,9 +71,13 @@
       "ai_conductor_enabled": false
     }
   },
-  "ai_conductor_open_count": 9,
+  "ai_conductor_open_count": 10,
   "ai_conductor_warning_dismissed": true,
-  "ui_theme": "dark",
+  "ui_theme": "light",
   "left_panel_visible": true,
-  "ai_conductor_preset": "Все пресеты"
+  "ai_conductor_preset": "Все пресеты",
+  "torch_device_preference": "cpu",
+  "open_updates_on_startup": false,
+  "install_variant_on_startup": null,
+  "auto_check_updates": false
 }

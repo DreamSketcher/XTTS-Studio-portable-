@@ -1163,3 +1163,917 @@ def detect_gpu() -> dict:
         pass
 
     return result
+
+# ──────────────────────────────────────────────────────────────────────────
+#  TORCH / TORCHAUDIO / TORCHVISION — hardware-aware установка
+# ──────────────────────────────────────────────────────────────────────────
+# В отличие от llama-cpp-python (собирается из исходников под CPU или
+# качается как GPU prebuilt wheel с отдельного индекса abetlen'а), torch —
+# это готовая тройка пакетов с ОФИЦИАЛЬНОГО индекса PyTorch:
+#   torch + torchaudio + torchvision ОБЯЗАНЫ быть одной версии релиза
+#   и одного билд-варианта (все три с --index-url .../cu118, либо все три
+#   с --index-url .../cpu). torchaudio официально не гарантирует работу
+#   с torch из другого релиза — смешивать варианты нельзя.
+# Портативная сборка распространяется с уже вшитым cu118-вариантом
+# (собран под машину разработчика) — эта секция при первом запуске
+# проверяет, действительно ли машина ПОЛЬЗОВАТЕЛЯ его потянет, и если
+# нет — заменяет тройку на CPU-вариант той же версии.
+
+TORCH_VERSION = "2.2.2"
+TORCHAUDIO_VERSION = "2.2.2"
+TORCHVISION_VERSION = "0.17.2"
+
+# Минимальная версия CUDA рантайма, которую поддерживает драйвер, чтобы
+# наш cu118-wheel завёлся (сам wheel собран под CUDA 11.8; nvidia-smi
+# показывает МАКСИМАЛЬНУЮ версию CUDA, обратно совместимую с драйвером —
+# то есть если там >= 11.8, cu118-сборка точно должна инициализироваться).
+TORCH_MIN_CUDA = (11, 8)
+
+_TORCH_INDEX_URLS = {
+    "cu118": "https://download.pytorch.org/whl/cu118",
+    "cpu": "https://download.pytorch.org/whl/cpu",
+}
+
+TORCH_CHECKPOINT_PATH = os.path.join(BASE_DIR, ".torch_install_checkpoint.json")
+TORCH_INSTALLED_VARIANT_PATH = os.path.join(BASE_DIR, ".torch_installed_variant.json")
+TORCH_BROKEN_VARIANTS_PATH = os.path.join(BASE_DIR, ".torch_broken_variants.json")
+
+active_proc = None
+
+
+def mark_torch_variant_broken(variant: str):
+    """Помечает вариант torch (cu118/cpu) как подтверждённо нерабочий на этой машине."""
+    broken = get_broken_torch_variants()
+    broken.add(variant)
+    try:
+        with open(TORCH_BROKEN_VARIANTS_PATH, "w", encoding="utf-8") as f:
+            json.dump(sorted(broken), f)
+    except Exception:
+        pass
+
+
+def get_broken_torch_variants() -> set:
+    try:
+        with open(TORCH_BROKEN_VARIANTS_PATH, "r", encoding="utf-8") as f:
+            return set(json.load(f))
+    except Exception:
+        return set()
+
+
+def _save_installed_torch_variant(variant: str):
+    try:
+        with open(TORCH_INSTALLED_VARIANT_PATH, "w", encoding="utf-8") as f:
+            json.dump({"variant": variant, "timestamp": time.time()}, f)
+    except Exception:
+        pass
+
+
+def _clear_installed_torch_variant():
+    try:
+        if os.path.exists(TORCH_INSTALLED_VARIANT_PATH):
+            os.remove(TORCH_INSTALLED_VARIANT_PATH)
+    except Exception:
+        pass
+
+
+def get_installed_torch_variant() -> Optional[str]:
+    """Вариант ('cu118' | 'cpu'), с которым реально установлена ТЕКУЩАЯ
+    тройка torch/torchaudio/torchvision. None — если неизвестно."""
+    try:
+        with open(TORCH_INSTALLED_VARIANT_PATH, "r", encoding="utf-8") as f:
+            return json.load(f).get("variant")
+    except Exception:
+        return None
+
+
+def _load_torch_checkpoint() -> dict:
+    try:
+        with open(TORCH_CHECKPOINT_PATH, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except Exception:
+        return {}
+
+
+def _save_torch_checkpoint(stage: str, meta: dict = None):
+    data = {"stage": stage, "timestamp": time.time(), "meta": meta or {}}
+    try:
+        with open(TORCH_CHECKPOINT_PATH, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+    except Exception:
+        pass
+
+
+def _clear_torch_checkpoint():
+    try:
+        if os.path.exists(TORCH_CHECKPOINT_PATH):
+            os.remove(TORCH_CHECKPOINT_PATH)
+    except Exception:
+        pass
+
+
+def _parse_cuda_version(cuda_version: str):
+    """'12.4' -> (12, 4). None при любой проблеме разбора."""
+    if not cuda_version:
+        return None
+    try:
+        parts = cuda_version.strip().split(".")
+        return (int(parts[0]), int(parts[1]) if len(parts) > 1 else 0)
+    except Exception:
+        return None
+
+
+def _pick_torch_variant(gpu_info: dict) -> tuple:
+    """
+    Выбирает вариант тройки torch/torchaudio/torchvision на основе GPU.
+    Возвращает (variant, index_url), variant: "cu118" | "cpu".
+
+    Учитывает TORCH_BROKEN_VARIANTS_PATH: если вариант уже подтверждённо
+    не завёлся на этой машине (см. mark_torch_variant_broken), автовыбор
+    больше не предложит его повторно.
+    """
+    try:
+        from engine.settings_store import load_settings
+        pref = load_settings().get("torch_device_preference")
+        if pref == "cpu":
+            return ("cpu", _TORCH_INDEX_URLS["cpu"])
+        elif pref == "gpu":
+            broken = get_broken_torch_variants()
+            if "cu118" not in broken:
+                return ("cu118", _TORCH_INDEX_URLS["cu118"])
+    except Exception:
+        pass
+
+    vendor = (gpu_info or {}).get("vendor", "unknown")
+    cuda_version = (gpu_info or {}).get("cuda_version")
+    broken = get_broken_torch_variants()
+
+    if vendor == "nvidia" and cuda_version:
+        parsed = _parse_cuda_version(cuda_version)
+        if parsed and parsed >= TORCH_MIN_CUDA and "cu118" not in broken:
+            return ("cu118", _TORCH_INDEX_URLS["cu118"])
+
+    return ("cpu", _TORCH_INDEX_URLS["cpu"])
+
+
+def _clean_previous_torch_install():
+    """Сносит остатки предыдущей установки torch-тройки (и её нативных
+    CUDA-библиотек-спутников) — иначе pip --target может молча оставить
+    файлы от предыдущего варианта вперемешку с новым."""
+    if not os.path.isdir(SITE_PACKAGES):
+        return
+    prefixes = ("torch", "functorch", "triton", "nvidia_")
+    for name in os.listdir(SITE_PACKAGES):
+        if name.lower().startswith(prefixes):
+            full = os.path.join(SITE_PACKAGES, name)
+            try:
+                if os.path.isdir(full):
+                    shutil.rmtree(full, ignore_errors=True)
+                elif os.path.isfile(full):
+                    os.remove(full)
+            except Exception:
+                pass
+
+
+def _build_torch_install_cmd(index_url: str, site_packages: str) -> list:
+    """Формирует pip install для тройки torch/torchaudio/torchvision.
+
+    --index-url (а не --extra-index-url) — чтобы pip брал ВСЕ три пакета
+    строго с одного и того же индекса (cu118 либо cpu), без риска, что
+    резолвер молча подмешает вариант с обычного PyPI.
+
+    --no-deps ОБЯЗАТЕЛЕН: без него pip резолвит транзитивные зависимости
+    (в первую очередь numpy) и может попытаться апгрейднуть/переустановить
+    уже стоящий numpy==1.26.4 (см. requirements.txt) поверх самого себя.
+    При установке через --target (не venv) pip не всегда чисто убирает
+    старые файлы перед записью новых — получается вперемешку старая и
+    новая версия numpy, отсюда 'cannot import name multiarray from
+    partially initialized module numpy.core'. Тот же приём уже используется
+    в install_llama_cpp() по той же причине — не трогать существующий
+    torch/numpy окружения.
+    """
+    return [
+        PYTHON_EXE, "-m", "pip", "install",
+        f"torch=={TORCH_VERSION}",
+        f"torchaudio=={TORCHAUDIO_VERSION}",
+        f"torchvision=={TORCHVISION_VERSION}",
+        "--index-url", index_url,
+        "--target", site_packages,
+        "--upgrade",
+        "--no-deps",
+    ]
+
+
+def torch_status() -> dict:
+    """Проверка импорта torch в ОТДЕЛЬНОМ процессе — та же причина, что и
+    у llama_cpp_status(): несовместимая нативная сборка может уронить
+    интерпретатор целиком, а не выбросить обычное Python-исключение."""
+    probe_script = """import sys
+try:
+    import torch
+    print('OK=' + torch.__file__)
+    print('VERSION=' + torch.__version__)
+    try:
+        print('CUDA_AVAILABLE=' + str(torch.cuda.is_available()))
+    except Exception as e:
+        print('CUDA_AVAILABLE=ERROR:' + str(e))
+except ImportError as e:
+    print('FAIL=' + str(e))
+"""
+    probes = [
+        ("import sys; sys.path.insert(0, r'%s')\n" % SITE_PACKAGES) + probe_script,
+        probe_script,
+    ]
+    last_error = ""
+    for probe in probes:
+        try:
+            proc = subprocess.run(
+                [PYTHON_EXE, "-c", probe],
+                capture_output=True, text=True, timeout=30,
+            )
+            out = proc.stdout or ""
+            if "OK=" in out:
+                fields = dict(
+                    line.split("=", 1) for line in out.strip().splitlines() if "=" in line
+                )
+                return {
+                    "installed": True,
+                    "path": fields.get("OK"),
+                    "version": fields.get("VERSION"),
+                    "cuda_available": fields.get("CUDA_AVAILABLE", "").strip() == "True",
+                    "error": None,
+                }
+            err = (proc.stderr or "").strip()
+            if proc.returncode < 0:
+                err = f"процесс завершён аварийно (код {proc.returncode}) — {err}"
+            last_error = err or out.strip() or f"exit code {proc.returncode}"
+        except subprocess.TimeoutExpired:
+            last_error = "проверка не уложилась в таймаут"
+        except Exception as e:
+            last_error = str(e)
+    return {"installed": False, "path": None, "version": None, "cuda_available": False, "error": last_error}
+
+
+def install_torch(progress_cb=None, resume: bool = False, variant: str = None) -> dict:
+    """
+    Устанавливает связанную тройку torch/torchaudio/torchvision под
+    конкретную машину:
+      - NVIDIA + драйвер поддерживает CUDA >= 11.8 → cu118 (тот же вариант,
+        что уже вшит в портативный архив по умолчанию — на подходящей
+        машине это фактически no-op после первой проверки)
+      - иначе (нет NVIDIA GPU, драйвер старее, AMD/Intel) → CPU-вариант
+
+    progress_cb(line: str) — вызывается на каждую строку вывода pip.
+    resume=True — продолжить прерванную установку с тем же вариантом.
+    variant="cu118"|"cpu" — принудительный выбор (иначе авто по detect_gpu()).
+    Бросает RuntimeError при неуспехе. Возвращает torch_status() при успехе.
+    """
+    def emit(line):
+        if progress_cb:
+            progress_cb(line)
+
+    checkpoint = _load_torch_checkpoint()
+    is_resume = resume and checkpoint.get("stage") not in (None, "", "done")
+
+    gpu = detect_gpu()
+
+    if variant == "cu118" and gpu.get("vendor") != "nvidia":
+        emit("⚠️ Внимание: затребована установка GPU-версии (CUDA), но ваша видеокарта не является NVIDIA.")
+        emit("Установка CUDA невозможна. Принудительно переключаюсь на стабильный вариант: CPU.")
+        variant = "cpu"
+        index_url = _TORCH_INDEX_URLS["cpu"]
+
+    if is_resume:
+        variant = checkpoint.get("meta", {}).get("variant") or variant or "cpu"
+    if variant is None:
+        variant, index_url = _pick_torch_variant(gpu)
+    else:
+        index_url = _TORCH_INDEX_URLS.get(variant, _TORCH_INDEX_URLS["cpu"])
+
+    if gpu.get("vendor") != "unknown":
+        emit(f"GPU: {gpu.get('vendor', 'unknown').upper()} {gpu.get('name', '')} "
+             f"(CUDA драйвера: {gpu.get('cuda_version') or '?'})")
+    emit(f"Вариант torch: {variant} (index: {index_url})")
+
+    if is_resume:
+        stage = checkpoint.get("stage", "unknown")
+        emit(f"Продолжаю прерванную установку torch (этап: {stage}, вариант: {variant})...")
+    else:
+        emit("Удаляю предыдущую установку torch/torchaudio/torchvision (если была)...")
+        _clean_previous_torch_install()
+        _save_torch_checkpoint("cleaned", {"variant": variant, "gpu": gpu})
+
+    env = os.environ.copy()
+    env["PYTHONUNBUFFERED"] = "1"
+    os.makedirs(PORTABLE_TEMP_DIR, exist_ok=True)
+    os.makedirs(PORTABLE_CACHE_DIR, exist_ok=True)
+    env["TMPDIR"] = PORTABLE_TEMP_DIR
+    env["TEMP"] = PORTABLE_TEMP_DIR
+    env["TMP"] = PORTABLE_TEMP_DIR
+    env["PIP_CACHE_DIR"] = PORTABLE_CACHE_DIR
+
+    cmd = _build_torch_install_cmd(index_url, SITE_PACKAGES)
+    emit(f"Команда установки: {' '.join(cmd)}")
+    # Кеш НЕ отключаем: PIP_CACHE_DIR выше указывает на портативную папку
+    # кеша, и pip сам проверяет хэш каждого файла перед тем как взять его
+    # из кеша — битый/недокачанный wheel туда не попадёт, так что повторно
+    # переиспользовать кеш безопасно. Раньше здесь стоял --no-cache-dir на
+    # каждую не-resume попытку, что полностью обнуляло смысл PIP_CACHE_DIR
+    # и заставляло перекачивать по 200+ МБ заново при каждом повторе
+    # (в т.ч. при переключении CPU/GPU туда-обратно).
+
+    emit("Устанавливаю torch/torchaudio/torchvision (это может занять несколько минут)...")
+    _save_torch_checkpoint("downloading", {"variant": variant, "gpu": gpu})
+
+    global active_proc
+    proc = subprocess.Popen(
+        cmd, cwd=BASE_DIR, env=env,
+        stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+        stdin=subprocess.PIPE, bufsize=0,
+    )
+    active_proc = proc
+    try:
+        _read_pip_output(proc, progress_cb)
+        proc.wait()
+    finally:
+        active_proc = None
+
+    if proc.returncode != 0:
+        _save_torch_checkpoint("failed", {"returncode": proc.returncode, "variant": variant})
+        if variant != "cpu":
+            emit(f"❌ Установка torch ({variant}) не удалась (код {proc.returncode}). Перехожу на CPU-fallback...")
+            return install_torch(progress_cb=progress_cb, resume=False, variant="cpu")
+        raise RuntimeError(f"pip завершился с кодом {proc.returncode}")
+
+    _save_torch_checkpoint("verifying", {"variant": variant, "gpu": gpu})
+    emit("Проверяю импорт torch (в отдельном процессе)...")
+    status = torch_status()
+
+    if not status["installed"]:
+        _save_torch_checkpoint("failed", {"error": status.get("error"), "variant": variant})
+        if variant != "cpu":
+            emit(f"❌ torch ({variant}) установился, но не импортируется. Перехожу на CPU-fallback...")
+            mark_torch_variant_broken(variant)
+            return install_torch(progress_cb=progress_cb, resume=False, variant="cpu")
+        raise RuntimeError(f"Установка прошла, но импорт torch не удался: {status['error']}")
+
+    # Импорт прошёл — но для GPU-варианта этого не достаточно: убеждаемся,
+    # что torch реально видит устройство (а не просто тихо откатился на CPU
+    # внутри самого себя из-за несовместимости конкретно с этим драйвером).
+    if variant != "cpu" and not status.get("cuda_available"):
+        emit(f"⚠️ torch ({variant}) импортировался, но torch.cuda.is_available() == False. "
+             f"Перехожу на CPU-вариант...")
+        mark_torch_variant_broken(variant)
+        _clear_torch_checkpoint()
+        return install_torch(progress_cb=progress_cb, resume=False, variant="cpu")
+
+    _clear_torch_checkpoint()
+    _save_installed_torch_variant(variant)
+    variant_msg = {"cu118": "NVIDIA CUDA 11.8", "cpu": "CPU"}.get(variant, variant)
+    emit(f"✅ Готово — torch ({variant_msg}) установлен и работает.")
+    return status
+
+
+def uninstall_torch(progress_cb=None) -> bool:
+    """Удаляет torch/torchaudio/torchvision из окружения приложения."""
+    def emit(line):
+        if progress_cb:
+            progress_cb(line)
+
+    emit("Удаляю torch/torchaudio/torchvision...")
+    _clean_previous_torch_install()
+    _clear_torch_checkpoint()
+    _clear_installed_torch_variant()
+    emit("✅ torch удалён.")
+    return True
+
+def cancel_install_torch() -> bool:
+    """Принудительно останавливает текущий процесс установки PyTorch (если запущен)."""
+    global active_proc
+    if active_proc is not None:
+        try:
+            active_proc.terminate()
+            active_proc.kill()
+            print("[Torch Setup] Установка принудительно остановлена пользователем.")
+            return True
+        except Exception as e:
+            print(f"[Torch Setup] Ошибка при остановке процесса: {e}")
+    return False
+
+def clean_torch_cache() -> bool:
+    """Очищает временные папки установки и кэш pip."""
+    import shutil
+    cleaned = False
+    for path in (PORTABLE_TEMP_DIR, PORTABLE_CACHE_DIR):
+        if os.path.exists(path):
+            try:
+                if os.path.isdir(path):
+                    shutil.rmtree(path, ignore_errors=True)
+                else:
+                    os.remove(path)
+                cleaned = True
+                print(f"[Torch Setup] Очищен путь: {path}")
+            except Exception as e:
+                print(f"[Torch Setup] Ошибка при очистке {path}: {e}")
+    _clear_torch_checkpoint()
+    return cleaned
+
+
+def run_full_diagnostics() -> dict:
+    """Выполняет полную проверку работоспособности всех 10 ключевых компонентов
+    приложения в изолированном процессе. Безопасно глушит промо-выводы pygame."""
+    probe_script = """import sys, json, os
+# Глушим любые промо-выводы и логи в консоли от библиотек
+os.environ["PYGAME_HIDE_SUPPORT_PROMPT"] = "1"
+os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"
+import warnings
+warnings.filterwarnings("ignore")
+
+sys.path.insert(0, r'%s')
+results = {}
+
+# 1. numpy
+try:
+    import numpy as np
+    a = np.array([1, 2, 3])
+    results['numpy'] = bool(a.sum() == 6)
+except Exception as e:
+    results['numpy'] = str(e)
+
+# 2. torch
+try:
+    import torch
+    x = torch.tensor([1.0, 2.0])
+    results['torch'] = (x.sum().item() == 3.0)
+except Exception as e:
+    results['torch'] = str(e)
+
+# 3. torchaudio
+try:
+    import torchaudio
+    results['torchaudio'] = True
+except Exception as e:
+    results['torchaudio'] = str(e)
+
+# 4. torchvision
+try:
+    import torchvision
+    results['torchvision'] = True
+except Exception as e:
+    results['torchvision'] = str(e)
+
+# 5. tts
+try:
+    from TTS.api import TTS
+    results['tts'] = True
+except Exception as e:
+    results['tts'] = str(e)
+
+# 6. soundfile
+try:
+    import soundfile as sf
+    results['soundfile'] = True
+except Exception as e:
+    results['soundfile'] = str(e)
+
+# 7. pygame (безопасный импорт БЕЗ .mixer.init(), так как init() может вызвать hard crash при отсутствии звуковой карты)
+try:
+    import pygame
+    results['pygame'] = True
+except Exception as e:
+    results['pygame'] = str(e)
+
+# 8. customtkinter
+try:
+    import customtkinter
+    results['customtkinter'] = True
+except Exception as e:
+    results['customtkinter'] = str(e)
+
+# 9. num2words
+try:
+    from num2words import num2words
+    results['num2words'] = (num2words(123, lang='ru') != '')
+except Exception as e:
+    results['num2words'] = str(e)
+
+# 10. llama_cpp
+try:
+    import llama_cpp
+    results['llama_cpp'] = True
+except Exception as e:
+    results['llama_cpp'] = str(e)
+
+print("DIAG_RESULT=" + json.dumps(results))
+""" % SITE_PACKAGES
+
+    try:
+        proc = subprocess.run(
+            [PYTHON_EXE, "-c", probe_script],
+            capture_output=True, text=True, timeout=30
+        )
+        out = proc.stdout or ""
+        err = proc.stderr or ""
+        
+        # Сначала ищем DIAG_RESULT
+        for line in out.splitlines():
+            if line.startswith("DIAG_RESULT="):
+                return json.loads(line.split("=", 1)[1])
+                
+        # Если не нашли — возвращаем чистый лог stderr, чтобы локализовать реальную ошибку импорта
+        error_msg = err.strip() or out.strip() or f"Exit code {proc.returncode}"
+        return {"error": error_msg}
+    except Exception as e:
+        return {"error": str(e)}
+
+
+SAFE_FILES_CACHE_PATH = os.path.join(BASE_DIR, ".known_safe_files.json")
+QUARANTINE_DIR = os.path.join(BASE_DIR, "python", "xtts_env", "Quarantine")
+
+
+def load_safe_files_cache() -> dict:
+    if os.path.exists(SAFE_FILES_CACHE_PATH):
+        try:
+            with open(SAFE_FILES_CACHE_PATH, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except Exception:
+            pass
+    return {"safe_files": {}, "unsafe_files": {}, "deleted_files": []}
+
+
+def save_safe_files_cache(data: dict):
+    try:
+        with open(SAFE_FILES_CACHE_PATH, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+    except Exception as e:
+        print(f"[Cache Manager] Ошибка сохранения кэша безопасных файлов: {e}")
+
+
+def scan_for_garbage(mode="fast", progress_cb=None) -> dict:
+    """
+    Сканирует папки Temp и Cache на наличие временных файлов.
+    В режиме 'fast' переносит только те файлы, которые уже есть в кэше как safe.
+    В режиме 'deep' переносит все файлы, запускает Диагностику, и если падает —
+    возвращает файлы на место, помечая их небезопасными.
+    """
+    def emit(line):
+        if progress_cb:
+            progress_cb(line)
+
+    cache = load_safe_files_cache()
+    os.makedirs(QUARANTINE_DIR, exist_ok=True)
+
+    # Список файлов, которые пользователь просил ЖЕЛЕЗОБЕТОННО исключить из мусора
+    EXCLUDED_FILENAMES = {
+        "checksums.txt",
+        "requirements.txt",
+        "settings.json",
+        "theme_settings.json",
+        "version.json",
+        "chat_history.json",
+        "word_rules.json",
+        "gpt_settings.json",
+        "env_cache.cfg",
+        ".known_safe_files.json",
+        ".torch_install_checkpoint.json"
+    }
+
+    # Безопасные для удаления расширения при 0-байтовом размере (как в PowerShell-скрипте)
+    ZERO_BYTE_SAFE_EXT = {'.whl', '.tmp', '.log', '.bak', '.part', '.crdownload', '.old'}
+
+    emit("Выполняю предварительную диагностику до перемещения файлов...")
+    baseline_res = run_full_diagnostics()
+    if "error" in baseline_res:
+        print(f"[Garbage Scan] Ошибка предварительной диагностики: {baseline_res['error']}")
+        baseline_failed = set()
+    else:
+        baseline_failed = {k for k, v in baseline_res.items() if v is not True}
+
+    all_files = []
+    
+    emit("🔍 Начинаю сканирование временных папок...")
+    paths_to_scan_directly = [PORTABLE_TEMP_DIR, os.path.join(BASE_DIR, "logs")]
+    if os.path.exists(PORTABLE_CACHE_DIR):
+        paths_to_scan_directly.append(PORTABLE_CACHE_DIR)
+        
+    for base_path in paths_to_scan_directly:
+        folder_name = os.path.basename(base_path)
+        emit(f"Сканирую папку: {folder_name} ...")
+        if not os.path.exists(base_path):
+            emit(f"   [Папка {folder_name} отсутствует или уже пуста]")
+            continue
+        for root_dir, dirs, files in os.walk(base_path):
+            for file in files:
+                if file in EXCLUDED_FILENAMES:
+                    continue
+                abs_path = os.path.join(root_dir, file)
+                rel_path = os.path.relpath(abs_path, BASE_DIR).replace("\\", "/")
+                if "python/xtts_env/Quarantine" in rel_path:
+                    continue
+                try:
+                    stat = os.stat(abs_path)
+                    all_files.append({
+                        "rel_path": rel_path,
+                        "abs_path": abs_path,
+                        "size": stat.st_size,
+                        "mtime": stat.st_mtime
+                    })
+                except Exception:
+                    pass
+                    
+    emit("🔍 Сканирую всю директорию C:\\XTTS Studio на наличие кэша, временных и мусорных файлов...")
+    excluded_dirs = {"models", "outputs", "library", "reference", ".git", "Quarantine"}
+    
+    for root_dir, dirs, files in os.walk(BASE_DIR):
+        dirs[:] = [d for d in dirs if d not in excluded_dirs and d != "Quarantine"]
+        
+        # 1. Если папка является кэшем __pycache__ или .pytest_cache, забираем все её файлы
+        if os.path.basename(root_dir) in ("__pycache__", ".pytest_cache"):
+            for file in files:
+                if file in EXCLUDED_FILENAMES:
+                    continue
+                abs_path = os.path.join(root_dir, file)
+                rel_path = os.path.relpath(abs_path, BASE_DIR).replace("\\", "/")
+                try:
+                    stat = os.stat(abs_path)
+                    all_files.append({
+                        "rel_path": rel_path,
+                        "abs_path": abs_path,
+                        "size": stat.st_size,
+                        "mtime": stat.st_mtime
+                    })
+                except Exception:
+                    pass
+            continue
+            
+        # 2. Для других папок забираем:
+        #    - временные файлы (.tmp, .bak, .pyc, .pyo, .log)
+        #    - 0-байтовые файлы с безопасными расширениями
+        for file in files:
+            if file in EXCLUDED_FILENAMES:
+                continue
+            abs_path = os.path.join(root_dir, file)
+            rel_path = os.path.relpath(abs_path, BASE_DIR).replace("\\", "/")
+            ext = os.path.splitext(file)[1].lower()
+            
+            # Проверяем размер файла
+            try:
+                stat = os.stat(abs_path)
+                size = stat.st_size
+                mtime = stat.st_mtime
+                is_zero_byte = (size == 0)
+            except Exception:
+                continue
+                
+            is_garbage = False
+            
+            if is_zero_byte:
+                if ext in ZERO_BYTE_SAFE_EXT:
+                    is_garbage = True
+                else:
+                    # Подозрительные 0-байтовые системные файлы (как __init__.py или py.typed)
+                    # Показываем предупреждение (как в PowerShell-скрипте), но НЕ трогаем!
+                    emit(f"   [!] Внимание: Обнаружен 0-байтовый системный файл (не трогаем): {rel_path}")
+                    continue
+            else:
+                if ext in (".tmp", ".bak", ".pyc", ".pyo", ".log") or file.endswith("~") or file.startswith("~$"):
+                    # Защита: не трогаем системные файлы компиляции в папке python (кроме .tmp/.bak)
+                    if ext in (".pyc", ".pyo", ".log") and "python" in rel_path and "python/xtts_env" not in rel_path:
+                        continue
+                    is_garbage = True
+                    
+            if is_garbage:
+                all_files.append({
+                    "rel_path": rel_path,
+                    "abs_path": abs_path,
+                    "size": size,
+                    "mtime": mtime
+                })
+
+    # Фильтруем все файлы, отсекая те, что находятся в unsafe_files
+    safe_all_files = []
+    for f in all_files:
+        if f["rel_path"] in cache.get("unsafe_files", {}):
+            continue
+        safe_all_files.append(f)
+
+    emit(f"Всего обнаружено кэша и временных файлов в проекте: {len(safe_all_files)}")
+
+    to_quarantine = []
+    skipped_new = []
+
+    if mode == "fast":
+        emit("Выполняю быстрое сканирование (сверяю с кэшем безопасности)...")
+        for f in safe_all_files:
+            rel = f["rel_path"]
+            cached = cache.get("safe_files", {}).get(rel)
+            if cached and cached.get("size") == f["size"] and abs(cached.get("mtime", 0) - f["mtime"]) < 1.0:
+                to_quarantine.append(f)
+            else:
+                skipped_new.append(f)
+        emit(f"Быстрое сканирование завершено. Будет перемещено в карантин: {len(to_quarantine)}. Пропущено новых файлов: {len(skipped_new)}")
+    else:
+        emit("Выполняю глубокое сканирование (полная проверка всех файлов)...")
+        to_quarantine = safe_all_files.copy()
+
+    if not to_quarantine:
+        return {"quarantined_count": 0, "size_mb": 0.0, "restored_count": 0, "restored_list": [], "mode": mode, "quarantined_list": []}
+
+    quarantined_files = []
+    total_size = 0
+    for f in to_quarantine:
+        if not os.path.exists(f["abs_path"]):
+            continue
+        q_path = os.path.join(QUARANTINE_DIR, f["rel_path"])
+        os.makedirs(os.path.dirname(q_path), exist_ok=True)
+        try:
+            shutil.move(f["abs_path"], q_path)
+            f["quarantine_path"] = q_path
+            quarantined_files.append(f)
+            total_size += f["size"]
+        except Exception as e:
+            print(f"[Garbage Scan] Ошибка перемещения {f['rel_path']}: {e}")
+
+    emit("Выполняю диагностику работоспособности компонентов после изоляции...")
+    diag_res = run_full_diagnostics()
+    
+    if "error" in diag_res:
+        new_failed = {"diagnostic_script_crash"}
+    else:
+        post_failed = {k for k, v in diag_res.items() if v is not True}
+        # Виновником считаются только те компоненты, которые работали ДО сканирования, но сломались ПОСЛЕ!
+        new_failed = post_failed - baseline_failed
+    
+    restored = []
+    if new_failed:
+        emit(f"⚠️ Сбой диагностики компонентов из-за перемещенных файлов: {', '.join(new_failed)}. Запускаю автоматический возврат...")
+        for f in quarantined_files:
+            try:
+                os.makedirs(os.path.dirname(f["abs_path"]), exist_ok=True)
+                shutil.move(f["quarantine_path"], f["abs_path"])
+                restored.append(f["rel_path"])
+                cache["unsafe_files"][f["rel_path"]] = {"size": f["size"], "mtime": f["mtime"]}
+            except Exception as e:
+                print(f"[Garbage Scan] Ошибка возврата {f['rel_path']}: {e}")
+        quarantined_files.clear()
+        total_size = 0
+        emit("Все файлы были автоматически возвращены из карантина в целях безопасности.")
+    else:
+        for f in quarantined_files:
+            if "safe_files" not in cache:
+                cache["safe_files"] = {}
+            cache["safe_files"][f["rel_path"]] = {
+                "size": f["size"],
+                "mtime": f["mtime"],
+                "safe": True
+            }
+        emit("Диагностика успешна! Все изолированные файлы подтверждены как безопасные.")
+
+    save_safe_files_cache(cache)
+    size_mb = total_size / (1024 * 1024)
+    
+    return {
+        "quarantined_count": len(quarantined_files),
+        "size_mb": size_mb,
+        "restored_count": len(restored),
+        "restored_list": restored,
+        "mode": mode,
+        "quarantined_list": quarantined_files
+    }
+
+
+def finalize_deletion(quarantined_list: list) -> int:
+    """Навсегда стирает файлы из карантина и фиксирует их в истории удалений."""
+    cache = load_safe_files_cache()
+    deleted_count = 0
+    now = time.time()
+    
+    for f in quarantined_list:
+        q_path = f.get("quarantine_path")
+        if q_path and os.path.exists(q_path):
+            try:
+                if os.path.isdir(q_path):
+                    shutil.rmtree(q_path, ignore_errors=True)
+                else:
+                    os.remove(q_path)
+                deleted_count += 1
+                
+                package_name = "unknown"
+                parts = f["rel_path"].split("/")
+                if "site-packages" in parts:
+                    idx = parts.index("site-packages")
+                    if idx + 1 < len(parts):
+                        package_name = parts[idx + 1]
+                
+                if "deleted_files" not in cache:
+                    cache["deleted_files"] = []
+                cache["deleted_files"].append({
+                    "path": f["rel_path"],
+                    "size": f["size"],
+                    "package": package_name,
+                    "timestamp": now
+                })
+            except Exception as e:
+                print(f"[Garbage Scan] Ошибка удаления {f['rel_path']}: {e}")
+                
+    if os.path.exists(QUARANTINE_DIR):
+        try:
+            shutil.rmtree(QUARANTINE_DIR, ignore_errors=True)
+        except Exception:
+            pass
+            
+    save_safe_files_cache(cache)
+    return deleted_count
+
+
+def run_error_recovery(progress_cb=None) -> list:
+    """
+    Устранение ошибок: сканирует историю удалений в кэше,
+    определяет пострадавшие питоновские пакеты и запускает их переустановку через pip.
+    """
+    def emit(line):
+        if progress_cb:
+            progress_cb(line)
+
+    cache = load_safe_files_cache()
+    deleted = cache.get("deleted_files", [])
+    if not deleted:
+        emit("История удалений пуста. Все файлы на своих местах.")
+        return []
+
+    package_mapping = {
+        "torch": "torch==2.2.2",
+        "torchaudio": "torchaudio==2.2.2",
+        "torchvision": "torchvision==0.17.2",
+        "tts": "coqui-tts",
+        "numpy": "numpy==1.26.4",
+        "pygame": "pygame",
+        "customtkinter": "customtkinter",
+        "num2words": "num2words",
+        "llama_cpp": "llama-cpp-python",
+        "soundfile": "soundfile"
+    }
+
+    packages_to_restore = set()
+    for f in deleted:
+        pkg_folder = f.get("package", "unknown").lower()
+        for key, pip_spec in package_mapping.items():
+            if key in pkg_folder:
+                packages_to_restore.add(pip_spec)
+
+    if not packages_to_restore:
+        emit("Не обнаружено ключевых зависимостей в истории удалений.")
+        return []
+
+    emit(f"Обнаружены удаленные зависимости, требующие восстановления: {', '.join(packages_to_restore)}")
+    
+    restored = []
+    for pkg in sorted(packages_to_restore):
+        emit(f"Восстанавливаю пакет {pkg} через pip...")
+        
+        cmd = [
+            PYTHON_EXE, "-m", "pip", "install",
+            pkg,
+            "--target", SITE_PACKAGES,
+            "--upgrade",
+            "--no-deps",
+            "--force-reinstall"
+        ]
+        
+        env = os.environ.copy()
+        env["PYTHONUNBUFFERED"] = "1"
+        
+        try:
+            proc = subprocess.Popen(
+                cmd, cwd=BASE_DIR, env=env,
+                stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                text=True, bufsize=0
+            )
+            for line in iter(proc.stdout.readline, ""):
+                if line:
+                    emit(line.strip())
+            proc.wait()
+            
+            if proc.returncode == 0:
+                emit(f"✅ Пакет {pkg} успешно восстановлен.")
+                restored.append(pkg)
+            else:
+                emit(f"❌ Ошибка восстановления пакета {pkg} (код {proc.returncode}).")
+        except Exception as e:
+            emit(f"❌ Не удалось восстановить пакет {pkg}: {e}")
+
+    if restored:
+        new_deleted = []
+        for f in deleted:
+            pkg_folder = f.get("package", "unknown").lower()
+            was_restored = False
+            for pkg in restored:
+                clean_name = pkg.split("==")[0]
+                if clean_name in pkg_folder:
+                    was_restored = True
+                    break
+            if not was_restored:
+                new_deleted.append(f)
+        cache["deleted_files"] = new_deleted
+        save_safe_files_cache(cache)
+
+    return restored
