@@ -153,6 +153,7 @@ def on_task_update(data):
             current_task = None
         clear_chunk_highlight()
         unlock_textbox()
+        root.after(0, lambda: _restore_raw_text(task))
         set_stage("IDLE")
         set_status(t("status_cancelled"))
         set_progress(0)
@@ -163,12 +164,30 @@ def on_task_update(data):
         set_status(f"{task.status}... {task.progress}%")
 
 
+def _restore_raw_text(task: Task):
+    """
+    После генерации (done/error/cancelled) возвращаем в text_box оригинальный
+    текст пользователя (task.raw_text), а не финальный normalize-текст,
+    который использовался только для подсветки чанков во время генерации.
+    """
+    try:
+        raw = getattr(task, "raw_text", None)
+        if not raw:
+            return
+        text_box.config(state="normal")
+        text_box.delete("1.0", "end")
+        text_box.insert("1.0", raw)
+    except Exception as e:
+        print(f"[TextBox restore error]: {e}")
+
+
 def _on_task_done(task: Task):
     global current_task
     if current_task and current_task.id == task.id:
         current_task = None
     clear_chunk_highlight()
     unlock_textbox()
+    _restore_raw_text(task)
     _save_history(task)
     refresh_voice_list()
     messagebox.showinfo(t("dlg_done_title"), t("dlg_done_msg", task.output_path))
@@ -178,6 +197,7 @@ def _on_task_error(task: Task):
         current_task = None
     clear_chunk_highlight()
     unlock_textbox()
+    _restore_raw_text(task)
     write_log(task.error or "Unknown error")
     messagebox.showerror(t("dlg_error_title"), task.error or "Неизвестная ошибка")
 
