@@ -185,6 +185,45 @@ class TextNormalizer:
             text = re.sub(rf'\b{word}\b', yo_word, text)
         return text
 
+    # Известные НЕ-временные X:Y (соотношения сторон и т.п.) — проверяются
+    # первыми, до того как число попадёт в общее правило "читать как время".
+    # Пополняйте вручную по мере обнаружения новых кейсов.
+    KNOWN_COLON_RATIOS = {
+        "16:9": "шестнадцать на девять",
+        "4:3": "четыре на три",
+        "21:9": "двадцать один на девять",
+        "1:1": "один к одному",
+    }
+
+    def _replace_time_and_ratio(self, text: str) -> str:
+        """
+        Числа вида X:Y, которые не были превращены в паузу (защищены в
+        BASIC CLEANUP как цифра-двоеточие-цифра).
+        По умолчанию ВСЁ читается как время: "14:30" → "четырнадцать тридцать",
+        "9:05" → "девять ноль пять" (с ведущим нулём — по цифрам).
+        Отличить время от соотношения (16:9 vs "16 минут девятого") надёжной
+        эвристикой нельзя, поэтому известные исключения (соотношения сторон
+        и т.п.) заданы явным словарём KNOWN_COLON_RATIOS и обрабатываются
+        first.
+        """
+        def repl(m: re.Match) -> str:
+            raw = m.group(0)
+            if raw in self.KNOWN_COLON_RATIOS:
+                return self.KNOWN_COLON_RATIOS[raw]
+
+            h_str, mm_str = m.group(1), m.group(2)
+            h, mm = int(h_str), int(mm_str)
+            h_words = num2words(h, lang="ru")
+            if mm == 0:
+                mm_words = "ноль"
+            elif mm < 10 and len(mm_str) == 2:
+                mm_words = "ноль " + num2words(mm, lang="ru")
+            else:
+                mm_words = num2words(mm, lang="ru")
+            return f"{h_words} {mm_words}"
+
+        return re.sub(r"\b(\d{1,2}):(\d{1,2})\b", repl, text)
+
     def normalize(self, text: str) -> str:
         if not text:
             return ""
@@ -197,6 +236,8 @@ class TextNormalizer:
 
         text = text.replace("—", "...")
         text = re.sub(r'\s-\s', ', ', text)
+        # двоеточие -> пауза, но не трогаем время (14:30) и соотношения (16:9)
+        text = re.sub(r'(?<!\d):(?!\d)', '...', text)
 
         # Разворачивание частых сокращений с точками (до очистки пунктуации)
         text = re.sub(r"\bи\s+т\.\s*д\.\b", "и так далее", text, flags=re.IGNORECASE)
@@ -260,6 +301,9 @@ class TextNormalizer:
         # =========================
         # NUMBERS TO WORDS
         # =========================
+
+        # 0. Время (14:30) и соотношения/счёт (16:9) — до общей конвертации чисел
+        text = self._replace_time_and_ratio(text)
 
         # 1. Нумерованные списки: "1)" → "первое,"
         text = re.sub(
