@@ -32,10 +32,9 @@ The AI module is optional and connects through any OpenAI-compatible provider.
 
 > ⚠️ Google Drive may show a "file too large to scan" warning before download — that's expected, the file just isn't scanned by Google's antivirus due to its size, not because of any threat.
 
-| Version | Size | Link |
-|---|---|---|
-| ⚙️ CPU-only | 5 GB | [📥 Download XTTS Studio (Google Drive)](https://drive.google.com/file/d/1GINiNWjvMMayfOdK6JiSzIqVU6UhpG5x/view?usp=drive_link) |
-| 🚀 NVIDIA CUDA | 10 GB | [📥 Download XTTS Studio (GitHub Releases)](https://github.com/DreamSketcher/XTTS-Studio-portable-/releases) |
+**One build for everyone** — [📥 Download XTTS Studio](https://drive.google.com/file/d/1GINiNWjvMMayfOdK6JiSzIqVU6UhpG5x/view?usp=drive_link)
+
+Runs on CPU out of the box. If you have an NVIDIA GPU, enable CUDA acceleration anytime from **⚙ Settings → Acceleration** — it detects your GPU and installs only what your machine needs.
 
 📜 **License:** [LICENSE.md](./LICENSE.md) — free to use, attribution to the author required
 
@@ -50,7 +49,7 @@ The AI module is optional and connects through any OpenAI-compatible provider.
 - Voice library with cached speaker embeddings
 - No limit on text length
 - Automatic language switching between Russian and English
-- **Target-Specific CUDA Installation** — CUDA acceleration is installed strictly tailored to your detected NVIDIA hardware. Non-NVIDIA devices (AMD/Intel) are restricted at the hardware level from wasting bandwidth, defaulting to a highly optimized CPU-mode.
+- **On-demand CUDA installation** — runs on CPU by default; enabling CUDA from Settings installs libraries tailored to your detected NVIDIA GPU. Non-NVIDIA devices stay on the optimized CPU mode.
 
 ### 🖥 Interface
 - 🌗 **Settings Window** — A unified system settings panel (accessible via the main **⚙ Settings** button) split into 3 clear sections:
@@ -163,6 +162,7 @@ Assembly → loudness normalization → de-esser → WAV / MP3
 
 The application has a robust system monitoring and self-healing engine integrated into the **Diagnostics** section of the Settings panel:
 
+- **Startup self-check** — on every launch, torch is checked; if it's missing or broken, it's restored from cache (if available) or reinstalled automatically with a compatible version — no user action needed.
 - **Diagnostics** — runs an isolated background process to test the actual import and function of **10 key libraries** (`numpy`, `torch`, `torchaudio`, `torchvision`, `TTS`, `soundfile`, `pygame`, `customtkinter`, `num2words`, `llama_cpp`).
 - **Garbage Scanning** — scans the entire `C:\XTTS Studio` project directory for Pycache (`__pycache__`, `.pytest_cache`), logs (`logs/`), `.tmp`, `.bak` and other temporary files.
 - **Transactional Quarantine** — files are not deleted directly; they are moved to a temporary `Quarantine/` folder. The app automatically runs system Diagnostics before and after. If any regression occurs, files are immediately safely restored.
@@ -192,14 +192,14 @@ Edit it with the **📖 Dictionary** button (add, change, or remove rules).
 
 ## 💻 Requirements
 
-| | CPU version | CUDA version |
+| | Default (CPU) | With CUDA enabled |
 |---|---|---|
 | OS | Windows 10/11 x64 | Windows 10/11 x64 |
 | Memory | 8+ GB RAM | 8+ GB RAM |
 | GPU | — | NVIDIA, 4+ GB VRAM, Compute Capability 6.0+ |
 | Speed | slower than real-time | faster than real-time |
 
-> ℹ️ The CUDA build detects on its own whether your GPU is supported and installs targeted CUDA libraries strictly for your detected NVIDIA architecture. If no compatible GPU is available, it restricts CUDA installation and defaults cleanly to CPU.
+> ℹ️ Works on CPU right after unpacking, no setup needed. CUDA is optional — turn it on from **⚙ Settings → Acceleration**, it detects your NVIDIA GPU and installs only the matching libraries. Unsupported/no GPU → stays on CPU.
 
 ---
 
