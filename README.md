@@ -5,13 +5,9 @@
 **A portable, fully offline voice-cloning and text-to-speech app built on XTTS v2**
 
 [![Windows](https://img.shields.io/badge/Windows-10%2F11%20x64-0078D6?logo=windows&logoColor=white)](https://img.shields.io/badge/Windows-10%2F11%20x64-0078D6?logo=windows&logoColor=white)
-
 [![Offline](https://img.shields.io/badge/100%25-Offline-2da44e)](https://img.shields.io/badge/100%25-Offline-2da44e)
-
 [![Portable](https://img.shields.io/badge/Portable-no%20install-orange)](https://img.shields.io/badge/Portable-no%20install-orange)
-
 [![RU/EN](https://img.shields.io/badge/UI-RU%20%2F%20EN-58a6ff)](https://img.shields.io/badge/UI-RU%20%2F%20EN-58a6ff)
-
 [![Themes](https://img.shields.io/badge/Themes-Dark%20%2F%20Light-7c3aed)](https://img.shields.io/badge/Themes-Dark%20%2F%20Light-7c3aed)
 
 </div>
