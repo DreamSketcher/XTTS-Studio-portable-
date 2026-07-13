@@ -1,5 +1,5 @@
 {
-  "version": "1.1.225",
+  "version": "1.1.226",
   "files": [
     ".pre-commit-config.yaml",
     "DOCUMENTATION.EN.md",
@@ -238,6 +238,7 @@
     "engine/voice_manager.py": "bfeb24ef48e43bf23bcee625307a47ae7d93e83e28423ca30996646cabe307ce",
     "engine/word_replacer.py": "448aaa03c5c037981349bb5c2dc0abc3d82f0194ce5b9704f76314c943d02efb",
     "engine/word_replacer_window.py": "20623ccd89d6c1956afafbcf9d0ea0f8ec3ff95a24422456da63ab5d9397d5fd",
+    "generate_version_manifest.py": "f488dad4f02868a7e38e714fb3d237c9e5ace40523fc1c0e29b4514929c03245",
     "gui.py": "9b6df4d0a3e4a85b506a8b194996f2b95aca01885b95e2e7d4e952d4c74f743f",
     "i18n.py": "eb9b7e6aaf07b7955592d8329953487180b38d725d9ae57d2b749be026c7a411",
     "json/rvc_catalog_seed.json": "0c94eb3b8468f04839b23cc38d65e96ceb1977d12ca58fb594839bbff0339044",
@@ -347,7 +348,6 @@
     "engine/tts/__pycache__/qc.cpython-311.pyc",
     "engine/tts/__pycache__/utils.cpython-311.pyc",
     "env_cache.cfg",
-    "generate_version_manifest.py",
     "gpt_settings.json",
     "icon.ico",
     "patch_updates.py",
