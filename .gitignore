@@ -12,6 +12,7 @@ release/
 history.json
 env_cache.cfg
 icon.ico
+.known_safe_files.json
 icon.png
 word_rules.json
 ProjectAnalyzer.ps1
