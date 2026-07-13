@@ -19,6 +19,18 @@ import os
 import subprocess
 import sys
 
+# На Windows стандартный вывод по умолчанию в кодировке консоли (cp1251 на
+# русских системах, cp1252 на англоязычных). print() с кириллицей падает на
+# cp1252 с UnicodeEncodeError (например, в CI на windows-latest). Принудительно
+# переключаем stdout/stderr на UTF-8, чтобы скрипт работал на любой локали.
+for _stream in (sys.stdout, sys.stderr):
+    _reconfigure = getattr(_stream, "reconfigure", None)
+    if _reconfigure is not None:
+        try:
+            _reconfigure(encoding="utf-8")
+        except Exception:
+            pass
+
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 VERSION_PATH = os.path.join(BASE_DIR, "version.json")
 CHECKSUMS_PATH = os.path.join(BASE_DIR, "checksums.txt")
