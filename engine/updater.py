@@ -111,9 +111,20 @@ def _get_latest_commit_sha() -> str:
         return None
 
 
-def get_remote_version_info() -> dict:
+def get_remote_version_info(commit_sha: str = None) -> dict:
+    """
+    ВАЖНО: version.json нужно брать через commit-pinned URL (raw.githubusercontent.com/{sha}/...),
+    а НЕ через branch-URL (.../main/version.json) — последний кешируется Fastly на несколько
+    минут после пуша и может отдать старую версию сразу после релиза, из-за чего check_update()
+    решает, что обновлений нет, хотя коммит уже на GitHub.
+
+    Если commit_sha не передан — пытаемся получить его сами; при неудаче (сеть, rate limit)
+    откатываемся на branch-URL, как раньше.
+    """
+    base = _raw_base_for(commit_sha or _get_latest_commit_sha())
+    version_url = f"{base}/version.json"
     try:
-        with _urlopen_with_retry(VERSION_URL, timeout=10) as r:
+        with _urlopen_with_retry(version_url, timeout=10) as r:
             return json.loads(r.read().decode("utf-8"))
     except Exception as e:
         raise RuntimeError(f"Не удалось получить информацию об обновлении: {e}")
@@ -156,7 +167,8 @@ def check_update() -> dict:
     """
     local = get_local_version()
     try:
-        info = get_remote_version_info()
+        commit_sha = _get_latest_commit_sha()
+        info = get_remote_version_info(commit_sha)
         remote = info.get("version", "0.0.0")
         available = _version_gt(remote, local)
 
@@ -173,7 +185,7 @@ def check_update() -> dict:
             "changelog": info.get("changelog", ""),
             "min_app_version": min_required,
             "needs_manual_reinstall": needs_manual,
-            "commit_sha": _get_latest_commit_sha() if available else None,
+            "commit_sha": commit_sha if available else None,
         }
     except Exception as e:
         return {"available": False, "local": local, "remote": None, "error": str(e)}
