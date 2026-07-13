@@ -10,9 +10,9 @@
 
 <br/>
 
-[![Windows](https://img.shields.io/badge/Windows-10%2F11%20x64-0078D6?logo=windows&logoColor=white)](https://github.com/DreamSketcher/XTTS-Studio/releases)
+[![Windows](https://img.shields.io/badge/Windows-10%2F11%20x64-0078D6?logo=windows&logoColor=white)](https://github.com/DreamSketcher/XTTS-Studio/releases/tag/v1)
 [![Offline](https://img.shields.io/badge/100%25-Offline-2da44e)](https://github.com/DreamSketcher/XTTS-Studio)
-[![Portable](https://img.shields.io/badge/Portable-no%20install-orange)](https://github.com/DreamSketcher/XTTS-Studio/releases)
+[![Portable](https://img.shields.io/badge/Portable-no%20install-orange)](https://github.com/DreamSketcher/XTTS-Studio/releases/tag/v1)
 [![RU/EN](https://img.shields.io/badge/UI-RU%20%2F%20EN-58a6ff)](https://github.com/DreamSketcher/XTTS-Studio)
 [![RVC](https://img.shields.io/badge/RVC-voice%20enhance-e11d48)](https://github.com/DreamSketcher/XTTS-Studio)
 [![Themes](https://img.shields.io/badge/Themes-Dark%20%2F%20Light-7c3aed)](https://github.com/DreamSketcher/XTTS-Studio)
