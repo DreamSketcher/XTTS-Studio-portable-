@@ -40,6 +40,8 @@ def _run_git(repo: Path, *args) -> subprocess.CompletedProcess:
         cwd=str(repo),
         capture_output=True,
         text=True,
+        encoding="utf-8",
+        errors="replace",
         timeout=30,
     )
 
@@ -58,6 +60,8 @@ def _run_generator(repo: Path, *args) -> subprocess.CompletedProcess:
         cwd=str(repo),
         capture_output=True,
         text=True,
+        encoding="utf-8",
+        errors="replace",
         timeout=30,
     )
 
