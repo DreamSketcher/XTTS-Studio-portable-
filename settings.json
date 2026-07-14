@@ -1,7 +1,7 @@
 {
   "language": "auto",
   "quality": "Высокое качество",
-  "ref_path": "C:\\XTTS Studio\\library\\LJ025-0076\\normalized.wav",
+  "ref_path": "C:\\XTTS Studio\\library\\Диктор Наталья Арсеньева\\normalized.wav",
   "use_gpt": false,
   "word_replacer_enabled": true,
   "lang_split_enabled": true,
@@ -12,10 +12,10 @@
   "quality_params": {
     "Высокое качество": {
       "qc_enabled": true,
-      "temperature": 0.5,
-      "top_p": 0.5,
-      "top_k": 50,
-      "repetition_penalty": 10.0,
+      "temperature": 0.7,
+      "top_p": 0.3,
+      "top_k": 80,
+      "repetition_penalty": 13.0,
       "prosody_intensity": 0.0,
       "de_esser_intensity": 1.0,
       "trim_ms": 100,
@@ -24,11 +24,14 @@
       "export_format": "wav",
       "use_gpt": false,
       "ai_conductor_enabled": false,
-      "rvc_enable": true,
-      "rvc_model": "johnconnor(Terminator2)_250e_13750s",
-      "rvc_index_rate": 1.0,
-      "rvc_pitch_shift": 4,
-      "rvc_f0_method": "rmvpe"
+      "rvc_enable": false,
+      "rvc_model": "Не выбрана",
+      "rvc_index_rate": 0.75,
+      "rvc_pitch_shift": 0,
+      "rvc_f0_method": "rmvpe",
+      "ai_rewrite_enabled": false,
+      "ai_rewrite_context": "",
+      "ai_rewrite_negative": ""
     },
     "Нарратив": {
       "qc_enabled": true,
@@ -48,7 +51,10 @@
       "rvc_model": "",
       "rvc_index_rate": 0.85,
       "rvc_pitch_shift": 0,
-      "rvc_f0_method": "rmvpe"
+      "rvc_f0_method": "rmvpe",
+      "ai_rewrite_enabled": false,
+      "ai_rewrite_context": "",
+      "ai_rewrite_negative": ""
     },
     "Динамика": {
       "qc_enabled": true,
@@ -68,7 +74,10 @@
       "rvc_model": "",
       "rvc_index_rate": 0.65,
       "rvc_pitch_shift": 0,
-      "rvc_f0_method": "pm"
+      "rvc_f0_method": "pm",
+      "ai_rewrite_enabled": false,
+      "ai_rewrite_context": "",
+      "ai_rewrite_negative": ""
     },
     "Экспрессия": {
       "qc_enabled": true,
@@ -88,17 +97,20 @@
       "rvc_model": "",
       "rvc_index_rate": 0.75,
       "rvc_pitch_shift": 0,
-      "rvc_f0_method": "harvest"
+      "rvc_f0_method": "harvest",
+      "ai_rewrite_enabled": false,
+      "ai_rewrite_context": "",
+      "ai_rewrite_negative": ""
     }
   },
-  "ai_conductor_open_count": 11,
+  "ai_conductor_open_count": 12,
   "ai_conductor_warning_dismissed": true,
   "ui_theme": "light",
-  "left_panel_visible": false,
+  "left_panel_visible": true,
   "ai_conductor_preset": "Все пресеты",
   "torch_device_preference": "cpu",
   "open_updates_on_startup": false,
   "install_variant_on_startup": null,
   "auto_check_updates": true,
-  "quality_settings_last_tab": "xtts"
+  "quality_settings_last_tab": "rvc"
 }

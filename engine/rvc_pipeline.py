@@ -1,8 +1,120 @@
+import contextlib
+import logging
 import os
-import sys
 import subprocess
 import shutil
+import sys
 from typing import Optional, Dict, Any
+
+
+# rvc-python/fairseq печатают много служебных INFO и print() прямо в консоль.
+# Глушим их только внутри вызова RVC; собственные краткие строки [RVC] выводим
+# снаружи этого контекста.
+_RVC_NOISY_LOGGER_PREFIXES = ("rvc_python", "fairseq")
+_RVC_NOISE_MARKERS = (
+    "please install tensorboardx",
+    "no supported nvidia gpu found",
+    "using cpu",
+    "use cpu instead",
+    "overwrite preprocess",
+    "is_half:",
+    "loading:",
+)
+
+
+class _DiscardStream:
+    """Незакрываемый sink: безопасен, даже если библиотека запомнит sys.stderr."""
+
+    encoding = "utf-8"
+
+    def write(self, text):
+        return len(text or "")
+
+    def flush(self):
+        pass
+
+    def isatty(self):
+        return False
+
+
+_DISCARD_STREAM = _DiscardStream()
+
+
+def _silence_rvc_loggers():
+    """Оставляет WARNING/ERROR, убирая служебный INFO сторонних RVC-модулей."""
+    names = set(_RVC_NOISY_LOGGER_PREFIXES)
+    try:
+        names.update(
+            name
+            for name in logging.root.manager.loggerDict
+            if isinstance(name, str) and name.startswith(_RVC_NOISY_LOGGER_PREFIXES)
+        )
+    except Exception:
+        pass
+    for name in names:
+        try:
+            logging.getLogger(name).setLevel(logging.WARNING)
+        except Exception:
+            pass
+
+
+@contextlib.contextmanager
+def _quiet_rvc_console():
+    """Подавляет только прямые print()/stderr сторонней RVC-библиотеки."""
+    _silence_rvc_loggers()
+    try:
+        with (
+            contextlib.redirect_stdout(_DISCARD_STREAM),
+            contextlib.redirect_stderr(_DISCARD_STREAM),
+        ):
+            yield
+    finally:
+        # Некоторые дочерние логгеры создаются лениво при первом inference.
+        _silence_rvc_loggers()
+
+
+def _validate_rvc_checkpoint(model_path: str):
+    """Рано распознаёт HTML/страницу ошибки, ошибочно сохранённую как .pth."""
+    try:
+        if os.path.getsize(model_path) <= 0:
+            raise RVCPipelineError("файл модели пуст")
+        with open(model_path, "rb") as f:
+            head = f.read(4096).lstrip().lower()
+    except RVCPipelineError:
+        raise
+    except Exception as e:
+        raise RVCPipelineError(f"не удалось прочитать файл модели: {e}")
+
+    if (
+        head.startswith((b"<", b"&lt;", b"<!doctype", b"<?xml"))
+        or b"<html" in head
+        or b"<body" in head
+    ):
+        raise RVCPipelineError("файл модели повреждён: вместо весов .pth сохранена HTML-страница")
+
+
+def _friendly_rvc_error(error: Exception) -> str:
+    text = str(error).strip() or error.__class__.__name__
+    low = text.lower()
+    if "invalid load key" in low and ("'<'" in low or "&lt;" in low):
+        return "файл модели повреждён: вместо весов .pth сохранена HTML-страница"
+    return text
+
+
+def _compact_cli_error(stdout: str, stderr: str) -> str:
+    """Возвращает только последние полезные строки CLI без известного INFO-мусора."""
+    useful = []
+    for line in f"{stdout or ''}\n{stderr or ''}".splitlines():
+        clean = line.strip()
+        if not clean:
+            continue
+        low = clean.lower()
+        if any(marker in low for marker in _RVC_NOISE_MARKERS):
+            continue
+        useful.append(clean)
+    if not useful:
+        return "подробности отсутствуют"
+    return " | ".join(useful[-3:])[-800:]
 
 
 class RVCPipelineError(Exception):
@@ -50,72 +162,69 @@ class RVCPostProcessor:
         f0_method: str = "rmvpe",
     ) -> str:
         """
-        Runs RVC voice conversion programmatically using the `rvc-python` library.
-        Returns the path to the transformed output WAV.
+        Runs RVC voice conversion using rvc-python while keeping the console clean.
 
-        API rvc-python 0.1.5 (daswer123/rvc-python):
-          - параметры задаются через set_params(f0up_key=..., f0method=..., ...)
-          - infer_file(input_path, output_path) принимает ТОЛЬКО 2 аргумента
-          - index передаётся в load_model(..., index_path=...)
+        В консоли остаются только выбранная модель, устройство, параметры,
+        успешное завершение и одна понятная ошибка на уровне вызывающего кода.
         """
-        try:
-            # We import rvc-python on demand (lazy loading!)
-            from rvc_python.infer import RVCInference
-        except ImportError:
-            raise RVCPipelineError(
-                "RVC library 'rvc-python' is not installed. "
-                "Please run 'pip install rvc-python' or check your python environment."
-            )
-
         model_path = os.path.join(self.models_dir, f"{model_name}.pth")
         index_path = os.path.join(self.models_dir, f"{model_name}.index")
 
         if not os.path.exists(model_path):
-            raise RVCPipelineError(f"RVC model checkpoint not found: {model_path}")
+            raise RVCPipelineError(f"модель не найдена: {model_path}")
 
-        # Note: Index file is optional but highly recommended for better similarity
         actual_index_path = index_path if os.path.exists(index_path) else ""
+        device_label = "CPU" if self.device.lower().startswith("cpu") else self.device.upper()
+        method = str(f0_method or "rmvpe")
+
+        print(
+            f"[RVC] Модель: {model_name} | устройство: {device_label} | "
+            f"index: {float(index_rate):.2f} | pitch: {int(pitch_shift):+d} | f0: {method}"
+        )
+        _validate_rvc_checkpoint(model_path)
 
         try:
-            # Initialize RVC Inference
-            rvc_engine = RVCInference(device=self.device)
+            # Импорт ленивый и тоже находится в quiet-контексте: именно здесь
+            # fairseq/rvc-python обычно печатают tensorboardX, CPU и is_half.
+            with _quiet_rvc_console():
+                try:
+                    from rvc_python.infer import RVCInference
+                except ImportError as e:
+                    raise RVCPipelineError(
+                        "библиотека rvc-python не установлена или недоступна"
+                    ) from e
 
-            # index_path — в load_model, НЕ в infer_file
-            rvc_engine.load_model(
-                model_path,
-                version="v2",
-                index_path=actual_index_path,
-            )
-
-            # Параметры — через set_params (имена как в rvc-python: f0up_key / f0method)
-            rvc_engine.set_params(
-                f0up_key=int(pitch_shift),
-                f0method=str(f0_method or "rmvpe"),
-                index_rate=float(index_rate),
-                # разумные дефолты библиотеки, явно фиксируем для стабильности
-                filter_radius=3,
-                resample_sr=0,
-                rms_mix_rate=0.25,
-                protect=0.33,
-            )
-
-            # infer_file принимает только input_path, output_path
-            rvc_engine.infer_file(input_path, output_path)
+                rvc_engine = RVCInference(device=self.device)
+                rvc_engine.load_model(
+                    model_path,
+                    version="v2",
+                    index_path=actual_index_path,
+                )
+                rvc_engine.set_params(
+                    f0up_key=int(pitch_shift),
+                    f0method=method,
+                    index_rate=float(index_rate),
+                    filter_radius=3,
+                    resample_sr=0,
+                    rms_mix_rate=0.25,
+                    protect=0.33,
+                )
+                rvc_engine.infer_file(input_path, output_path)
 
             if not os.path.isfile(output_path):
-                raise RVCPipelineError(f"RVC finished without producing output file: {output_path}")
+                raise RVCPipelineError("конвертация завершилась без выходного WAV-файла")
+
+            print(f"[RVC] Конвертация завершена: {os.path.basename(output_path)}")
             return output_path
         except RVCPipelineError:
             raise
         except TypeError as e:
-            # Подсказка, если вдруг стоит другая версия rvc-python с иным API
             raise RVCPipelineError(
-                f"RVC library inference failed (API mismatch with rvc-python): {e}. "
-                f"Expected set_params(f0up_key=..., f0method=...) + "
-                f"infer_file(input_path, output_path)."
-            )
+                "несовместимая версия rvc-python: ожидаются set_params(...) "
+                f"и infer_file(input_path, output_path); {_friendly_rvc_error(e)}"
+            ) from e
         except Exception as e:
-            raise RVCPipelineError(f"RVC library inference failed: {e}")
+            raise RVCPipelineError(_friendly_rvc_error(e)) from e
 
     def run_inference_via_cli(
         self,
@@ -135,7 +244,12 @@ class RVCPostProcessor:
         index_path = os.path.join(self.models_dir, f"{model_name}.index")
 
         if not os.path.exists(model_path):
-            raise RVCPipelineError(f"RVC model not found: {model_path}")
+            raise RVCPipelineError(f"модель не найдена: {model_path}")
+        _validate_rvc_checkpoint(model_path)
+        print(
+            f"[RVC] Модель: {model_name} | CLI | index: {float(index_rate):.2f} | "
+            f"pitch: {int(pitch_shift):+d} | f0: {f0_method or 'rmvpe'}"
+        )
 
         # Build command based on RVC CLI layout
         # (Standard layout uses a python launcher or shell script)
@@ -169,17 +283,18 @@ class RVCPostProcessor:
             cmd.extend(["--index_path", index_path])
 
         try:
-            result = subprocess.run(
-                cmd, capture_output=True, text=True, check=True, encoding="utf-8"
-            )
+            subprocess.run(cmd, capture_output=True, text=True, check=True, encoding="utf-8")
+            if not os.path.isfile(output_path):
+                raise RVCPipelineError("CLI завершился без выходного WAV-файла")
+            print(f"[RVC] Конвертация завершена: {os.path.basename(output_path)}")
             return output_path
         except subprocess.CalledProcessError as e:
-            raise RVCPipelineError(
-                f"RVC CLI command failed with exit code {e.returncode}.\n"
-                f"STDOUT: {e.stdout}\nSTDERR: {e.stderr}"
-            )
+            details = _compact_cli_error(e.stdout, e.stderr)
+            raise RVCPipelineError(f"CLI завершился с кодом {e.returncode}: {details}") from e
+        except RVCPipelineError:
+            raise
         except Exception as e:
-            raise RVCPipelineError(f"Failed to execute RVC CLI: {e}")
+            raise RVCPipelineError(f"не удалось запустить RVC CLI: {e}") from e
 
 
 class XTTSWithRVCPipeline:

@@ -1,14 +1,18 @@
 # -*- coding: utf-8 -*-
 """engine/gui/history_window.py — окно «История»
 
-Редизайн (в стиле output_window.py) + патч 2026-07-09:
-- Увеличен размер текста и кнопок как в окне аудио (как просил пользователь)
-- Фикс иконки в панели задач Windows (перо -> нормальная иконка)
-- Добавлен fallback для pygame play(start=) чтобы сик работал на WAV
+Редизайн окна истории:
+- wave-форма встроена непосредственно в каждую аудиокарточку;
+- ▶/■ объединяет воспроизведение и остановку, громкость расположена рядом;
+- переход по аудио выполняется кликом по wave-форме карточки;
+- отдельная нижняя панель проигрывателя полностью удалена;
+- для точного seek по WAV используется временный аудиосрез.
 """
+import concurrent.futures
 import json
 import os
-import threading
+import tempfile
+import time
 import tkinter as tk
 from tkinter import messagebox
 
@@ -200,10 +204,11 @@ def _apply_window_icon(win: tk.Toplevel):
 
 def open_history():
     try:
-        with open(HISTORY_PATH, "r", encoding="utf-8") as f:
-            history = json.load(f)
+        with open(HISTORY_PATH, "r", encoding="utf-8") as history_file:
+            history = json.load(history_file)
     except Exception:
         history = []
+
     win = tk.Toplevel(root)
     win.title(t("win_history_title"))
     win.geometry("860x700")
@@ -213,6 +218,7 @@ def open_history():
     _apply_window_icon(win)
     win.grab_set()
 
+    # Плеер один на всё окно, а визуальные wave-формы находятся на карточках.
     _p = {
         "playing": False,
         "path": None,
@@ -220,16 +226,31 @@ def open_history():
         "duration": 0.0,
         "after_id": None,
         "volume": 0.8,
+        "started_at": None,
+        "temp_path": None,
         "error": None,
     }
-    _wave_state = {"peaks": [], "path": None}
-    _card_widgets = {}
+    _card_widgets = {}  # path -> list[{card, canvas, play_btn, vol_btn, duration}]
+    _wave_cache = {}
+    _wave_pending = set()
     _active_path = {"v": None}
-    _vol_popup = {"win": None}
+    _vol_popup = {"win": None, "anchor": None, "bind_id": None}
     _empty_state = {"widget": None}
-    _ui_refs = {"vol_btn": None, "play_btn": None}
+    _closing = {"v": False}
+    _wave_executor = concurrent.futures.ThreadPoolExecutor(
+        max_workers=2,
+        thread_name_prefix="history-wave",
+    )
 
-    def _round_btn(parent, text, cmd, diameter=36, primary=False, danger=False, disabled=False):
+    def _round_btn(
+        parent,
+        text,
+        cmd,
+        diameter=36,
+        primary=False,
+        danger=False,
+        disabled=False,
+    ):
         bg = Colors.BG_ACTIVE if primary else Colors.BG_INPUT
         if disabled:
             bg = Colors.BG_DARK
@@ -240,8 +261,7 @@ def open_history():
         else:
             hover = Colors.BG_HOVER if not disabled else Colors.BG_DARK
         scaled_diameter = scaled_size(diameter, min_size=diameter)
-        # УВЕЛИЧЕНО: было 14/12 -> 17/15 как в аудио окне
-        btn = CompatCTkButton(
+        button = CompatCTkButton(
             parent,
             text=text,
             command=cmd if not disabled else None,
@@ -252,264 +272,653 @@ def open_history():
             text_color=Colors.TEXT_MAIN if not disabled else Colors.TEXT_DIM,
             hover_color=hover,
             border_width=0,
-            font=("Segoe UI", scaled_font_size(17 if primary else 15)),
+            font=("Segoe UI", scaled_font_size(16 if primary else 14)),
         )
         if disabled:
-            btn.configure(state="disabled")
-        return btn
+            button.configure(state="disabled")
+        return button
 
-    def _fmt(sec):
-        sec = max(0, int(sec))
-        return f"{sec // 60}:{sec % 60:02d}"
+    def _fmt(seconds):
+        seconds = max(0, int(seconds or 0))
+        return f"{seconds // 60}:{seconds % 60:02d}"
 
-    def _truncate(s, max_chars=44):
-        return s if len(s) <= max_chars else s[: max_chars - 1] + "…"
+    def _truncate(value, max_chars=44):
+        value = str(value or "")
+        return value if len(value) <= max_chars else value[: max_chars - 1] + "…"
 
     def _get_duration(path):
         try:
             if sf is None:
                 return 0.0
-            return sf.info(path).duration
+            return float(sf.info(path).duration)
         except Exception:
             return 0.0
 
-    def _volume_icon(vol):
-        return "🔇" if vol <= 0.001 else ("🔉" if vol < 0.5 else "🔊")
+    def _volume_icon(volume):
+        if volume <= 0.001:
+            return "🔇"
+        return "🔉" if volume < 0.5 else "🔊"
 
-    def _redraw_waveform():
+    def _states_for(path):
+        return _card_widgets.get(path, []) if path else []
+
+    def _safe_unload_music():
+        if hasattr(pygame.mixer.music, "unload"):
+            try:
+                pygame.mixer.music.unload()
+            except Exception:
+                pass
+
+    def _cleanup_temp_audio():
+        temp_path = _p.get("temp_path")
+        _p["temp_path"] = None
+        if not temp_path:
+            return
         try:
-            wave_canvas.delete("all")
-            w = wave_canvas.winfo_width()
-            h = wave_canvas.winfo_height()
-            if w <= 1 or h <= 1:
-                return
-            text_zone_h = 28  # было 22 -> 28
-            body_top = text_zone_h + 6
-            body_h = max(10, h - body_top - 4)
-            mid = body_top + body_h / 2
-            peaks = _wave_state["peaks"]
-            played_frac = 0.0
-            if _p["duration"] > 0:
-                played_frac = min(1.0, max(0.0, _p["pos"] / _p["duration"]))
-            played_x = played_frac * w
-            if not peaks:
-                wave_canvas.create_line(0, mid, w, mid, fill=Colors.BORDER)
-            else:
-                n = len(peaks)
-                bar_w = w / n
-                for i, (mn, mx) in enumerate(peaks):
-                    x0 = i * bar_w
-                    x1 = x0 + max(1.0, bar_w - 1)
-                    y0 = mid - mx * (body_h / 2 - 2)
-                    y1 = mid - mn * (body_h / 2 - 2)
-                    if y1 - y0 < 1.5:
-                        y0 -= 0.75
-                        y1 += 0.75
-                    color = Colors.ACCENT if x0 <= played_x else Colors.BG_INPUT
-                    wave_canvas.create_rectangle(x0, y0, x1, y1, fill=color, outline="")
-            if _p["path"]:
-                wave_canvas.create_line(
-                    played_x, body_top - 2, played_x, h, fill=Colors.TEXT_MAIN, width=1
-                )
-            wave_canvas.create_rectangle(0, 0, w, text_zone_h, fill=Colors.BG_CARD, outline="")
-            if _p.get("error"):
-                title, title_color = _p["error"], Colors.TEXT_ERROR
-            elif _p["path"]:
-                title, title_color = os.path.basename(_p["path"]), Colors.TEXT_MAIN
-            else:
-                title, title_color = t("no_file"), Colors.TEXT_DIM
-            # УВЕЛИЧЕНО: 9->12 и 8->11 как в аудио окне
-            wave_canvas.create_text(
-                10,
-                text_zone_h / 2,
-                text=_truncate(title),
-                anchor="w",
-                fill=title_color,
-                font=("Segoe UI", scaled_font_size(12), "bold"),
-            )
-            time_text = f"{_fmt(_p['pos'])} / {_fmt(_p['duration'])}" if _p["path"] else "0:00"
-            wave_canvas.create_text(
-                w - 10,
-                text_zone_h / 2,
-                text=time_text,
-                anchor="e",
-                fill=Colors.TEXT_DIM,
-                font=("Consolas", scaled_font_size(11)),
-            )
+            if os.path.isfile(temp_path):
+                os.remove(temp_path)
         except Exception:
             pass
 
+    def _set_card_play_state(path, playing):
+        for state in _states_for(path):
+            button = state.get("play_btn")
+            if button is None:
+                continue
+            try:
+                button.configure(
+                    text="■" if playing else "▶",
+                    fg_color=Colors.BG_ACTIVE if playing else Colors.BG_INPUT,
+                    hover_color="#a3342e" if playing else Colors.BG_HOVER,
+                )
+            except Exception:
+                pass
+
+    def _set_active_card(path):
+        previous = _active_path["v"]
+        if previous and previous != path:
+            for state in _states_for(previous):
+                try:
+                    state["card"].configure(
+                        border_color=Colors.BORDER,
+                        border_width=1,
+                    )
+                except Exception:
+                    pass
+        _active_path["v"] = path
+        if path:
+            for state in _states_for(path):
+                try:
+                    state["card"].configure(
+                        border_color=Colors.ACCENT,
+                        border_width=2,
+                    )
+                except Exception:
+                    pass
+
+    def _clear_active_card(path=None):
+        target = path or _active_path["v"]
+        if target:
+            for state in _states_for(target):
+                try:
+                    state["card"].configure(
+                        border_color=Colors.BORDER,
+                        border_width=1,
+                    )
+                except Exception:
+                    pass
+        if not path or _active_path["v"] == path:
+            _active_path["v"] = None
+
+    def _redraw_card_wave(path):
+        for state in list(_states_for(path)):
+            canvas = state.get("canvas")
+            if canvas is None:
+                continue
+            try:
+                if not canvas.winfo_exists():
+                    continue
+                canvas.delete("all")
+                width = max(1, canvas.winfo_width())
+                height = max(1, canvas.winfo_height())
+                duration = float(state.get("duration") or 0.0)
+                active = _p["path"] == path
+                position = _p["pos"] if active else 0.0
+                fraction = 0.0
+                if duration > 0:
+                    fraction = min(1.0, max(0.0, position / duration))
+                played_x = fraction * width
+
+                header_h = scaled_size(17, min_size=15)
+                body_top = header_h + 2
+                body_h = max(10, height - body_top - 3)
+                middle = body_top + body_h / 2
+                peaks = state.get("peaks") or _wave_cache.get(path, [])
+
+                if not state.get("audio_exists"):
+                    canvas.create_line(
+                        0,
+                        middle,
+                        width,
+                        middle,
+                        fill=Colors.BORDER,
+                        dash=(3, 3),
+                    )
+                    canvas.create_text(
+                        4,
+                        header_h / 2,
+                        text=_safe_t("tip_audio_missing", "Аудиофайл удалён"),
+                        anchor="w",
+                        fill=Colors.TEXT_ERROR,
+                        font=("Segoe UI", scaled_font_size(8)),
+                    )
+                    continue
+
+                if not peaks:
+                    canvas.create_line(
+                        0,
+                        middle,
+                        width,
+                        middle,
+                        fill=Colors.BORDER,
+                    )
+                    loading_text = (
+                        _safe_t("history_wave_unavailable", "Wave недоступна")
+                        if state.get("wave_ready")
+                        else _safe_t("history_wave_loading", "Загрузка wave…")
+                    )
+                    canvas.create_text(
+                        4,
+                        header_h / 2,
+                        text=loading_text,
+                        anchor="w",
+                        fill=Colors.TEXT_DIM,
+                        font=("Segoe UI", scaled_font_size(8)),
+                    )
+                else:
+                    max_peak = max(
+                        max(abs(float(minimum)), abs(float(maximum))) for minimum, maximum in peaks
+                    )
+                    max_peak = max(max_peak, 0.04)
+                    scale = (body_h / 2 - 2) / max_peak
+                    count = len(peaks)
+                    bar_width = width / max(count, 1)
+                    for index, (minimum, maximum) in enumerate(peaks):
+                        x0 = index * bar_width
+                        x1 = x0 + max(1.0, bar_width - 1)
+                        y0 = middle - float(maximum) * scale
+                        y1 = middle - float(minimum) * scale
+                        if y1 - y0 < 1.5:
+                            y0 -= 0.75
+                            y1 += 0.75
+                        color = Colors.ACCENT if active and x0 <= played_x else Colors.BORDER
+                        canvas.create_rectangle(
+                            x0,
+                            y0,
+                            x1,
+                            y1,
+                            fill=color,
+                            outline="",
+                        )
+
+                if active:
+                    canvas.create_line(
+                        played_x,
+                        body_top - 1,
+                        played_x,
+                        height,
+                        fill=Colors.TEXT_MAIN,
+                        width=1,
+                    )
+
+                if _p.get("error") and active:
+                    left_text = _truncate(_p["error"], 58)
+                    left_color = Colors.TEXT_ERROR
+                else:
+                    left_text = _safe_t(
+                        "history_wave_seek_hint",
+                        "Нажмите на волну для перемотки",
+                    )
+                    left_color = Colors.TEXT_DIM
+                canvas.create_text(
+                    4,
+                    header_h / 2,
+                    text=left_text,
+                    anchor="w",
+                    fill=left_color,
+                    font=("Segoe UI", scaled_font_size(8)),
+                )
+                canvas.create_text(
+                    width - 4,
+                    header_h / 2,
+                    text=f"{_fmt(position)} / {_fmt(duration)}",
+                    anchor="e",
+                    fill=Colors.TEXT_DIM,
+                    font=("Consolas", scaled_font_size(8)),
+                )
+            except Exception:
+                pass
+
     def _load_waveform_async(path):
-        if _wave_state.get("path") == path and _wave_state.get("peaks"):
-            _redraw_waveform()
+        if not path or path in _wave_pending:
             return
-        _wave_state["peaks"] = []
-        _wave_state["path"] = path
-        _redraw_waveform()
+        if path in _wave_cache:
+            for state in _states_for(path):
+                state["peaks"] = _wave_cache[path]
+                state["wave_ready"] = True
+            _redraw_card_wave(path)
+            return
+
+        _wave_pending.add(path)
 
         def worker():
-            peaks = _compute_waveform_peaks(path)
+            return _compute_waveform_peaks(path)
+
+        future = _wave_executor.submit(worker)
+
+        def done_callback(done_future):
+            try:
+                peaks = done_future.result()
+            except Exception:
+                peaks = []
 
             def apply():
-                if _wave_state["path"] == path:
-                    _wave_state["peaks"] = peaks
-                    _redraw_waveform()
+                _wave_pending.discard(path)
+                if _closing["v"]:
+                    return
+                _wave_cache[path] = peaks
+                for state in _states_for(path):
+                    state["peaks"] = peaks
+                    state["wave_ready"] = True
+                _redraw_card_wave(path)
 
             try:
                 win.after(0, apply)
             except Exception:
                 pass
 
-        threading.Thread(target=worker, daemon=True).start()
-
-    def _wave_seek(event):
-        w = wave_canvas.winfo_width()
-        if w <= 1 or not _p["path"] or not _p["duration"]:
-            return
-        frac = min(1.0, max(0.0, event.x / w))
-        _load_play(_p["path"], frac * _p["duration"])
-
-    def _reset_player_ui():
-        _stop_ticker()
-        _p.update(playing=False, path=None, pos=0.0, duration=0.0, error=None)
-        _wave_state.update(peaks=[], path=None)
-        try:
-            _ui_refs.get("play_btn", {}).configure(text="▶")
-        except Exception:
-            try:
-                play_btn.configure(text="▶")
-            except Exception:
-                pass
-        _redraw_waveform()
-
-    def _tick():
-        if not PYGAME_OK:
-            return
-        try:
-            if pygame.mixer.music.get_busy():
-                _p["pos"] += 0.2
-                _redraw_waveform()
-                _p["after_id"] = win.after(200, _tick)
-            else:
-                _p["after_id"] = None
-                _reset_player_ui()
-        except Exception:
-            pass
+        future.add_done_callback(done_callback)
 
     def _stop_ticker():
-        if _p["after_id"]:
+        after_id = _p.get("after_id")
+        if after_id:
             try:
-                win.after_cancel(_p["after_id"])
+                win.after_cancel(after_id)
             except Exception:
                 pass
             _p["after_id"] = None
 
-    def _load_play(path, from_pos=0.0):
-        if not PYGAME_OK or not path or not os.path.isfile(path):
-            messagebox.showwarning("⚠", t("dlg_audio_unavailable"), parent=win)
-            return
+    def _stop_playback(reset_position=True):
+        previous = _p.get("path")
         _stop_ticker()
         try:
             pygame.mixer.music.stop()
-            pygame.mixer.music.load(path)
-            pygame.mixer.music.set_volume(_p["volume"])
-            # ФИКС: fallback для WAV
-            try:
-                pygame.mixer.music.play(start=from_pos)
-            except TypeError:
-                pygame.mixer.music.play()
-            except Exception:
-                try:
-                    pygame.mixer.music.play()
-                except Exception:
-                    raise
-            dur = _get_duration(path)
-            _p.update(playing=True, path=path, pos=from_pos, duration=dur, error=None)
-            _load_waveform_async(path)
-            _redraw_waveform()
-            _highlight_active(path)
-            try:
-                _ui_refs.get("play_btn").configure(text="⏸")
-            except Exception:
-                try:
-                    play_btn.configure(text="⏸")
-                except Exception:
-                    pass
-            _tick()
-        except Exception as e:
-            _p["error"] = str(e)
-            _redraw_waveform()
+        except Exception:
+            pass
+        _safe_unload_music()
+        _cleanup_temp_audio()
+        _p.update(
+            playing=False,
+            path=None,
+            pos=0.0 if reset_position else _p.get("pos", 0.0),
+            duration=0.0,
+            started_at=None,
+            error=None,
+        )
+        if previous:
+            _set_card_play_state(previous, False)
+            _clear_active_card(previous)
+            _redraw_card_wave(previous)
 
-    def toggle_play():
-        if not PYGAME_OK:
-            return
-        if _p["playing"]:
-            pygame.mixer.music.pause()
-            _p["playing"] = False
-            _stop_ticker()
-            try:
-                _ui_refs.get("play_btn").configure(text="▶")
-            except Exception:
-                play_btn.configure(text="▶")
-        else:
-            if _p["path"] and os.path.isfile(_p["path"]):
-                pygame.mixer.music.unpause()
-                _p["playing"] = True
-                try:
-                    _ui_refs.get("play_btn").configure(text="⏸")
-                except Exception:
-                    play_btn.configure(text="⏸")
-                _tick()
-
-    def seek_rel(delta):
-        if not _p["path"]:
-            return
-        _load_play(_p["path"], max(0.0, _p["pos"] + delta))
-
-    def on_volume_change(vol):
-        vol = max(0.0, min(1.0, vol))
-        _p["volume"] = vol
-        if PYGAME_OK:
-            try:
-                pygame.mixer.music.set_volume(vol)
-            except Exception:
-                pass
+    def _make_seek_temp(path, from_pos):
+        if sf is None or from_pos <= 0.01:
+            return None
+        temp_handle = tempfile.NamedTemporaryFile(
+            prefix="xtts_history_seek_",
+            suffix=".wav",
+            delete=False,
+        )
+        temp_path = temp_handle.name
+        temp_handle.close()
         try:
-            vb = _ui_refs.get("vol_btn")
-            if vb:
-                vb.configure(text=_volume_icon(vol))
+            with sf.SoundFile(path, "r") as source:
+                start_frame = min(
+                    source.frames,
+                    max(0, int(float(from_pos) * source.samplerate)),
+                )
+                source.seek(start_frame)
+                with sf.SoundFile(
+                    temp_path,
+                    "w",
+                    samplerate=source.samplerate,
+                    channels=source.channels,
+                    format="WAV",
+                    subtype="PCM_16",
+                ) as target:
+                    while True:
+                        data = source.read(65536, dtype="float32", always_2d=True)
+                        if data.size == 0:
+                            break
+                        target.write(data)
+            if os.path.getsize(temp_path) > 44:
+                return temp_path
+        except Exception:
+            pass
+        try:
+            os.remove(temp_path)
+        except Exception:
+            pass
+        return None
+
+    def _tick():
+        if not PYGAME_OK or not _p["playing"] or not _p["path"]:
+            return
+        try:
+            if pygame.mixer.music.get_busy():
+                if _p.get("started_at") is not None:
+                    current = time.monotonic() - _p["started_at"]
+                    if _p["duration"] > 0:
+                        current = min(current, _p["duration"])
+                    _p["pos"] = max(0.0, current)
+                _redraw_card_wave(_p["path"])
+                _p["after_id"] = win.after(100, _tick)
             else:
-                vol_btn.configure(text=_volume_icon(vol))
+                _p["after_id"] = None
+                _stop_playback(reset_position=True)
+        except Exception as error:
+            _p["error"] = str(error)
+            if _p["path"]:
+                _redraw_card_wave(_p["path"])
+
+    def _load_play(path, from_pos=0.0):
+        if not PYGAME_OK:
+            messagebox.showwarning("⚠", t("dlg_audio_unavailable"), parent=win)
+            return
+        if not path or not os.path.isfile(path):
+            messagebox.showwarning(
+                "⚠",
+                _safe_t("tip_audio_missing", "Аудиофайл удалён"),
+                parent=win,
+            )
+            return
+
+        # Останавливаем RVC-preview через общий player.py, чтобы его кнопка
+        # также вернулась из ■ в ▶.
+        try:
+            from engine.gui import player as shared_player
+
+            shared_player.stop_rvc_preview()
         except Exception:
             pass
 
-    def _highlight_active(path):
-        prev = _active_path["v"]
-        if prev and prev in _card_widgets:
+        previous = _p.get("path")
+        _stop_ticker()
+        try:
+            pygame.mixer.music.stop()
+        except Exception:
+            pass
+        _safe_unload_music()
+        _cleanup_temp_audio()
+        if previous:
+            _set_card_play_state(previous, False)
+            if previous != path:
+                _clear_active_card(previous)
+            _redraw_card_wave(previous)
+
+        duration = _get_duration(path)
+        if duration > 0:
+            from_pos = min(max(0.0, float(from_pos)), max(0.0, duration - 0.02))
+        else:
+            from_pos = max(0.0, float(from_pos))
+
+        play_path = path
+        temp_path = None
+        try:
+            # Для WAV play(start=) зависит от SDL_mixer и часто игнорирует seek.
+            # В таком случае проигрываем временный WAV-срез с нужной позиции.
+            if from_pos > 0.01 and os.path.splitext(path)[1].lower() == ".wav":
+                temp_path = _make_seek_temp(path, from_pos)
+                if temp_path:
+                    play_path = temp_path
+
+            pygame.mixer.music.load(play_path)
+            pygame.mixer.music.set_volume(_p["volume"])
+            if temp_path or from_pos <= 0.01:
+                pygame.mixer.music.play()
+            else:
+                try:
+                    pygame.mixer.music.play(start=from_pos)
+                except Exception:
+                    pygame.mixer.music.play()
+                    try:
+                        pygame.mixer.music.set_pos(from_pos)
+                    except Exception:
+                        from_pos = 0.0
+
+            _p.update(
+                playing=True,
+                path=path,
+                pos=from_pos,
+                duration=duration,
+                started_at=time.monotonic() - from_pos,
+                temp_path=temp_path,
+                error=None,
+            )
+            _set_active_card(path)
+            _set_card_play_state(path, True)
+            _redraw_card_wave(path)
+            _tick()
+        except Exception as error:
             try:
-                _card_widgets[prev].configure(border_color=Colors.BORDER, border_width=1)
+                pygame.mixer.music.stop()
             except Exception:
                 pass
-        _active_path["v"] = path
-        if path in _card_widgets:
+            _safe_unload_music()
+            if temp_path:
+                try:
+                    os.remove(temp_path)
+                except Exception:
+                    pass
+            _p.update(
+                playing=False,
+                path=path,
+                pos=0.0,
+                duration=duration,
+                started_at=None,
+                temp_path=None,
+                error=str(error),
+            )
+            _set_card_play_state(path, False)
+            _set_active_card(path)
+            _redraw_card_wave(path)
+
+    def _toggle_card_play(path):
+        if _p["playing"] and _p["path"] == path:
+            _stop_playback(reset_position=True)
+        else:
+            _load_play(path, 0.0)
+
+    def _wave_seek(path, event):
+        states = _states_for(path)
+        if not states or not os.path.isfile(path):
+            return
+        canvas = event.widget
+        width = max(1, canvas.winfo_width())
+        duration = float(states[0].get("duration") or _get_duration(path))
+        if duration <= 0:
+            return
+        fraction = min(1.0, max(0.0, float(event.x) / width))
+        _load_play(path, fraction * duration)
+
+    def on_volume_change(volume):
+        volume = max(0.0, min(1.0, float(volume)))
+        _p["volume"] = volume
+        if PYGAME_OK:
             try:
-                _card_widgets[path].configure(border_color=Colors.ACCENT, border_width=2)
+                pygame.mixer.music.set_volume(volume)
+            except Exception:
+                pass
+        icon = _volume_icon(volume)
+        for states in _card_widgets.values():
+            for state in states:
+                button = state.get("vol_btn")
+                if button is not None:
+                    try:
+                        button.configure(text=icon)
+                    except Exception:
+                        pass
+
+    def _close_volume_popup(event=None):
+        popup = _vol_popup.get("win")
+        bind_id = _vol_popup.get("bind_id")
+        if bind_id:
+            try:
+                win.unbind("<Button-1>", bind_id)
+            except Exception:
+                pass
+        _vol_popup.update(win=None, anchor=None, bind_id=None)
+        if popup is not None:
+            try:
+                popup.destroy()
             except Exception:
                 pass
 
+    def _toggle_volume_popup(anchor_button):
+        if _vol_popup["win"] is not None:
+            same_anchor = _vol_popup.get("anchor") == anchor_button
+            _close_volume_popup()
+            if same_anchor:
+                return
+
+        popup_width, popup_height = 56, 168
+        popup = tk.Toplevel(win)
+        popup.overrideredirect(True)
+        popup.attributes("-topmost", True)
+        try:
+            popup.configure(bg=_VOL_TRANSPARENT_KEY)
+            popup.attributes("-transparentcolor", _VOL_TRANSPARENT_KEY)
+            canvas_bg = _VOL_TRANSPARENT_KEY
+        except Exception:
+            popup.configure(bg=Colors.BG_DARK)
+            canvas_bg = Colors.BG_DARK
+
+        x = anchor_button.winfo_rootx() - (popup_width - anchor_button.winfo_width()) // 2
+        y = anchor_button.winfo_rooty() - popup_height - 8
+        popup.geometry(f"{popup_width}x{popup_height}+{x}+{y}")
+        popup_canvas = tk.Canvas(
+            popup,
+            width=popup_width,
+            height=popup_height,
+            bg=canvas_bg,
+            highlightthickness=0,
+            bd=0,
+        )
+        popup_canvas.pack(fill="both", expand=True)
+
+        track_top, track_bottom = 16, popup_height - 40
+        track_height = track_bottom - track_top
+        center_x = popup_width / 2
+
+        def redraw_slider():
+            popup_canvas.delete("all")
+            _round_rect(
+                popup_canvas,
+                2,
+                2,
+                popup_width - 2,
+                popup_height - 2,
+                18,
+                fill=Colors.BG_CARD,
+                outline=Colors.BORDER,
+            )
+            _round_rect(
+                popup_canvas,
+                center_x - 3,
+                track_top,
+                center_x + 3,
+                track_bottom,
+                3,
+                fill=Colors.BG_INPUT,
+                outline="",
+            )
+            fill_top = track_top + track_height * (1 - _p["volume"])
+            if track_bottom - fill_top > 1:
+                _round_rect(
+                    popup_canvas,
+                    center_x - 3,
+                    fill_top,
+                    center_x + 3,
+                    track_bottom,
+                    3,
+                    fill=Colors.ACCENT,
+                    outline="",
+                )
+            thumb_y = track_top + track_height * (1 - _p["volume"])
+            popup_canvas.create_oval(
+                center_x - 7,
+                thumb_y - 7,
+                center_x + 7,
+                thumb_y + 7,
+                fill=Colors.TEXT_MAIN,
+                outline="",
+            )
+            popup_canvas.create_text(
+                center_x,
+                popup_height - 18,
+                text=_volume_icon(_p["volume"]),
+                font=("Segoe UI", scaled_font_size(14)),
+                fill=Colors.TEXT_DIM,
+            )
+
+        def on_slider_drag(event):
+            fraction = 1 - min(
+                1.0,
+                max(0.0, (event.y - track_top) / track_height),
+            )
+            on_volume_change(fraction)
+            redraw_slider()
+
+        popup_canvas.bind("<Button-1>", on_slider_drag)
+        popup_canvas.bind("<B1-Motion>", on_slider_drag)
+        popup.bind("<Escape>", _close_volume_popup)
+        redraw_slider()
+        popup.focus_force()
+
+        def on_window_click(event):
+            try:
+                px, py = popup.winfo_rootx(), popup.winfo_rooty()
+                pw, ph = popup.winfo_width(), popup.winfo_height()
+                inside_popup = px <= event.x_root <= px + pw and py <= event.y_root <= py + ph
+                bx, by = anchor_button.winfo_rootx(), anchor_button.winfo_rooty()
+                bw, bh = anchor_button.winfo_width(), anchor_button.winfo_height()
+                inside_button = bx <= event.x_root <= bx + bw and by <= event.y_root <= by + bh
+                if not inside_popup and not inside_button:
+                    _close_volume_popup()
+            except Exception:
+                _close_volume_popup()
+
+        bind_id = win.bind("<Button-1>", on_window_click, add="+")
+        _vol_popup.update(win=popup, anchor=anchor_button, bind_id=bind_id)
+
     def clear_history():
-        if not messagebox.askyesno(t("ctx_clear"), t("dlg_clear_history"), parent=win):
+        if not messagebox.askyesno(
+            t("ctx_clear"),
+            t("dlg_clear_history"),
+            parent=win,
+        ):
             return
+        _stop_playback(reset_position=True)
         try:
             os.remove(HISTORY_PATH)
         except Exception:
             pass
-        for w in list(list_frame.winfo_children()):
+        for widget in list(list_frame.winfo_children()):
             try:
-                w.destroy()
+                widget.destroy()
             except Exception:
                 pass
         _card_widgets.clear()
+        _wave_cache.clear()
         _active_path["v"] = None
         count_lbl.configure(text=t("entries_count", 0))
         _maybe_show_empty_state()
@@ -524,137 +933,18 @@ def open_history():
                 _empty_state["widget"] = None
             return
         if _empty_state["widget"] is None:
-            # УВЕЛИЧЕНО: 10->13
-            lbl = CompatCTkLabel(
+            label = CompatCTkLabel(
                 list_frame,
                 text=t("history_empty"),
                 fg_color=Colors.BG_DARK,
                 text_color=Colors.TEXT_DIM,
                 font=("Segoe UI", scaled_font_size(13)),
             )
-            lbl.pack(pady=50)
-            _empty_state["widget"] = lbl
-
-    def _close_volume_popup(event=None):
-        w = _vol_popup["win"]
-        if w is not None:
-            try:
-                win.unbind("<Button-1>")
-            except Exception:
-                try:
-                    win.unbind_all("<Button-1>")
-                except Exception:
-                    pass
-            try:
-                w.destroy()
-            except Exception:
-                pass
-            _vol_popup["win"] = None
-
-    def _toggle_volume_popup():
-        if _vol_popup["win"] is not None:
-            _close_volume_popup()
-            return
-        popup_w, popup_h = 56, 168
-        popup = tk.Toplevel(vol_btn)
-        popup.overrideredirect(True)
-        popup.attributes("-topmost", True)
-        try:
-            popup.configure(bg=_VOL_TRANSPARENT_KEY)
-            popup.attributes("-transparentcolor", _VOL_TRANSPARENT_KEY)
-            canvas_bg = _VOL_TRANSPARENT_KEY
-        except Exception:
-            popup.configure(bg=Colors.BG_DARK)
-            canvas_bg = Colors.BG_DARK
-        x = vol_btn.winfo_rootx() - (popup_w - vol_btn.winfo_width()) // 2
-        y = vol_btn.winfo_rooty() - popup_h - 10
-        popup.geometry(f"{popup_w}x{popup_h}+{x}+{y}")
-        pcanvas = tk.Canvas(
-            popup, width=popup_w, height=popup_h, bg=canvas_bg, highlightthickness=0, bd=0
-        )
-        pcanvas.pack(fill="both", expand=True)
-
-        track_top, track_bottom = 16, popup_h - 40
-        track_h = track_bottom - track_top
-        cx = popup_w / 2
-
-        def _redraw_slider():
-            pcanvas.delete("all")
-            _round_rect(
-                pcanvas,
-                2,
-                2,
-                popup_w - 2,
-                popup_h - 2,
-                18,
-                fill=Colors.BG_CARD,
-                outline=Colors.BORDER,
-            )
-            _round_rect(
-                pcanvas,
-                cx - 3,
-                track_top,
-                cx + 3,
-                track_bottom,
-                3,
-                fill=Colors.BG_INPUT,
-                outline="",
-            )
-            fill_top = track_top + track_h * (1 - _p["volume"])
-            if track_bottom - fill_top > 1:
-                _round_rect(
-                    pcanvas,
-                    cx - 3,
-                    fill_top,
-                    cx + 3,
-                    track_bottom,
-                    3,
-                    fill=Colors.ACCENT,
-                    outline="",
-                )
-            thumb_y = track_top + track_h * (1 - _p["volume"])
-            pcanvas.create_oval(
-                cx - 7, thumb_y - 7, cx + 7, thumb_y + 7, fill=Colors.TEXT_MAIN, outline=""
-            )
-            # УВЕЛИЧЕНО 11->14
-            pcanvas.create_text(
-                cx,
-                popup_h - 18,
-                text=_volume_icon(_p["volume"]),
-                font=("Segoe UI", scaled_font_size(14)),
-                fill=Colors.TEXT_DIM,
-            )
-
-        def _on_slider_drag(event):
-            frac = 1 - min(1.0, max(0.0, (event.y - track_top) / track_h))
-            on_volume_change(frac)
-            _redraw_slider()
-
-        pcanvas.bind("<Button-1>", _on_slider_drag)
-        pcanvas.bind("<B1-Motion>", _on_slider_drag)
-        _redraw_slider()
-
-        popup.bind("<Escape>", _close_volume_popup)
-        popup.focus_force()
-
-        def _on_global_click(event):
-            try:
-                wx, wy = popup.winfo_rootx(), popup.winfo_rooty()
-                ww, wh = popup.winfo_width(), popup.winfo_height()
-                inside_popup = wx <= event.x_root <= wx + ww and wy <= event.y_root <= wy + wh
-                bx, by = vol_btn.winfo_rootx(), vol_btn.winfo_rooty()
-                bw, bh = vol_btn.winfo_width(), vol_btn.winfo_height()
-                inside_btn = bx <= event.x_root <= bx + bw and by <= event.y_root <= by + bh
-                if not inside_popup and not inside_btn:
-                    _close_volume_popup()
-            except Exception:
-                _close_volume_popup()
-
-        win.bind_all("<Button-1>", _on_global_click, add="+")
-        _vol_popup["win"] = popup
+            label.pack(pady=50)
+            _empty_state["widget"] = label
 
     def _make_card(parent, entry):
-        output_path = entry.get("output", "")
+        output_path = str(entry.get("output", "") or "")
         audio_exists = bool(output_path) and os.path.isfile(output_path)
 
         card = CompatCTkFrame(
@@ -665,71 +955,130 @@ def open_history():
             border_color=Colors.BORDER,
         )
         card.pack(fill="x", padx=4, pady=5)
-        if output_path:
-            _card_widgets[output_path] = card
 
-        # ФИКС: actions пакуем ПЕРВЫМ справа, чтобы его не съедало left с expand=True
-        # при крупном шрифте кнопка ↩ раньше уезжала за край карточки
-        actions = tk.Frame(card, bg=Colors.BG_CARD)
-        actions.pack(side="right", padx=12, pady=10, anchor="e")
+        top_row = tk.Frame(card, bg=Colors.BG_CARD)
+        top_row.pack(fill="x", padx=12, pady=(9, 2))
 
-        def _play_entry(p=output_path):
-            _load_play(p, 0.0)
+        # Кнопки пакуются первыми справа: Play/Stop и громкость всегда видны.
+        actions = tk.Frame(top_row, bg=Colors.BG_CARD)
+        actions.pack(side="right", padx=(10, 0), anchor="ne")
 
-        btn_listen = _round_btn(actions, "▶", _play_entry, diameter=34, disabled=not audio_exists)
-        btn_listen.pack(side="left", padx=(0, 6))
+        play_button = _round_btn(
+            actions,
+            "▶",
+            lambda path=output_path: _toggle_card_play(path),
+            diameter=34,
+            disabled=not audio_exists,
+        )
+        play_button.pack(side="left", padx=(0, 4))
         ToolTip(
-            btn_listen,
+            play_button,
             (
-                _safe_t("tip_listen", "Прослушать")
+                _safe_t("history_play_stop_tip", "Воспроизвести / остановить")
                 if audio_exists
                 else _safe_t("tip_audio_missing", "Аудио удалено")
             ),
         )
 
-        def _reuse(t_text=entry.get("text", "")):
-            set_textbox_content(t_text)
+        volume_button = None
+        if audio_exists:
+            volume_button = _round_btn(
+                actions,
+                _volume_icon(_p["volume"]),
+                lambda: _toggle_volume_popup(volume_button),
+                diameter=34,
+            )
+            volume_button.pack(side="left", padx=(0, 6))
+            ToolTip(volume_button, _safe_t("history_volume_tip", "Громкость"))
+
+        def reuse_text(text=entry.get("text", "")):
+            set_textbox_content(text)
             on_close()
 
-        btn_reuse = _round_btn(actions, "↩", _reuse, diameter=34)
-        btn_reuse.pack(side="left")
-        ToolTip(btn_reuse, _safe_t("tip_reuse", "Вставить текст обратно"))
+        reuse_button = _round_btn(actions, "↩", reuse_text, diameter=34)
+        reuse_button.pack(side="left")
+        ToolTip(reuse_button, _safe_t("tip_reuse", "Вставить текст обратно"))
 
-        left = tk.Frame(card, bg=Colors.BG_CARD)
-        left.pack(side="left", fill="both", expand=True, padx=14, pady=10)
+        text_column = tk.Frame(top_row, bg=Colors.BG_CARD)
+        text_column.pack(side="left", fill="both", expand=True)
 
-        # УВЕЛИЧЕНО: дата 8->11, мета 8->11, превью 11->14
         CompatCTkLabel(
-            left,
+            text_column,
             text=entry.get("date", ""),
             fg_color=Colors.BG_CARD,
             text_color=Colors.ACCENT,
-            font=("Segoe UI", scaled_font_size(11), "bold"),
+            font=("Segoe UI", scaled_font_size(10), "bold"),
             anchor="w",
         ).pack(fill="x")
-        meta = f"🎤 {entry.get('voice', '?')}   ·   ⭐ {entry.get('quality', '?')}   ·   {entry.get('chunks', 0)} {t('chunks_word')}"
+
+        meta = (
+            f"🎤 {entry.get('voice', '?')}   ·   ⭐ {entry.get('quality', '?')}"
+            f"   ·   {entry.get('chunks', 0)} {t('chunks_word')}"
+        )
         CompatCTkLabel(
-            left,
+            text_column,
             text=meta,
             fg_color=Colors.BG_CARD,
             text_color=Colors.TEXT_DIM,
-            font=("Segoe UI", scaled_font_size(11)),
+            font=("Segoe UI", scaled_font_size(10)),
             anchor="w",
-        ).pack(fill="x", pady=(2, 4))
-        text_preview = entry.get("text", "").replace("\n", " ")
-        # ФИКС: уменьшили обрезку с 90 до 65 символов,
-        # чтобы при крупном шрифте текст не выдавливал кнопки за пределы карточки
+        ).pack(fill="x", pady=(2, 3))
+
+        text_preview = str(entry.get("text", "") or "").replace("\n", " ")
         CompatCTkLabel(
-            left,
-            text=_truncate(text_preview, 65),
+            text_column,
+            text=_truncate(text_preview, 72),
             fg_color=Colors.BG_CARD,
             text_color=Colors.TEXT_MAIN,
-            font=("Segoe UI", scaled_font_size(14)),
+            font=("Segoe UI", scaled_font_size(12)),
             anchor="w",
             justify="left",
         ).pack(fill="x")
 
-    # LAYOUT
+        wave_canvas = tk.Canvas(
+            card,
+            bg=Colors.BG_CARD,
+            height=scaled_size(58, min_size=52),
+            bd=0,
+            highlightthickness=0,
+            cursor="hand2" if audio_exists else "arrow",
+        )
+        wave_canvas.pack(fill="x", padx=14, pady=(1, 10))
+
+        duration = _get_duration(output_path) if audio_exists else 0.0
+        state = {
+            "card": card,
+            "canvas": wave_canvas,
+            "play_btn": play_button,
+            "vol_btn": volume_button,
+            "duration": duration,
+            "peaks": [],
+            "wave_ready": not audio_exists,
+            "audio_exists": audio_exists,
+        }
+        card_key = output_path or f"__missing_audio_{id(card)}"
+        _card_widgets.setdefault(card_key, []).append(state)
+
+        if audio_exists:
+            wave_canvas.bind(
+                "<Button-1>",
+                lambda event, path=output_path: _wave_seek(path, event),
+            )
+            ToolTip(
+                wave_canvas,
+                _safe_t(
+                    "history_wave_seek_tooltip",
+                    "Нажмите на волну, чтобы перейти к нужному месту",
+                ),
+            )
+            _load_waveform_async(output_path)
+        wave_canvas.bind(
+            "<Configure>",
+            lambda event, path=card_key: _redraw_card_wave(path),
+        )
+        _redraw_card_wave(card_key)
+
+    # ── Layout: только шапка и прокручиваемые карточки; нижнего плеера нет. ──
     header = tk.Frame(win, bg=Colors.BG_DARK, pady=12)
     header.pack(fill="x", padx=16)
 
@@ -743,9 +1092,9 @@ def open_history():
     clear_pill.pack(side="left")
     clear_row = tk.Frame(clear_pill, bg=Colors.BG_CARD)
     clear_row.pack(padx=6, pady=6)
-    btn_clear = _round_btn(clear_row, "🗑", clear_history, diameter=36, danger=True)
-    btn_clear.pack(side="left")
-    ToolTip(btn_clear, t("btn_clear_history"))
+    clear_button = _round_btn(clear_row, "🗑", clear_history, diameter=36, danger=True)
+    clear_button.pack(side="left")
+    ToolTip(clear_button, t("btn_clear_history"))
 
     count_pill = CompatCTkFrame(
         header,
@@ -755,7 +1104,6 @@ def open_history():
         border_color=Colors.BORDER,
     )
     count_pill.pack(side="right")
-    # УВЕЛИЧЕНО 9->12
     count_lbl = CompatCTkLabel(
         count_pill,
         text=t("entries_count", len(history)),
@@ -765,56 +1113,16 @@ def open_history():
     )
     count_lbl.pack(padx=16, pady=9)
 
-    list_frame = ctk.CTkScrollableFrame(win, fg_color=Colors.BG_DARK, corner_radius=12)
-    list_frame.pack(fill="both", expand=True, padx=12, pady=(4, 6))
+    list_frame = ctk.CTkScrollableFrame(
+        win,
+        fg_color=Colors.BG_DARK,
+        corner_radius=12,
+    )
+    list_frame.pack(fill="both", expand=True, padx=12, pady=(4, 12))
 
-    for entry in history:
-        _make_card(list_frame, entry)
+    for history_entry in history:
+        _make_card(list_frame, history_entry)
     _maybe_show_empty_state()
-
-    outer_wrap = tk.Frame(win, bg=Colors.BG_DARK)
-    outer_wrap.pack(fill="x", side="bottom")
-
-    player_card = CompatCTkFrame(
-        outer_wrap,
-        fg_color=Colors.BG_CARD,
-        corner_radius=20,
-        border_width=1,
-        border_color=Colors.BORDER,
-    )
-    player_card.pack(fill="x", padx=14, pady=(6, 14))
-
-    wave_canvas = tk.Canvas(
-        player_card, bg=Colors.BG_CARD, height=90, bd=0, highlightthickness=0, cursor="hand2"
-    )
-    wave_canvas.pack(fill="x", padx=18, pady=(16, 6))
-    wave_canvas.bind("<Button-1>", _wave_seek)
-    wave_canvas.bind("<B1-Motion>", _wave_seek)
-    wave_canvas.bind("<Configure>", lambda e: _redraw_waveform())
-
-    ctrl_pill = CompatCTkFrame(player_card, fg_color=Colors.BG_INPUT, corner_radius=26)
-    ctrl_pill.pack(pady=(2, 18))
-    ctrl_row = tk.Frame(ctrl_pill, bg=Colors.BG_INPUT)
-    ctrl_row.pack(padx=12, pady=8)
-
-    btn_back10 = _round_btn(ctrl_row, "⏪", lambda: seek_rel(-10), diameter=38)
-    btn_back10.pack(side="left", padx=4)
-    btn_back5 = _round_btn(ctrl_row, "⏮", lambda: seek_rel(-5), diameter=38)
-    btn_back5.pack(side="left", padx=4)
-
-    play_btn = _round_btn(ctrl_row, "▶", toggle_play, diameter=56, primary=True)
-    play_btn.pack(side="left", padx=10)
-    _ui_refs["play_btn"] = play_btn
-
-    btn_fwd5 = _round_btn(ctrl_row, "⏭", lambda: seek_rel(5), diameter=38)
-    btn_fwd5.pack(side="left", padx=4)
-    btn_fwd10 = _round_btn(ctrl_row, "⏩", lambda: seek_rel(10), diameter=38)
-    btn_fwd10.pack(side="left", padx=4)
-
-    vol_btn = _round_btn(ctrl_row, _volume_icon(_p["volume"]), _toggle_volume_popup, diameter=38)
-    vol_btn.pack(side="left", padx=(16, 0))
-    ToolTip(vol_btn, "Громкость")
-    _ui_refs["vol_btn"] = vol_btn
 
     if PYGAME_OK:
         try:
@@ -822,21 +1130,29 @@ def open_history():
         except Exception:
             pass
 
-    _redraw_waveform()
     try:
         win.after(150, lambda: _apply_window_icon(win))
     except Exception:
         pass
 
     def on_close():
+        if _closing["v"]:
+            return
+        _closing["v"] = True
         _close_volume_popup()
-        _stop_ticker()
+        _stop_playback(reset_position=True)
         try:
-            pygame.mixer.music.stop()
-            if hasattr(pygame.mixer.music, "unload"):
-                pygame.mixer.music.unload()
+            _wave_executor.shutdown(wait=False, cancel_futures=True)
+        except TypeError:
+            try:
+                _wave_executor.shutdown(wait=False)
+            except Exception:
+                pass
         except Exception:
             pass
-        win.destroy()
+        try:
+            win.destroy()
+        except Exception:
+            pass
 
     win.protocol("WM_DELETE_WINDOW", on_close)

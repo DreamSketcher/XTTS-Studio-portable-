@@ -1,9 +1,17 @@
 # -*- coding: utf-8 -*-
-"""engine/gui/presets.py — пресеты качества (компактный редизайн, быстрый скролл) с интеграцией RVC"""
-import tkinter as tk
+"""engine/gui/presets.py — пресеты качества с RVC и ограниченным скроллом без overscroll."""
+import hashlib
 import os
+import tempfile
+import threading
+import tkinter as tk
 
 import customtkinter as ctk
+
+try:
+    import soundfile as sf
+except ImportError:
+    sf = None
 
 from i18n import t
 from engine.paths import BASE_DIR
@@ -367,6 +375,12 @@ def open_quality_settings(preset_name):
     ).pack(side="left")
 
     def _close_and_save():
+        try:
+            from engine.gui import player as shared_player
+
+            shared_player.stop_rvc_preview()
+        except Exception:
+            pass
         # quality_params (включая RVC: enable/model/index/pitch/f0) сериализуются
         # целиком в settings.json → quality_params[preset] через settings_ui.save_settings.
         # Дополнительно пишем последнюю вкладку окна.
@@ -424,39 +438,72 @@ def open_quality_settings(preset_name):
     scroll.pack(fill="both", expand=True, padx=10, pady=(0, 6))
 
     _SCROLL_STEP = 28
+    _SCROLL_EPSILON = 0.002
+
+    def _normalize_scroll_position():
+        """Запрещает overscroll, когда содержимое ниже высоты viewport."""
+        try:
+            canvas = scroll._parent_canvas
+            canvas.update_idletasks()
+            bbox = canvas.bbox("all")
+            if not bbox:
+                canvas.yview_moveto(0.0)
+                return False
+            canvas.configure(scrollregion=bbox)
+            content_height = max(0, bbox[3] - bbox[1])
+            viewport_height = max(1, canvas.winfo_height())
+            if content_height <= viewport_height + 1:
+                # Tk Canvas допускает отрицательный origin, если scrollregion
+                # меньше viewport. Именно это сдвигало карточку вниз колесом.
+                canvas.yview_moveto(0.0)
+                return False
+            first, last = canvas.yview()
+            if first < _SCROLL_EPSILON:
+                canvas.yview_moveto(0.0)
+            elif last > 1.0 - _SCROLL_EPSILON:
+                canvas.yview_moveto(max(0.0, 1.0 - (last - first)))
+            return True
+        except Exception:
+            return False
+
+    def _scroll_content(units):
+        """Скроллит только при реальном переполнении и строго в его границах."""
+        try:
+            canvas = scroll._parent_canvas
+            if not _normalize_scroll_position():
+                return "break"
+            first, last = canvas.yview()
+            if units < 0 and first <= _SCROLL_EPSILON:
+                canvas.yview_moveto(0.0)
+                return "break"
+            if units > 0 and last >= 1.0 - _SCROLL_EPSILON:
+                return "break"
+            canvas.yview_scroll(int(units), "units")
+            return "break"
+        except Exception:
+            return "break"
 
     def _fast_scroll_up(e=None):
-        try:
-            scroll._parent_canvas.yview_scroll(-_SCROLL_STEP, "units")
-            return "break"
-        except Exception:
-            pass
+        return _scroll_content(-_SCROLL_STEP)
 
     def _fast_scroll_down(e=None):
-        try:
-            scroll._parent_canvas.yview_scroll(_SCROLL_STEP, "units")
-            return "break"
-        except Exception:
-            pass
+        return _scroll_content(_SCROLL_STEP)
 
     def _fast_wheel(e):
         try:
-            canvas = scroll._parent_canvas
             if hasattr(e, "delta") and e.delta:
                 steps = int(e.delta / 120)
                 if steps == 0:
                     steps = 1 if e.delta > 0 else -1
-                canvas.yview_scroll(-steps * _SCROLL_STEP, "units")
-                return "break"
+                return _scroll_content(-steps * _SCROLL_STEP)
             num = getattr(e, "num", None)
             if num == 4:
-                canvas.yview_scroll(-_SCROLL_STEP, "units")
-                return "break"
+                return _scroll_content(-_SCROLL_STEP)
             if num == 5:
-                canvas.yview_scroll(_SCROLL_STEP, "units")
-                return "break"
+                return _scroll_content(_SCROLL_STEP)
         except Exception:
             pass
+        return "break"
 
     try:
         scroll._parent_canvas.bind("<MouseWheel>", _fast_wheel, add=True)
@@ -619,6 +666,31 @@ def open_quality_settings(preset_name):
     )
     model_dropdown.pack(side="right")
 
+    parameter_preview_state = {
+        "loading": False,
+        "playing": False,
+        "token": 0,
+        "path": None,
+    }
+    parameter_preview_btn = CompatCTkButton(
+        model_row,
+        text="▶",
+        command=lambda: _toggle_parameter_preview(),
+        width=scaled_size(30, min_size=28),
+        height=scaled_size(30, min_size=28),
+        corner_radius=8,
+        fg_color=Colors.BG_INPUT,
+        hover_color=Colors.BG_HOVER,
+        text_color=Colors.TEXT_MAIN,
+        font=("Segoe UI", scaled_font_size(10)),
+        state="disabled",
+    )
+    parameter_preview_btn.pack(side="right", padx=(0, 6))
+    ToolTip(
+        parameter_preview_btn,
+        t("tip_rvc_parameter_preview"),
+    )
+
     index_scale, lbl_index_title, lbl_index_val = _slider_row(
         rvc_controls,
         t("lbl_rvc_index"),
@@ -674,11 +746,322 @@ def open_quality_settings(preset_name):
     f0_menu.pack(side="right")
     ToolTip(f0_menu, "Метод Pitch (f0) для RVC")
 
+    def _update_parameter_preview_button():
+        try:
+            model_name = str(params["rvc_model"].get() or "")
+            model_path = os.path.join(rvc_catalog.RVC_MODELS_DIR, f"{model_name}.pth")
+            available = bool(
+                params["rvc_enable"].get()
+                and model_name
+                and model_name != "Не выбрана"
+                and os.path.isfile(model_path)
+            )
+            loading = parameter_preview_state["loading"]
+            playing = parameter_preview_state["playing"]
+            parameter_preview_btn.configure(
+                text="…" if loading else ("■" if playing else "▶"),
+                state="normal" if available and not loading else "disabled",
+                fg_color=Colors.BG_ACTIVE if playing else Colors.BG_INPUT,
+                hover_color="#a3342e" if playing else Colors.BG_HOVER,
+            )
+        except Exception:
+            pass
+
+    def _resolve_parameter_preview_reference():
+        try:
+            from engine.gui import player as shared_player
+
+            variable = getattr(shared_player, "ref_var", None)
+            raw_path = variable.get().strip() if variable is not None else ""
+            cleaner = getattr(shared_player, "clean_path", None)
+            path = cleaner(raw_path) if callable(cleaner) else raw_path
+            path = str(path or "")
+            return path if os.path.isfile(path) else ""
+        except Exception:
+            return ""
+
+    def _build_parameter_preview_request():
+        model_name = str(params["rvc_model"].get() or "")
+        if not model_name or model_name == "Не выбрана":
+            return None, "model"
+        model_path = os.path.join(rvc_catalog.RVC_MODELS_DIR, f"{model_name}.pth")
+        if not os.path.isfile(model_path):
+            return None, "model"
+        reference_path = _resolve_parameter_preview_reference()
+        if not reference_path:
+            return None, "reference"
+
+        index_rate = float(params["rvc_index_rate"].get())
+        pitch_shift = int(params["rvc_pitch_shift"].get())
+        f0_method = str(params["rvc_f0_method"].get() or "rmvpe")
+        reference_stat = os.stat(reference_path)
+        model_stat = os.stat(model_path)
+        index_path = os.path.join(
+            rvc_catalog.RVC_MODELS_DIR,
+            f"{model_name}.index",
+        )
+        if os.path.isfile(index_path):
+            index_stat = os.stat(index_path)
+            index_signature = f"{index_stat.st_size}:{index_stat.st_mtime_ns}"
+        else:
+            index_signature = "no-index-file"
+        signature = "|".join(
+            [
+                os.path.abspath(reference_path),
+                str(reference_stat.st_size),
+                str(reference_stat.st_mtime_ns),
+                os.path.abspath(model_path),
+                str(model_stat.st_size),
+                str(model_stat.st_mtime_ns),
+                index_signature,
+                f"{index_rate:.4f}",
+                str(pitch_shift),
+                f0_method,
+                "source_seconds=6",
+            ]
+        )
+        fingerprint = hashlib.sha256(signature.encode("utf-8", "replace")).hexdigest()
+        cache_path = rvc_catalog.get_parameter_preview_cache_path(
+            model_name,
+            fingerprint,
+        )
+        return {
+            "model_name": model_name,
+            "model_path": model_path,
+            "reference_path": reference_path,
+            "index_rate": index_rate,
+            "pitch_shift": pitch_shift,
+            "f0_method": f0_method,
+            "fingerprint": fingerprint,
+            "cache_path": cache_path,
+        }, None
+
+    def _prepare_parameter_preview_source(reference_path, seconds=6.0):
+        if sf is None:
+            return reference_path, None
+        temp_handle = tempfile.NamedTemporaryFile(
+            prefix="xtts_rvc_parameter_source_",
+            suffix=".wav",
+            delete=False,
+        )
+        temp_path = temp_handle.name
+        temp_handle.close()
+        try:
+            with sf.SoundFile(reference_path, "r") as source:
+                frame_count = min(
+                    source.frames,
+                    max(1, int(source.samplerate * float(seconds))),
+                )
+                data = source.read(
+                    frame_count,
+                    dtype="float32",
+                    always_2d=True,
+                )
+                if data.size == 0:
+                    raise ValueError("empty reference")
+                sf.write(
+                    temp_path,
+                    data,
+                    source.samplerate,
+                    format="WAV",
+                    subtype="PCM_16",
+                )
+            return temp_path, temp_path
+        except Exception:
+            try:
+                os.remove(temp_path)
+            except Exception:
+                pass
+            return reference_path, None
+
+    def _on_parameter_preview_player_state(playing):
+        parameter_preview_state["playing"] = bool(playing)
+        if not playing:
+            parameter_preview_state["path"] = None
+        _update_parameter_preview_button()
+        if playing:
+            _safe_call(
+                set_status,
+                t(
+                    "status_rvc_parameter_preview_playing",
+                    params["rvc_model"].get(),
+                ),
+            )
+
+    def _play_parameter_preview(path):
+        try:
+            from engine.gui import player as shared_player
+
+            def on_state_change(playing):
+                try:
+                    win.after(
+                        0,
+                        lambda: _on_parameter_preview_player_state(bool(playing)),
+                    )
+                except Exception:
+                    pass
+
+            parameter_preview_state["path"] = path
+            shared_player.play_rvc_preview(
+                path,
+                on_state_change=on_state_change,
+            )
+        except Exception as error:
+            parameter_preview_state["playing"] = False
+            parameter_preview_state["path"] = None
+            _update_parameter_preview_button()
+            _safe_call(
+                set_status,
+                t("status_rvc_parameter_preview_failed", error),
+            )
+
+    def _finish_parameter_preview(token, request, ok, error=None):
+        if token != parameter_preview_state["token"]:
+            return
+        parameter_preview_state["loading"] = False
+        _update_parameter_preview_button()
+        if not ok:
+            _safe_call(
+                set_status,
+                t("status_rvc_parameter_preview_failed", error or "unknown error"),
+            )
+            return
+
+        current_request, _reason = _build_parameter_preview_request()
+        if current_request is None or current_request["fingerprint"] != request["fingerprint"]:
+            _safe_call(set_status, t("status_rvc_parameter_preview_stale"))
+            return
+        _play_parameter_preview(request["cache_path"])
+
+    def _start_parameter_preview_render(request):
+        parameter_preview_state["loading"] = True
+        parameter_preview_state["token"] += 1
+        token = parameter_preview_state["token"]
+        _update_parameter_preview_button()
+        _safe_call(
+            set_status,
+            t(
+                "status_rvc_parameter_preview_rendering",
+                request["model_name"],
+                request["index_rate"],
+                request["pitch_shift"],
+                request["f0_method"],
+            ),
+        )
+
+        def worker():
+            source_path = request["reference_path"]
+            temp_source = None
+            part_path = request["cache_path"] + ".part.wav"
+            ok = False
+            error = None
+            try:
+                source_path, temp_source = _prepare_parameter_preview_source(
+                    request["reference_path"]
+                )
+                try:
+                    if os.path.isfile(part_path):
+                        os.remove(part_path)
+                except Exception:
+                    pass
+                from engine.tts import get_rvc_processor
+
+                processor = get_rvc_processor()
+                processor.run_inference_via_lib(
+                    input_path=source_path,
+                    output_path=part_path,
+                    model_name=request["model_name"],
+                    index_rate=request["index_rate"],
+                    pitch_shift=request["pitch_shift"],
+                    f0_method=request["f0_method"],
+                )
+                if not os.path.isfile(part_path):
+                    raise RuntimeError("RVC preview output was not created")
+                os.replace(part_path, request["cache_path"])
+                rvc_catalog.prune_parameter_preview_cache(
+                    request["model_name"],
+                    keep=6,
+                )
+                ok = True
+            except Exception as exc:
+                error = str(exc)
+            finally:
+                for temporary_path in (temp_source, part_path):
+                    if not temporary_path:
+                        continue
+                    try:
+                        if os.path.isfile(temporary_path):
+                            os.remove(temporary_path)
+                    except Exception:
+                        pass
+            try:
+                win.after(
+                    0,
+                    lambda: _finish_parameter_preview(token, request, ok, error),
+                )
+            except Exception:
+                pass
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _toggle_parameter_preview():
+        if parameter_preview_state["loading"]:
+            return
+        if parameter_preview_state["playing"]:
+            try:
+                from engine.gui import player as shared_player
+
+                shared_player.stop_rvc_preview()
+            except Exception:
+                parameter_preview_state["playing"] = False
+                parameter_preview_state["path"] = None
+                _update_parameter_preview_button()
+            return
+
+        request, reason = _build_parameter_preview_request()
+        if request is None:
+            key = (
+                "status_rvc_parameter_preview_no_reference"
+                if reason == "reference"
+                else "status_rvc_parameter_preview_no_model"
+            )
+            _safe_call(set_status, t(key))
+            return
+        cache_path = request["cache_path"]
+        try:
+            cached_ready = os.path.isfile(cache_path) and os.path.getsize(cache_path) > 44
+        except Exception:
+            cached_ready = False
+        if cached_ready:
+            _play_parameter_preview(cache_path)
+            return
+        _start_parameter_preview_render(request)
+
+    def _on_parameter_preview_setting_changed(*_args):
+        if parameter_preview_state["playing"]:
+            try:
+                from engine.gui import player as shared_player
+
+                shared_player.stop_rvc_preview()
+            except Exception:
+                parameter_preview_state["playing"] = False
+                parameter_preview_state["path"] = None
+        _update_parameter_preview_button()
+
     def update_rvc_state(*args):
         try:
             enabled = params["rvc_enable"].get()
             state = "normal" if enabled else "disabled"
             model_dropdown.set_enabled(enabled)
+            if not enabled and parameter_preview_state["playing"]:
+                try:
+                    from engine.gui import player as shared_player
+
+                    shared_player.stop_rvc_preview()
+                except Exception:
+                    parameter_preview_state["playing"] = False
+                    parameter_preview_state["path"] = None
+            _update_parameter_preview_button()
             f0_menu.configure(state=state)
             index_scale.config(
                 state=state,
@@ -705,6 +1088,16 @@ def open_quality_settings(preset_name):
             pass
 
     params["rvc_enable"].trace_add("write", update_rvc_state)
+    for preview_key in (
+        "rvc_model",
+        "rvc_index_rate",
+        "rvc_pitch_shift",
+        "rvc_f0_method",
+    ):
+        params[preview_key].trace_add(
+            "write",
+            _on_parameter_preview_setting_changed,
+        )
     update_rvc_state()
 
     # ══════════════════════════════════════════
@@ -938,7 +1331,10 @@ def open_quality_settings(preset_name):
         try:
             win.update_idletasks()
             canvas = scroll._parent_canvas
-            canvas.configure(scrollregion=canvas.bbox("all"))
+            bbox = canvas.bbox("all")
+            if bbox:
+                canvas.configure(scrollregion=bbox)
+            _normalize_scroll_position()
         except Exception:
             pass
 

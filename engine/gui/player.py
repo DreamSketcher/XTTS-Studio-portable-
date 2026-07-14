@@ -6,6 +6,9 @@ _check_playback, seek_forward, seek_back + состояние current_pos/play_b
 PATCH: pick_backup_reference открывает library/ (normalized.wav + cache),
 а НЕ reference/backup. Путь резолвится в GUI-слое, чтобы не зависеть от
 устаревшего BACKUP_DIR в engine.paths.
+
+RVC preview: play_rvc_preview()/stop_rvc_preview() используют тот же pygame
+mixer без конфликта с обычным прослушиванием reference.
 """
 import os
 from tkinter import filedialog, messagebox
@@ -27,6 +30,12 @@ BACKUP_DIR = None  # legacy-алиас; если пришёл reference/* — и
 current_pos = 0
 play_btn = None
 current_volume = 0.8
+
+# pygame.mixer.music — один общий поток. Владелец не даёт проверке обычного
+# reference-плеера вмешиваться в короткий RVC-preview.
+_playback_owner = None  # None | "reference" | "rvc_preview"
+_rvc_preview_path = None
+_rvc_preview_state_callback = None
 
 
 def init(**deps):
@@ -139,6 +148,138 @@ def get_volume():
     return current_volume
 
 
+def _unload_music():
+    if hasattr(pygame.mixer.music, "unload"):
+        try:
+            pygame.mixer.music.unload()
+        except Exception:
+            pass
+
+
+def _reset_reference_button():
+    try:
+        if play_btn is not None:
+            play_btn.config(text="▶ ")
+    except Exception:
+        pass
+
+
+def _notify_rvc_preview(playing: bool):
+    callback = _rvc_preview_state_callback
+    if callback is not None:
+        try:
+            callback(bool(playing))
+        except Exception:
+            pass
+
+
+def is_rvc_preview_playing(path: str | None = None) -> bool:
+    if _playback_owner != "rvc_preview" or not PYGAME_OK:
+        return False
+    if path and os.path.normcase(os.path.abspath(path)) != os.path.normcase(
+        os.path.abspath(_rvc_preview_path or "")
+    ):
+        return False
+    try:
+        return bool(pygame.mixer.music.get_busy())
+    except Exception:
+        return False
+
+
+def stop_rvc_preview() -> bool:
+    """Останавливает только RVC-preview и уведомляет кнопку выпадающего списка."""
+    global _playback_owner, _rvc_preview_path, _rvc_preview_state_callback
+    if _playback_owner != "rvc_preview":
+        return False
+
+    callback = _rvc_preview_state_callback
+    try:
+        pygame.mixer.music.stop()
+    except Exception:
+        pass
+    _unload_music()
+    _playback_owner = None
+    _rvc_preview_path = None
+    _rvc_preview_state_callback = callback
+    _notify_rvc_preview(False)
+    _rvc_preview_state_callback = None
+    return True
+
+
+def play_rvc_preview(path: str, on_state_change=None) -> bool:
+    """Проигрывает локальный sample через общий pygame-плеер.
+
+    Повторный вызов для того же файла работает как toggle (▶/■). При запуске
+    preview обычный reference-плеер корректно останавливается и сбрасывает UI.
+    """
+    global current_pos, _playback_owner, _rvc_preview_path
+    global _rvc_preview_state_callback
+
+    if not PYGAME_OK:
+        raise RuntimeError("аудиоплеер pygame недоступен")
+    if not path or not os.path.isfile(path):
+        raise FileNotFoundError(path or "аудиопример не найден")
+
+    same_preview = is_rvc_preview_playing(path)
+    if same_preview:
+        stop_rvc_preview()
+        return False
+
+    if _playback_owner == "rvc_preview":
+        stop_rvc_preview()
+    else:
+        try:
+            pygame.mixer.music.stop()
+        except Exception:
+            pass
+        _unload_music()
+        current_pos = 0
+        _reset_reference_button()
+
+    _rvc_preview_path = os.path.abspath(path)
+    _rvc_preview_state_callback = on_state_change
+    try:
+        pygame.mixer.music.load(_rvc_preview_path)
+        pygame.mixer.music.set_volume(current_volume)
+        pygame.mixer.music.play()
+        _playback_owner = "rvc_preview"
+        _notify_rvc_preview(True)
+        _check_rvc_preview()
+        return True
+    except Exception:
+        try:
+            pygame.mixer.music.stop()
+        except Exception:
+            pass
+        _unload_music()
+        _playback_owner = None
+        _rvc_preview_path = None
+        _notify_rvc_preview(False)
+        _rvc_preview_state_callback = None
+        raise
+
+
+def _check_rvc_preview():
+    global _playback_owner, _rvc_preview_path, _rvc_preview_state_callback
+    if _playback_owner != "rvc_preview" or not PYGAME_OK:
+        return
+    try:
+        if pygame.mixer.music.get_busy():
+            if root is not None:
+                root.after(200, _check_rvc_preview)
+            return
+    except Exception:
+        pass
+
+    callback = _rvc_preview_state_callback
+    _unload_music()
+    _playback_owner = None
+    _rvc_preview_path = None
+    _rvc_preview_state_callback = callback
+    _notify_rvc_preview(False)
+    _rvc_preview_state_callback = None
+
+
 def pick_reference():
     path = filedialog.askopenfilename(
         initialdir=_resolve_ref_dir(), title="Выбор reference", filetypes=[("Audio", "*.wav *.mp3")]
@@ -169,7 +310,7 @@ def pick_backup_reference():
 
 
 def play_reference():
-    global play_btn, current_pos
+    global play_btn, current_pos, _playback_owner
     if not PYGAME_OK:
         messagebox.showwarning("⚠", t("dlg_audio_unavailable"))
         return
@@ -177,35 +318,40 @@ def play_reference():
     if not ref or not os.path.isfile(ref):
         messagebox.showwarning("⚠", t("dlg_pick_ref_first"))
         return
-    if pygame.mixer.music.get_busy():
+
+    # Если звучит RVC-preview, останавливаем его и сразу запускаем reference.
+    # Повторный клик при обычном reference по-прежнему работает как Stop.
+    if _playback_owner == "rvc_preview":
+        stop_rvc_preview()
+    elif pygame.mixer.music.get_busy():
         pygame.mixer.music.stop()
-        if hasattr(pygame.mixer.music, "unload"):
-            try:
-                pygame.mixer.music.unload()
-            except Exception:
-                pass
-        play_btn.config(text="▶ ")
+        _unload_music()
+        _reset_reference_button()
         current_pos = 0
+        _playback_owner = None
         return
     try:
         pygame.mixer.music.load(ref)
         pygame.mixer.music.set_volume(current_volume)
         pygame.mixer.music.play(start=current_pos)
+        _playback_owner = "reference"
         play_btn.config(text="⏸")
         _check_playback()
-    except Exception as e:
+    except Exception:
         try:
             pygame.mixer.music.play()
+            _playback_owner = "reference"
             play_btn.config(text="⏸")
             _check_playback()
         except Exception as e2:
+            _playback_owner = None
             play_btn.config(text="▶ ")
             messagebox.showerror("❌", t("dlg_play_error", e2))
 
 
 def _check_playback():
-    global current_pos, play_btn
-    if not PYGAME_OK:
+    global current_pos, play_btn, _playback_owner
+    if not PYGAME_OK or _playback_owner != "reference":
         return
     try:
         if pygame.mixer.music.get_busy():
@@ -214,15 +360,19 @@ def _check_playback():
         else:
             play_btn.config(text="▶ ")
             current_pos = 0
+            _playback_owner = None
     except Exception:
         play_btn.config(text="▶ ")
         current_pos = 0
+        _playback_owner = None
 
 
 def seek_forward():
-    global current_pos, play_btn
+    global current_pos, play_btn, _playback_owner
     if not PYGAME_OK:
         return
+    if _playback_owner == "rvc_preview":
+        stop_rvc_preview()
     ref = clean_path(ref_var.get().strip()) if clean_path else ref_var.get().strip()
     if not ref or not os.path.isfile(ref):
         return
@@ -232,11 +382,13 @@ def seek_forward():
         pygame.mixer.music.load(ref)
         pygame.mixer.music.set_volume(current_volume)
         pygame.mixer.music.play(start=current_pos)
+        _playback_owner = "reference"
         play_btn.config(text="⏸")
         _check_playback()
-    except Exception as e:
+    except Exception:
         try:
             pygame.mixer.music.play()
+            _playback_owner = "reference"
             play_btn.config(text="⏸")
             _check_playback()
         except Exception:
@@ -244,9 +396,11 @@ def seek_forward():
 
 
 def seek_back():
-    global current_pos, play_btn
+    global current_pos, play_btn, _playback_owner
     if not PYGAME_OK:
         return
+    if _playback_owner == "rvc_preview":
+        stop_rvc_preview()
     ref = clean_path(ref_var.get().strip()) if clean_path else ref_var.get().strip()
     if not ref or not os.path.isfile(ref):
         return
@@ -256,11 +410,13 @@ def seek_back():
         pygame.mixer.music.load(ref)
         pygame.mixer.music.set_volume(current_volume)
         pygame.mixer.music.play(start=current_pos)
+        _playback_owner = "reference"
         play_btn.config(text="⏸")
         _check_playback()
-    except Exception as e:
+    except Exception:
         try:
             pygame.mixer.music.play()
+            _playback_owner = "reference"
             play_btn.config(text="⏸")
             _check_playback()
         except Exception:
