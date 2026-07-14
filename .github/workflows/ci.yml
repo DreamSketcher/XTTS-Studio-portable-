@@ -51,8 +51,21 @@ jobs:
           python-version: ${{ matrix.python-version }}
           cache: 'pip'
 
-      - name: Install dependencies
+      - name: Cache virtual environment
+        id: cache-venv
+        uses: actions/cache@v4
+        with:
+          path: .venv
+          # Ключ зависит от ОС, версии python и содержимого requirements.txt —
+          # любое изменение зависимостей автоматически инвалидирует кэш.
+          # -v1 на конце можно вручную поднять, если нужно сбросить кэш force'ом.
+          key: venv-${{ runner.os }}-py${{ matrix.python-version }}-${{ hashFiles('requirements.txt') }}-v1
+
+      - name: Create venv and install dependencies
+        if: steps.cache-venv.outputs.cache-hit != 'true'
         run: |
+          python -m venv .venv
+          source .venv/Scripts/activate 2>/dev/null || source .venv/bin/activate
           python -m pip install --upgrade pip
           if [ -f requirements.txt ]; then
             pip install torch torchaudio --index-url https://download.pytorch.org/whl/cpu
@@ -74,6 +87,7 @@ jobs:
 
       - name: Run pytest
         run: |
+          source .venv/Scripts/activate 2>/dev/null || source .venv/bin/activate
           if [ "$RUNNER_OS" = "Linux" ]; then
             xvfb-run --auto-servernum pytest test/ --ignore=test/test_local_llm_client_download.py -v
           else
