@@ -190,17 +190,18 @@ class TestOnTaskUpdate:
         assert result is True
 
     def test_task_queued(self, mock_gen_deps):
-        task = Task(text="test", status="queued", progress=0)
+        task = Task(text="test", voice="test_voice", status="queued", progress=0)
         gen.on_task_update(task)
 
     def test_task_running(self, mock_gen_deps):
-        task = Task(text="test", status="running", progress=50)
+        task = Task(text="test", voice="test_voice", status="running", progress=50)
         gen.on_task_update(task)
 
     def test_task_done(self, mock_gen_deps, monkeypatch):
         monkeypatch.setattr(gen, "_on_task_done", MagicMock())
         task = Task(
             text="test",
+            voice="test_voice",
             status="done",
             progress=100,
             stats={"time_sec": 10, "chunks": 2, "voice": "test"},
@@ -212,38 +213,38 @@ class TestOnTaskUpdate:
 
     def test_task_error(self, mock_gen_deps, monkeypatch):
         monkeypatch.setattr(gen, "_on_task_error", MagicMock())
-        task = Task(text="test", status="error", progress=0)
+        task = Task(text="test", voice="test_voice", status="error", progress=0)
         task.error = "Some error"
         task.id = "1"
         gen.current_task = task
         gen.on_task_update(task)
 
     def test_task_cancelled(self, mock_gen_deps):
-        task = Task(text="test", status="cancelled", progress=0)
+        task = Task(text="test", voice="test_voice", status="cancelled", progress=0)
         task.id = "1"
         task.raw_text = "original"
         gen.current_task = task
         gen.on_task_update(task)
 
     def test_unknown_status(self, mock_gen_deps):
-        task = Task(text="test", status="unknown_status", progress=10)
+        task = Task(text="test", voice="test_voice", status="unknown_status", progress=10)
         gen.on_task_update(task)
 
 
 class TestRestoreRawText:
     def test_restore(self, mock_gen_deps):
         mock_box = mock_gen_deps["text_box"]
-        task = Task(text="normalized", raw_text="original raw", status="done")
+        task = Task(text="normalized", voice="test_voice", raw_text="original raw", status="done")
         gen._restore_raw_text(task)
         assert mock_box.delete.called
 
     def test_restore_no_raw(self, mock_gen_deps):
-        task = Task(text="test", raw_text="", status="done")
+        task = Task(text="test", voice="test_voice", raw_text="", status="done")
         gen._restore_raw_text(task)
 
     def test_restore_exception(self, mock_gen_deps):
         mock_gen_deps["text_box"].delete.side_effect = Exception("fail")
-        task = Task(text="test", raw_text="raw", status="done")
+        task = Task(text="test", voice="test_voice", raw_text="raw", status="done")
         gen._restore_raw_text(task)
 
 
@@ -302,7 +303,7 @@ class TestGenerateAndCancel:
             assert mock_err.called
 
     def test_cancel_task(self, mock_gen_deps):
-        task = Task(text="test")
+        task = Task(text="test", voice="test_voice")
         task.id = "123"
         gen.current_task = task
         gen.cancel_task()
