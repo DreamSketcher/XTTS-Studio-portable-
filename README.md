@@ -48,11 +48,37 @@ One portable folder. One double-click. Your machine, your rules.
 
 > Real demos are coming soon — they sell better than any feature list.
 
-```text
-[ media/demo-before-after.mp3 ]     ← placeholder
-[ media/demo-rvc-enhance.mp3 ]      ← placeholder
-[ media/demo-long-form.mp3 ]        ← placeholder
-```
+<!--
+  HOW TO FILL IN (GitHub doesn't play mp3 inline in README — only <video> embeds work):
+  1. Render a short screen/video (10-20s) with a static image (waveform, spectrogram, or plain logo)
+     and the demo audio as its soundtrack.
+  2. Drag-and-drop the .mp4 into any GitHub Issue/PR comment box (no need to publish it) —
+     GitHub uploads it and gives you a permanent asset URL
+     (github.com/user-attachments/assets/... or user-images.githubusercontent.com/...).
+  3. Paste that URL into the src="" below, replacing the placeholder.
+  4. Keep the raw .mp3/.wav in media/ and link it under each video for people who want the pure file.
+-->
+
+**Voice cloning — before / after**
+Original speaker sample cloned into a new voice in seconds.
+
+<video src="PASTE_GITHUB_ASSET_URL_HERE" controls width="480"></video>
+
+📥 [Download raw audio](media/demo-before-after.mp3)
+
+**RVC enhancement — before / after**
+Same clip with RVC post-processing applied for closer voice match.
+
+<video src="PASTE_GITHUB_ASSET_URL_HERE" controls width="480"></video>
+
+📥 [Download raw audio](media/demo-rvc-enhance.mp3)
+
+**Long-form stability**
+A longer passage, showing consistent quality with no length limit.
+
+<video src="PASTE_GITHUB_ASSET_URL_HERE" controls width="480"></video>
+
+📥 [Download raw audio](media/demo-long-form.mp3)
 
 ---
 

@@ -39,6 +39,7 @@ import tempfile
 import html as htmlmod
 import urllib.parse
 import urllib.request
+from html.parser import HTMLParser
 from pathlib import Path
 
 from engine.updater import (
@@ -62,12 +63,21 @@ SEED_CATALOG_PATH = os.path.join(BASE_DIR, "json", "rvc_catalog_seed.json")
 # Директория для скачанных моделей и кэша каталога — данные пользователя,
 # НЕ версионируется в git (аналогично models/, library/ и т.п.).
 RVC_MODELS_DIR = os.path.join(BASE_DIR, "models", "rvc")
+RVC_PREVIEW_CACHE_DIR = os.path.join(RVC_MODELS_DIR, ".preview_cache")
+RVC_PARAMETER_PREVIEW_CACHE_DIR = os.path.join(
+    RVC_MODELS_DIR,
+    ".parameter_preview_cache",
+)
+RVC_METADATA_DIR = os.path.join(RVC_MODELS_DIR, ".metadata")
 CATALOG_CACHE_PATH = os.path.join(RVC_MODELS_DIR, "catalog_cache.json")
+PREVIEW_MAX_BYTES = 32 * 1024 * 1024
 
 CATALOG_RAW_URL = f"https://raw.githubusercontent.com/{REPO}/{BRANCH}/rvc_catalog.json"
 
 # voice-models.com — community-индекс RVC-моделей (не официальный API,
 # reverse-engineered из публичного UI сайта; при поломке — фоллбэк на seed).
+VOICE_MODELS_HOME_URL = "https://voice-models.com/"
+VOICE_MODELS_TOP_URL = "https://voice-models.com/top"
 VOICE_MODELS_FETCH_URL = "https://voice-models.com/fetch_data.php"
 VOICE_MODELS_SEARCH_URL = "https://voice-models.com/search"
 VOICE_MODELS_UA = (
@@ -88,6 +98,12 @@ _GITHUB_CATALOG_COOLDOWN_SEC = 6 * 60 * 60  # 6 часов после 404/оши
 _github_catalog_fail_until = 0.0
 _github_catalog_fail_logged = False
 _local_catalog_cache = None  # in-memory: seed/кэш без повторного disk+network
+_preview_url_cache = {}  # key -> (valid_until_monotonic, url-or-empty)
+_browse_catalog_cache = {}  # mode -> (valid_until_monotonic, entries)
+_known_entry_cache = {}  # id -> entry, включая результаты поиска текущей сессии
+_PREVIEW_SUCCESS_TTL = 24 * 60 * 60
+_PREVIEW_FAILURE_TTL = 5 * 60
+_BROWSE_CATALOG_TTL = 15 * 60
 
 
 # ----------------------------------------------------------------
@@ -227,6 +243,243 @@ def _vm_request(url: str, data: bytes = None, timeout: int = None):
     return urllib.request.urlopen(req, timeout=timeout)
 
 
+class _PreviewAudioParser(HTMLParser):
+    """Достаёт основной generated sample из страницы voice-models.com."""
+
+    def __init__(self):
+        super().__init__(convert_charrefs=True)
+        self.urls = []
+
+    def handle_starttag(self, tag, attrs):
+        if str(tag).lower() != "audio":
+            return
+        data = {str(k).lower(): v for k, v in attrs if k}
+        src = (data.get("src") or "").strip()
+        if not src:
+            return
+        # На странице может быть JS-шаблон audio. Берём только реальный URL;
+        # vm-fit-audio — основной пример из Sample deck.
+        if src.startswith(("https://", "http://")):
+            priority = 0 if data.get("id") == "vm-fit-audio" else 1
+            self.urls.append((priority, src))
+
+
+def _entry_page_url(entry: dict) -> str:
+    page_url = str(entry.get("page_url") or "").strip()
+    if re.match(r"^https?://(?:www\.)?voice-models\.com/model/", page_url, re.I):
+        return page_url
+
+    source_url = str(entry.get("url") or "").strip()
+    if re.match(r"^https?://(?:www\.)?voice-models\.com/model/", source_url, re.I):
+        return source_url
+
+    description = str(entry.get("description") or "")
+    match = re.search(
+        r"https?://(?:www\.)?voice-models\.com/model/[A-Za-z0-9_-]+",
+        description,
+        re.I,
+    )
+    if match:
+        return match.group(0)
+
+    entry_id = str(entry.get("id") or "")
+    if entry_id.startswith("vm_") and len(entry_id) > 3:
+        return f"https://voice-models.com/model/{entry_id[3:]}"
+    return ""
+
+
+def can_preview(entry: dict) -> bool:
+    """True, если запись содержит sample, его кэш или страницу-источник."""
+    cached_path = str(entry.get("preview_cache_path") or "")
+    return bool(
+        (cached_path and os.path.isfile(cached_path))
+        or entry.get("preview_url")
+        or _entry_page_url(entry)
+    )
+
+
+def _normalize_preview_url(url: str) -> str:
+    value = htmlmod.unescape(str(url or "").strip()).replace(r"\/", "/")
+    if not value.startswith(("https://", "http://")):
+        return ""
+    parsed = urllib.parse.urlparse(value)
+    if not parsed.netloc:
+        return ""
+    # Сейчас Sample deck отдаёт MP3 с Backblaze B2; оставляем также wav/ogg/m4a
+    # и URL с query-параметрами.
+    if not re.search(r"\.(?:mp3|wav|ogg|m4a)(?:$|[?#])", value, re.I):
+        return ""
+    return value
+
+
+def get_preview_url(entry: dict, force_refresh: bool = False) -> str:
+    """
+    Возвращает URL короткого примера голоса без скачивания RVC-модели.
+
+    Для voice-models.com ссылка извлекается лениво из <audio id="vm-fit-audio">.
+    Сетевой запрос выполняется только по нажатию кнопки preview, а не при поиске.
+    """
+    direct = _normalize_preview_url(entry.get("preview_url") or "")
+    if direct:
+        return direct
+
+    page_url = _entry_page_url(entry)
+    if not page_url:
+        return ""
+
+    cache_key = str(entry.get("id") or page_url)
+    now = time.monotonic()
+    if not force_refresh:
+        cached = _preview_url_cache.get(cache_key)
+        if cached and now < cached[0]:
+            return cached[1]
+
+    preview_url = ""
+    try:
+        req = urllib.request.Request(
+            page_url,
+            headers={
+                "User-Agent": VOICE_MODELS_UA,
+                "Accept": "text/html,application/xhtml+xml",
+                "Referer": "https://voice-models.com/",
+            },
+        )
+        with urllib.request.urlopen(req, timeout=VM_SEARCH_TIMEOUT) as response:
+            raw = response.read(2 * 1024 * 1024).decode("utf-8", "replace")
+
+        parser = _PreviewAudioParser()
+        parser.feed(raw)
+        for _priority, candidate in sorted(parser.urls, key=lambda item: item[0]):
+            preview_url = _normalize_preview_url(candidate)
+            if preview_url:
+                break
+
+        # Fallback для страниц, где sample лежит только в JSON внутри <script>.
+        if not preview_url:
+            candidates = re.findall(
+                r"https?(?::|\u003A)(?:\/|\u002F){2}[^\"'<> ]+?"
+                r"\.(?:mp3|wav|ogg|m4a)(?:[^\"'<> ]*)",
+                raw,
+                re.I,
+            )
+            for candidate in candidates:
+                candidate = (
+                    candidate.replace("\u003A", ":").replace("\u002F", "/").replace(r"\/", "/")
+                )
+                preview_url = _normalize_preview_url(candidate)
+                if preview_url:
+                    break
+    except Exception:
+        preview_url = ""
+
+    ttl = _PREVIEW_SUCCESS_TTL if preview_url else _PREVIEW_FAILURE_TTL
+    _preview_url_cache[cache_key] = (now + ttl, preview_url)
+    if preview_url:
+        entry["preview_url"] = preview_url
+        try:
+            if is_downloaded(entry):
+                _save_local_model_metadata(entry)
+        except Exception:
+            pass
+    return preview_url
+
+
+def get_preview_audio_path(entry: dict, force_refresh: bool = False) -> str:
+    """Скачивает только короткий sample в кэш и возвращает локальный аудиофайл.
+
+    Это не скачивание RVC-модели: обычно загружается небольшой MP3 из Sample
+    deck. Повторное прослушивание использует models/rvc/.preview_cache.
+    """
+    remembered_path = str(entry.get("preview_cache_path") or "")
+    if remembered_path and os.path.isfile(remembered_path) and not force_refresh:
+        return remembered_path
+
+    url = get_preview_url(entry, force_refresh=force_refresh)
+    if not url:
+        return ""
+
+    parsed = urllib.parse.urlparse(url)
+    ext = os.path.splitext(parsed.path)[1].lower()
+    if ext not in (".mp3", ".wav", ".ogg", ".m4a"):
+        ext = ".mp3"
+    digest = hashlib.sha256(url.encode("utf-8", "replace")).hexdigest()[:20]
+    readable = re.sub(
+        r"[^\w\-]+", "_", str(entry.get("name") or entry.get("id") or "preview")[:42]
+    ).strip("_")
+    readable = readable or "preview"
+    cache_path = os.path.join(RVC_PREVIEW_CACHE_DIR, f"{readable}_{digest}{ext}")
+
+    try:
+        if os.path.isfile(cache_path) and os.path.getsize(cache_path) > 0:
+            if not _download_is_html_error(cache_path):
+                entry["preview_cache_path"] = cache_path
+                try:
+                    if is_downloaded(entry):
+                        _save_local_model_metadata(entry)
+                except Exception:
+                    pass
+                return cache_path
+            os.remove(cache_path)
+    except Exception:
+        pass
+
+    part_path = cache_path + ".part"
+    try:
+        os.makedirs(RVC_PREVIEW_CACHE_DIR, exist_ok=True)
+        req = urllib.request.Request(
+            url,
+            headers={
+                "User-Agent": VOICE_MODELS_UA,
+                "Accept": "audio/mpeg,audio/*;q=0.9,*/*;q=0.1",
+                "Referer": _entry_page_url(entry) or "https://voice-models.com/",
+            },
+        )
+        with urllib.request.urlopen(req, timeout=20) as response:
+            total_header = response.headers.get("Content-Length")
+            if total_header and str(total_header).isdigit():
+                if int(total_header) > PREVIEW_MAX_BYTES:
+                    raise ValueError("аудиопример слишком большой")
+            received = 0
+            with open(part_path, "wb") as output:
+                while True:
+                    chunk = response.read(64 * 1024)
+                    if not chunk:
+                        break
+                    received += len(chunk)
+                    if received > PREVIEW_MAX_BYTES:
+                        raise ValueError("аудиопример превысил допустимый размер")
+                    output.write(chunk)
+
+        if not os.path.isfile(part_path) or os.path.getsize(part_path) <= 0:
+            raise ValueError("получен пустой аудиопример")
+        if _download_is_html_error(part_path):
+            raise ValueError("вместо аудио сервер вернул HTML-страницу")
+        os.replace(part_path, cache_path)
+        entry["preview_cache_path"] = cache_path
+        try:
+            if is_downloaded(entry):
+                _save_local_model_metadata(entry)
+        except Exception:
+            pass
+        return cache_path
+    except Exception:
+        _cleanup_tmp(part_path)
+        return ""
+
+
+def open_preview(entry: dict) -> bool:
+    """Fallback: открывает потоковый sample в браузере."""
+    url = get_preview_url(entry)
+    if not url:
+        return False
+    try:
+        import webbrowser
+
+        return bool(webbrowser.open(url))
+    except Exception:
+        return False
+
+
 def _clean_download_url(url: str) -> str:
     if not url:
         return ""
@@ -355,6 +608,82 @@ def _row_to_entry(row: dict) -> dict | None:
     if row.get("size"):
         entry["size"] = row["size"]
     return entry
+
+
+def _remember_catalog_entries(entries):
+    for entry in entries or []:
+        try:
+            entry_id = entry.get("id")
+            if entry_id:
+                _known_entry_cache[entry_id] = dict(entry)
+        except Exception:
+            pass
+
+
+def browse_voice_models(
+    mode: str = "new", max_results: int = 50, force_refresh: bool = False
+) -> list:
+    """Загружает публичные каталоги сайта: ``new`` или ``top``.
+
+    ``new`` использует тот же fetch_data.php, что главная страница сайта.
+    ``top`` разбирает публичную таблицу /top. Результаты кэшируются на 15 минут.
+    При сетевой ошибке возвращается последний успешный кэш, если он существует.
+    """
+    catalog_mode = str(mode or "new").strip().lower()
+    if catalog_mode not in ("new", "top"):
+        return []
+
+    now = time.monotonic()
+    cached = _browse_catalog_cache.get(catalog_mode)
+    if cached and not force_refresh and now < cached[0]:
+        return [dict(entry) for entry in cached[1][:max_results]]
+
+    entries = []
+    try:
+        if catalog_mode == "new":
+            data = urllib.parse.urlencode({"page": "1", "search": ""}).encode()
+            with _vm_request(
+                VOICE_MODELS_FETCH_URL,
+                data=data,
+                timeout=VM_SEARCH_TIMEOUT,
+            ) as response:
+                payload = json.loads(response.read().decode("utf-8", "replace"))
+            html_table = payload.get("table", "") if isinstance(payload, dict) else ""
+        else:
+            request = urllib.request.Request(
+                VOICE_MODELS_TOP_URL,
+                headers={
+                    "User-Agent": VOICE_MODELS_UA,
+                    "Accept": "text/html,application/xhtml+xml",
+                    "Referer": VOICE_MODELS_HOME_URL,
+                },
+            )
+            with urllib.request.urlopen(request, timeout=VM_SEARCH_TIMEOUT) as response:
+                html_table = response.read(2 * 1024 * 1024).decode("utf-8", "replace")
+
+        seen = set()
+        for row in _parse_vm_table(html_table):
+            entry = _row_to_entry(row)
+            if not entry or entry["id"] in seen:
+                continue
+            seen.add(entry["id"])
+            entry["catalog"] = catalog_mode
+            entries.append(entry)
+            if len(entries) >= max_results:
+                break
+    except Exception:
+        entries = []
+
+    if entries:
+        _browse_catalog_cache[catalog_mode] = (
+            now + _BROWSE_CATALOG_TTL,
+            [dict(entry) for entry in entries],
+        )
+        _remember_catalog_entries(entries)
+        return entries
+    if cached:
+        return [dict(entry) for entry in cached[1][:max_results]]
+    return []
 
 
 # cooldown логов live-поиска — не печатать timeout на каждую букву
@@ -498,6 +827,7 @@ def search_catalog(query: str, max_results: int = SEARCH_MAX_RESULTS, live: bool
         out.append(e)
         if len(out) >= max_results:
             break
+    _remember_catalog_entries(out)
     return out
 
 
@@ -538,6 +868,300 @@ def is_downloaded(entry: dict) -> bool:
     return os.path.isfile(local_model_path(entry))
 
 
+def _metadata_path_for_local_name(name: str) -> str:
+    safe_name = os.path.basename(str(name or "").strip())
+    return os.path.join(RVC_METADATA_DIR, f"{safe_name}.json")
+
+
+def _save_local_model_metadata(entry: dict, model_path: str = "") -> bool:
+    """Сохраняет источник и preview для показа ▶ у локальной модели."""
+    try:
+        resolved_path = model_path or local_model_path(entry)
+        local_name = os.path.splitext(os.path.basename(resolved_path))[0]
+        if not local_name:
+            return False
+        os.makedirs(RVC_METADATA_DIR, exist_ok=True)
+        allowed = (
+            "id",
+            "name",
+            "url",
+            "filename",
+            "author",
+            "license",
+            "description",
+            "source",
+            "page_url",
+            "preview_url",
+            "preview_cache_path",
+            "size",
+            "downloadable",
+        )
+        metadata = {key: entry.get(key) for key in allowed if entry.get(key) is not None}
+        metadata["local_name"] = local_name
+        metadata["filename"] = os.path.basename(resolved_path)
+        target = _metadata_path_for_local_name(local_name)
+        temp_target = target + ".tmp"
+        with open(temp_target, "w", encoding="utf-8") as output:
+            json.dump(metadata, output, ensure_ascii=False, indent=2)
+        os.replace(temp_target, target)
+        return True
+    except Exception:
+        return False
+
+
+def _entry_matches_local_name(entry: dict, local_name: str) -> bool:
+    try:
+        candidate = os.path.splitext(os.path.basename(local_model_path(entry)))[0]
+        return os.path.normcase(candidate) == os.path.normcase(local_name)
+    except Exception:
+        return False
+
+
+def _parameter_preview_model_dir(model_name: str) -> str:
+    safe_model = re.sub(
+        r"[^\w\-]+",
+        "_",
+        os.path.basename(str(model_name or "model")),
+        flags=re.U,
+    ).strip("_")
+    safe_model = (safe_model or "model")[:64]
+    model_digest = hashlib.sha256(
+        str(model_name or "model").encode("utf-8", "replace")
+    ).hexdigest()[:10]
+    return os.path.join(
+        RVC_PARAMETER_PREVIEW_CACHE_DIR,
+        f"{safe_model}_{model_digest}",
+    )
+
+
+def get_parameter_preview_cache_path(model_name: str, fingerprint: str) -> str:
+    """Путь к локальному preview текущих Index/Pitch/f0 для модели."""
+    digest = hashlib.sha256(str(fingerprint).encode("utf-8", "replace")).hexdigest()[:24]
+    model_cache_dir = _parameter_preview_model_dir(model_name)
+    os.makedirs(model_cache_dir, exist_ok=True)
+    return os.path.join(model_cache_dir, f"{digest}.wav")
+
+
+def prune_parameter_preview_cache(model_name: str, keep: int = 6):
+    """Оставляет несколько последних вариантов параметрического preview модели."""
+    try:
+        model_cache_dir = _parameter_preview_model_dir(model_name)
+        if not os.path.isdir(model_cache_dir):
+            return
+        files = [
+            os.path.join(model_cache_dir, filename)
+            for filename in os.listdir(model_cache_dir)
+            if filename.lower().endswith(".wav")
+        ]
+        files.sort(key=lambda path: os.path.getmtime(path), reverse=True)
+        for old_path in files[max(1, int(keep)) :]:
+            try:
+                os.remove(old_path)
+            except Exception:
+                pass
+    except Exception:
+        pass
+
+
+def _delete_parameter_preview_cache(model_name: str):
+    try:
+        model_cache_dir = _parameter_preview_model_dir(model_name)
+        if os.path.isdir(model_cache_dir):
+            shutil.rmtree(model_cache_dir, ignore_errors=True)
+    except Exception:
+        pass
+
+
+def get_local_model_entry(name: str) -> dict | None:
+    """Возвращает метаданные локальной модели, включая источник preview."""
+    local_name = os.path.basename(str(name or "").strip())
+    if not local_name:
+        return None
+
+    metadata = _load_json(_metadata_path_for_local_name(local_name))
+    if isinstance(metadata, dict):
+        entry = dict(metadata)
+        entry.setdefault("id", f"local_{local_name}")
+        entry.setdefault("name", local_name)
+        entry.setdefault("filename", f"{local_name}.pth")
+        entry["local_name"] = local_name
+        return entry
+
+    # Миграция старых скачиваний: пытаемся восстановить запись из seed/кэша
+    # и из уже загруженных в этой сессии каталогов New/Top.
+    candidates = []
+    try:
+        candidates.extend(_load_local_catalog())
+    except Exception:
+        pass
+    try:
+        for _expires, entries in _browse_catalog_cache.values():
+            candidates.extend(entries or [])
+    except Exception:
+        pass
+    try:
+        candidates.extend(_known_entry_cache.values())
+    except Exception:
+        pass
+
+    seen = set()
+    for candidate in candidates:
+        entry_id = candidate.get("id") if isinstance(candidate, dict) else None
+        if not entry_id or entry_id in seen:
+            continue
+        seen.add(entry_id)
+        if not _entry_matches_local_name(candidate, local_name):
+            continue
+        entry = dict(candidate)
+        entry["local_name"] = local_name
+        _save_local_model_metadata(
+            entry,
+            os.path.join(RVC_MODELS_DIR, f"{local_name}.pth"),
+        )
+        return entry
+    return None
+
+
+def _path_is_inside(path: str, directory: str) -> bool:
+    try:
+        return os.path.commonpath(
+            [os.path.abspath(path), os.path.abspath(directory)]
+        ) == os.path.abspath(directory)
+    except Exception:
+        return False
+
+
+def _installed_preview_paths(exclude_local_name: str = "") -> set:
+    """Preview-файлы, принадлежащие установленным .pth и защищённые от очистки."""
+    protected = set()
+    try:
+        metadata_files = os.listdir(RVC_METADATA_DIR)
+    except Exception:
+        metadata_files = []
+    excluded = os.path.normcase(str(exclude_local_name or ""))
+    for filename in metadata_files:
+        if not filename.lower().endswith(".json"):
+            continue
+        metadata = _load_json(os.path.join(RVC_METADATA_DIR, filename))
+        if not isinstance(metadata, dict):
+            continue
+        local_name = str(metadata.get("local_name") or os.path.splitext(filename)[0])
+        if excluded and os.path.normcase(local_name) == excluded:
+            continue
+        model_path = os.path.join(RVC_MODELS_DIR, f"{local_name}.pth")
+        if not os.path.isfile(model_path):
+            continue
+        preview_path = str(metadata.get("preview_cache_path") or "")
+        if preview_path and os.path.isfile(preview_path):
+            protected.add(os.path.normcase(os.path.abspath(preview_path)))
+    return protected
+
+
+def clear_rvc_cache() -> dict:
+    """Удаляет orphan preview и недокачанные модели, не трогая установленные.
+
+    Preview, записанный в metadata существующей .pth, защищён и удаляется
+    только вместе с самой моделью через delete_local_model().
+    """
+    protected = _installed_preview_paths()
+    removed_files = 0
+    removed_bytes = 0
+    removed_previews = 0
+    removed_partials = 0
+
+    def remove_file(path, kind):
+        nonlocal removed_files, removed_bytes, removed_previews, removed_partials
+        try:
+            size = os.path.getsize(path) if os.path.isfile(path) else 0
+            os.remove(path)
+            removed_files += 1
+            removed_bytes += max(0, size)
+            if kind == "preview":
+                removed_previews += 1
+            elif kind == "partial":
+                removed_partials += 1
+        except Exception:
+            pass
+
+    try:
+        preview_files = os.listdir(RVC_PREVIEW_CACHE_DIR)
+    except Exception:
+        preview_files = []
+    for filename in preview_files:
+        path = os.path.join(RVC_PREVIEW_CACHE_DIR, filename)
+        if not os.path.isfile(path):
+            continue
+        normalized = os.path.normcase(os.path.abspath(path))
+        if normalized in protected:
+            continue
+        remove_file(path, "preview")
+
+    try:
+        model_files = os.listdir(RVC_MODELS_DIR)
+    except Exception:
+        model_files = []
+    for filename in model_files:
+        path = os.path.join(RVC_MODELS_DIR, filename)
+        if not os.path.isfile(path):
+            continue
+        lower = filename.lower()
+        is_partial = bool(
+            re.search(r"\.part(?:\.|$)", lower)
+            or lower.endswith((".partial", ".tmp", ".download", ".crdownload"))
+        )
+        if is_partial:
+            remove_file(path, "partial")
+
+    # Параметрические previews принадлежат установленной модели. Для живых
+    # моделей удаляем только незавершённые .part; orphan-каталоги очищаем целиком.
+    installed_parameter_dirs = set()
+    try:
+        for filename in os.listdir(RVC_MODELS_DIR):
+            if filename.lower().endswith(".pth"):
+                local_name = os.path.splitext(filename)[0]
+                installed_parameter_dirs.add(
+                    os.path.normcase(os.path.abspath(_parameter_preview_model_dir(local_name)))
+                )
+    except Exception:
+        pass
+    try:
+        parameter_dirs = os.listdir(RVC_PARAMETER_PREVIEW_CACHE_DIR)
+    except Exception:
+        parameter_dirs = []
+    for dirname in parameter_dirs:
+        directory = os.path.join(RVC_PARAMETER_PREVIEW_CACHE_DIR, dirname)
+        if not os.path.isdir(directory):
+            continue
+        normalized_dir = os.path.normcase(os.path.abspath(directory))
+        if normalized_dir not in installed_parameter_dirs:
+            for root_dir, _subdirs, filenames in os.walk(directory):
+                for filename in filenames:
+                    remove_file(os.path.join(root_dir, filename), "preview")
+            shutil.rmtree(directory, ignore_errors=True)
+            continue
+        for filename in os.listdir(directory):
+            lower = filename.lower()
+            if re.search(r"\.part(?:\.|$)", lower) or lower.endswith(".tmp"):
+                remove_file(os.path.join(directory, filename), "partial")
+
+    # Атомарная запись metadata может оставить .tmp после аварийного закрытия.
+    try:
+        metadata_files = os.listdir(RVC_METADATA_DIR)
+    except Exception:
+        metadata_files = []
+    for filename in metadata_files:
+        if filename.lower().endswith(".tmp"):
+            remove_file(os.path.join(RVC_METADATA_DIR, filename), "partial")
+
+    return {
+        "removed_files": removed_files,
+        "removed_bytes": removed_bytes,
+        "removed_previews": removed_previews,
+        "removed_partials": removed_partials,
+        "protected_previews": len(protected),
+    }
+
+
 def delete_local_model(name: str) -> bool:
     """
     Удаляет локально скачанную модель по имени (без расширения — так же,
@@ -552,6 +1176,12 @@ def delete_local_model(name: str) -> bool:
     """
     pth = os.path.join(RVC_MODELS_DIR, f"{name}.pth")
     idx = os.path.join(RVC_MODELS_DIR, f"{name}.index")
+    metadata_path = _metadata_path_for_local_name(name)
+    metadata = _load_json(metadata_path)
+    preview_path = ""
+    if isinstance(metadata, dict):
+        preview_path = str(metadata.get("preview_cache_path") or "")
+
     removed_any = False
     for p in (pth, idx):
         try:
@@ -560,6 +1190,27 @@ def delete_local_model(name: str) -> bool:
                 removed_any = True
         except Exception:
             pass
+
+    # Metadata и закреплённый sample удаляем только когда самой .pth уже нет.
+    if not os.path.isfile(pth):
+        _delete_parameter_preview_cache(name)
+        try:
+            if os.path.isfile(metadata_path):
+                os.remove(metadata_path)
+        except Exception:
+            pass
+        if (
+            preview_path
+            and _path_is_inside(preview_path, RVC_PREVIEW_CACHE_DIR)
+            and os.path.isfile(preview_path)
+        ):
+            protected_elsewhere = _installed_preview_paths(exclude_local_name=name)
+            normalized_preview = os.path.normcase(os.path.abspath(preview_path))
+            if normalized_preview not in protected_elsewhere:
+                try:
+                    os.remove(preview_path)
+                except Exception:
+                    pass
     return removed_any
 
 
@@ -739,6 +1390,20 @@ def _extract_rvc_from_zip(zip_path: str, dest_pth: str) -> bool:
         return False
 
 
+def _download_is_html_error(path: str) -> bool:
+    """True, если сервер вернул HTML/XML-страницу вместо архива или .pth."""
+    try:
+        with open(path, "rb") as f:
+            head = f.read(4096).lstrip().lower()
+    except Exception:
+        return False
+    return (
+        head.startswith((b"<", b"&lt;", b"<!doctype", b"<?xml"))
+        or b"<html" in head
+        or b"<body" in head
+    )
+
+
 def download_model(entry: dict, progress_callback=None, cancelled_flag=None) -> bool:
     """
     Скачивает модель из каталога в models/rvc/.
@@ -772,11 +1437,13 @@ def download_model(entry: dict, progress_callback=None, cancelled_flag=None) -> 
 
     try:
         _download_bytes_to_file(url, tmp, progress_callback, cancelled_flag)
+        if _download_is_html_error(tmp):
+            raise RuntimeError("сервер вернул HTML-страницу вместо файла модели")
     except InterruptedError:
         _cleanup_tmp(tmp)
         return False
     except Exception as e:
-        print(f"[RVCCatalog] Ошибка скачивания {entry.get('name', entry.get('id'))}: {e}")
+        print(f"[RVC] Ошибка скачивания {entry.get('name', entry.get('id'))}: {e}")
         _cleanup_tmp(tmp)
         return False
 
@@ -810,14 +1477,16 @@ def download_model(entry: dict, progress_callback=None, cancelled_flag=None) -> 
         if is_zip:
             ok = _extract_rvc_from_zip(tmp, dest_pth)
             _cleanup_tmp(tmp)
-            if not ok:
+            if not ok or not os.path.isfile(dest_pth):
                 return False
-            return os.path.isfile(dest_pth)
+            _save_local_model_metadata(entry, dest_pth)
+            return True
         else:
             # прямой .pth
             if os.path.exists(dest_pth):
                 os.remove(dest_pth)
             shutil.move(tmp, dest_pth)
+            _save_local_model_metadata(entry, dest_pth)
             return True
     except Exception as e:
         print(f"[RVCCatalog] Ошибка финализации {entry.get('name')}: {e}")

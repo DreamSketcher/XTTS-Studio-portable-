@@ -48,11 +48,38 @@
 
 > Здесь будут реальные демо — они работают лучше любой таблицы фич.
 
-```text
-[ media/demo-before-after.mp3 ]     ← placeholder
-[ media/demo-rvc-enhance.mp3 ]      ← placeholder
-[ media/demo-long-form.mp3 ]        ← placeholder
-```
+<!--
+  КАК ЗАПОЛНИТЬ (GitHub не проигрывает mp3 инлайн в README — работают только <video>-эмбеды):
+  1. Сделай короткое видео (10-20 сек) со статичной картинкой (waveform, спектрограмма
+     или просто лого) и звуковой дорожкой демо.
+  2. Перетащи .mp4 в поле любого Issue/PR-комментария на GitHub (публиковать не обязательно) —
+     GitHub загрузит файл и выдаст постоянную ссылку на ассет
+     (github.com/user-attachments/assets/... или user-images.githubusercontent.com/...).
+  3. Вставь эту ссылку в src="" ниже вместо плейсхолдера.
+  4. Оставь исходный .mp3/.wav в media/ и дай на него ссылку под каждым видео —
+     для тех, кто хочет чистый файл.
+-->
+
+**Клонирование голоса — до / после**
+Образец оригинального голоса, склонированный в новый за секунды.
+
+<video src="PASTE_GITHUB_ASSET_URL_HERE" controls width="480"></video>
+
+📥 [Скачать оригинал](media/demo-before-after.mp3)
+
+**Улучшение через RVC — до / после**
+Тот же отрывок с постобработкой RVC для более точного совпадения голоса.
+
+<video src="PASTE_GITHUB_ASSET_URL_HERE" controls width="480"></video>
+
+📥 [Скачать оригинал](media/demo-rvc-enhance.mp3)
+
+**Стабильность на длинных текстах**
+Более длинный отрывок, показывающий стабильное качество без ограничения длины.
+
+<video src="PASTE_GITHUB_ASSET_URL_HERE" controls width="480"></video>
+
+📥 [Скачать оригинал](media/demo-long-form.mp3)
 
 ---
 
