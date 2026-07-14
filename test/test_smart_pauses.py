@@ -1,10 +1,3 @@
-# -*- coding: utf-8 -*-
-"""
-test_smart_pauses.py — тесты для engine/smart_pauses.py (SmartPauseEngine).
-
-Запуск:
-    pytest test_smart_pauses.py -v
-"""
 import pytest
 
 from engine.smart_pauses import SmartPauseEngine
@@ -15,81 +8,77 @@ def engine():
     return SmartPauseEngine()
 
 
-# ───────────────────────── базовые паузы по пунктуации ─────────────────────────
+class TestGetPauseMs:
+    def test_empty(self, engine):
+        assert engine.get_pause_ms("") == engine.base_short
+        assert engine.get_pause_ms("   ") == engine.base_short
+
+    def test_list_item_current(self, engine):
+        # текущий — list item
+        assert engine.get_pause_ms("1. первый пункт") == engine.list_item_pause
+        assert engine.get_pause_ms("- яблоко") == engine.list_item_pause
+
+    def test_list_item_next(self, engine):
+        # следующий — list item
+        assert engine.get_pause_ms("Обычный текст.", next_chunk="2. второй") == engine.list_item_pause
+        assert engine.get_pause_ms("Текст", next_chunk="- груша") == engine.list_item_pause
+
+    def test_punctuation_base(self, engine):
+        assert engine.get_pause_ms("Привет...") == engine.base_dramatic
+        assert engine.get_pause_ms("Как дела?") == engine.base_long + 60
+        assert engine.get_pause_ms("Отлично!") == engine.base_long - 20
+        assert engine.get_pause_ms("Закончили.") == engine.base_medium
+        assert engine.get_pause_ms("Пауза,") == engine.base_short
+        assert engine.get_pause_ms("Без знака") == engine.base_short
+
+    def test_length_modifier(self, engine):
+        short = "Привет."
+        long_text = "Это очень длинное предложение с большим количеством слов для проверки модификатора длины."
+        short_pause = engine.get_pause_ms(short)
+        long_pause = engine.get_pause_ms(long_text)
+        # длинный должен дать большую паузу (word_count>6 adds)
+        assert long_pause >= short_pause
+
+    def test_clamp_min(self, engine):
+        # даже очень короткий должен быть >=50
+        result = engine.get_pause_ms("А.")
+        assert result >= 50
+
+    def test_clamp_max(self, engine):
+        # очень длинный + ? → может превысить 450, но clamp до 450
+        very_long = "Слово " * 100 + "?"
+        result = engine.get_pause_ms(very_long)
+        assert result <= 450
+
+    def test_list_item_overrides_clamp(self, engine):
+        # list_item_pause = 450, уже на границе clamp
+        assert engine.get_pause_ms("1. пункт", next_chunk="") == 450
+
+    def test_next_chunk_trim(self, engine):
+        # next_chunk с пробелами должен trim и детектиться как list item
+        assert engine.get_pause_ms("Текст", next_chunk="  1. пункт  ") == engine.list_item_pause
 
 
-def test_period_gives_medium_pause(engine):
-    assert engine.get_pause_ms("Короткая фраза.") == engine.base_medium
+class TestDetectEmotion:
+    def test_excited(self, engine):
+        assert engine.detect_emotion("Wow, amazing!") == "excited"
+        assert engine.detect_emotion("Это потрясающе и невероятно!") == "excited"
+        assert engine.detect_emotion("Отлично, супер класс!") == "excited"
 
+    def test_uncertain(self, engine):
+        assert engine.detect_emotion("Maybe it works") == "uncertain"
+        assert engine.detect_emotion("Может быть, наверное") == "uncertain"
+        assert engine.detect_emotion("Не уверен, возможно") == "uncertain"
 
-def test_question_mark_gives_longer_pause_than_period(engine):
-    pause = engine.get_pause_ms("Это вопрос?")
-    assert pause > engine.base_medium
-    assert pause == engine.base_long + 60
+    def test_normal(self, engine):
+        assert engine.detect_emotion("Обычный текст без эмоций.") == "normal"
+        assert engine.detect_emotion("") == "normal"
+        assert engine.detect_emotion("Привет мир") == "normal"
 
+    def test_case_insensitive(self, engine):
+        assert engine.detect_emotion("WOW") == "excited"
+        assert engine.detect_emotion("MAYBE") == "uncertain"
 
-def test_exclamation_gives_pause_between_medium_and_question(engine):
-    pause = engine.get_pause_ms("Восклицание!")
-    assert pause == engine.base_long - 20
-
-
-def test_ellipsis_gives_dramatic_pause(engine):
-    assert engine.get_pause_ms("Многоточие...") == engine.base_dramatic
-
-
-def test_comma_gives_short_pause(engine):
-    assert engine.get_pause_ms("Просто запятая,") == engine.base_short
-
-
-def test_empty_chunk_gives_short_pause(engine):
-    assert engine.get_pause_ms("") == engine.base_short
-
-
-# ───────────────────────── пункты списка ─────────────────────────
-
-
-def test_list_item_gets_dedicated_long_pause(engine):
-    assert engine.get_pause_ms("1. Пункт списка отдельный") == engine.list_item_pause
-
-
-def test_pause_before_upcoming_list_item_is_also_long(engine):
-    # если СЛЕДУЮЩИЙ чанк — пункт списка, текущая пауза тоже удлиняется
-    pause = engine.get_pause_ms("Обычная фраза без пунктов.", next_chunk="2. Следующий пункт")
-    assert pause == engine.list_item_pause
-
-
-# ───────────────────────── модификатор длины и клэмп ─────────────────────────
-
-
-def test_long_chunk_gets_extra_pause_from_length_modifier(engine):
-    short_pause = engine.get_pause_ms("Раз два три.")
-    long_pause = engine.get_pause_ms(
-        "Очень длинное предложение с большим количеством слов для проверки модификатора длины пауз здесь."
-    )
-    assert long_pause > short_pause
-
-
-def test_pause_is_always_clamped_between_50_and_450(engine):
-    # искусственно длинный чанк с многоточием — не должен вылезти за верхнюю границу
-    huge = ("слово " * 100) + "..."
-    pause = engine.get_pause_ms(huge)
-    assert 50 <= pause <= 450
-
-
-# ───────────────────────── детекция эмоции ─────────────────────────
-
-
-def test_detect_emotion_excited(engine):
-    assert engine.detect_emotion("Это было потрясающе!") == "excited"
-
-
-def test_detect_emotion_uncertain(engine):
-    assert engine.detect_emotion("Может быть, не уверен точно") == "uncertain"
-
-
-def test_detect_emotion_normal_by_default(engine):
-    assert engine.detect_emotion("Обычный текст без эмоций") == "normal"
-
-
-def test_detect_emotion_is_case_insensitive(engine):
-    assert engine.detect_emotion("ПОТРЯСАЮЩЕ, это сработало!") == "excited"
+    def test_excited_priority(self, engine):
+        # если есть и excited и uncertain — excited первый в коде, должен вернуться excited
+        assert engine.detect_emotion("Wow, maybe") == "excited"

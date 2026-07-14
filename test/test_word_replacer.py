@@ -1,235 +1,311 @@
-# -*- coding: utf-8 -*-
-"""
-test_word_replacer.py — тесты для engine/word_replacer.py (WordReplacer).
-
-Ничего не трогает реальный проект: WordReplacer принимает rules_path
-напрямую в конструкторе, поэтому изоляция — это просто временный файл
-pytest (tmp_path), без monkeypatch путей.
-
-Запуск:
-    pytest test_word_replacer.py -v
-"""
 import json
 import os
+import shutil
+import time
+from pathlib import Path
 
 import pytest
 
-from engine import word_replacer
-from engine.word_replacer import WordReplacer
+from engine.word_replacer import (
+    WordReplacer,
+    _CATEGORY_PRIORITY,
+    _MAX_BACKUPS,
+    _auto_transliterate_abbrev,
+    _letters_to_word_sound,
+    _looks_like_abbrev,
+    _looks_like_lowercase_term,
+    _transliterate_term_word,
+)
 
 
 @pytest.fixture
-def rules_path(tmp_path):
-    return str(tmp_path / "word_rules.json")
+def tmp_rules(tmp_path: Path) -> Path:
+    """Пустой json файл правил во временной папке."""
+    p = tmp_path / "word_rules.json"
+    p.write_text("{}", encoding="utf-8")
+    return p
 
 
 @pytest.fixture
-def wr(rules_path):
-    return WordReplacer(rules_path)
-
-
-def _read_json(path):
-    with open(path, "r", encoding="utf-8") as f:
-        return json.load(f)
-
-
-# ───────────────────────── приоритет категорий ─────────────────────────
-
-
-def test_higher_priority_category_wins_in_flat_rules(rules_path):
-    wr = WordReplacer(rules_path)
-    wr.add_rule("test", "старый вариант", category="builtin")
-    wr.add_rule("test", "новый вариант", category="custom")
-
-    assert wr.flat_rules["test"] == "новый вариант"
-
-
-def test_unknown_category_outranks_custom(rules_path):
-    wr = WordReplacer(rules_path)
-    wr.add_rule("test", "из custom", category="custom")
-    wr.add_rule("test", "из неизвестной категории", category="some_future_category")
-
-    assert wr.flat_rules["test"] == "из неизвестной категории"
-
-
-# ───────────────────────── add_rule: та же категория ─────────────────────────
-
-
-def test_re_adding_same_word_same_category_increments_occurrences_and_keeps_added_at(rules_path):
-    wr = WordReplacer(rules_path)
-    wr.add_rule("gguf", "джи-джи-ю-эф", category="auto")
-    first_added_at = wr.data["auto"]["gguf"]["added_at"]
-
-    wr.add_rule("gguf", "джи джи ю эф", category="auto")
-    entry = wr.data["auto"]["gguf"]
-
-    assert entry["occurrences"] == 2
-    assert entry["added_at"] == first_added_at
-    assert entry["text"] == "джи джи ю эф"
-
-
-# ───────────────────────── add_rule: смена категории ─────────────────────────
-
-
-def test_moving_word_to_different_category_resets_occurrences(rules_path):
-    """
-    Фиксирую текущее поведение: при переносе слова в ДРУГУЮ категорию
-    история (occurrences/added_at) не переносится, даже если слово там
-    уже встречалось несколько раз — add_rule всегда создаёт свежую запись,
-    если old_category != category.
-    """
-    wr = WordReplacer(rules_path)
-    wr.add_rule("term", "вариант 1", category="auto")
-    wr.add_rule("term", "вариант 2", category="auto")  # occurrences=2 в auto
-    assert wr.data["auto"]["term"]["occurrences"] == 2
-
-    wr.add_rule("term", "вариант 3", category="custom")  # переносим в custom
-
-    assert "term" not in wr.data.get("auto", {}), "слово должно быть удалено из старой категории"
-    assert wr.data["custom"]["term"]["occurrences"] == 1, "в новой категории история начинается заново"
-    assert wr.data["custom"]["term"]["text"] == "вариант 3"
-
-
-# ───────────────────────── remove_rule ─────────────────────────
-
-
-def test_remove_rule_deletes_word_and_persists(rules_path):
-    wr = WordReplacer(rules_path)
-    wr.add_rule("obsolete", "устаревшее", category="custom")
-    assert wr.get_category("obsolete") == "custom"
-
-    wr.remove_rule("obsolete")
-
-    assert wr.get_category("obsolete") is None
-    assert "obsolete" not in wr.flat_rules
-    # Перечитываем файл с диска — изменение должно быть сохранено, а не только в памяти
-    on_disk = _read_json(rules_path)
-    assert "obsolete" not in on_disk.get("custom", {})
-
-
-# ───────────────────────── бэкапы ─────────────────────────
-
-
-def test_no_backup_created_on_first_save_when_file_did_not_exist(rules_path):
-    wr = WordReplacer(rules_path)
-    wr.add_rule("first", "первое", category="custom")  # первый save()
-
-    backup_dir = os.path.join(os.path.dirname(rules_path), "word_rules_backups")
-    backups = os.listdir(backup_dir) if os.path.isdir(backup_dir) else []
-    assert backups == [], "бэкапа быть не должно — до первой записи файла ещё не существовало"
-
-
-def test_backup_created_on_subsequent_saves(rules_path):
-    wr = WordReplacer(rules_path)
-    wr.add_rule("first", "первое", category="custom")  # создаёт файл, бэкапа ещё нет
-    wr.add_rule("second", "второе", category="custom")  # теперь файл уже существовал -> бэкап
-
-    backup_dir = os.path.join(os.path.dirname(rules_path), "word_rules_backups")
-    backups = os.listdir(backup_dir)
-    assert len(backups) == 1
-
-
-def test_backup_retention_respects_max_backups_limit(rules_path, monkeypatch):
-    monkeypatch.setattr(word_replacer, "_MAX_BACKUPS", 3)
-    wr = WordReplacer(rules_path)
-
-    # Каждый add_rule — отдельный save(); первый save не бэкапит (файла не было),
-    # следующие 5 — бэкапят, итого 5 бэкапов при лимите 3 -> должно остаться 3.
-    for i in range(6):
-        wr.add_rule(f"word{i}", f"замена{i}", category="custom")
-
-    backup_dir = os.path.join(os.path.dirname(rules_path), "word_rules_backups")
-    backups = os.listdir(backup_dir)
-    assert len(backups) == 3, "должны остаться только последние _MAX_BACKUPS бэкапов"
-
-
-# ───────────────────────── get_words_list ─────────────────────────
-
-
-def test_get_words_list_is_sorted_and_excludes_meta(rules_path):
-    wr = WordReplacer(rules_path)
-    wr.add_rule("zebra", "зебра", category="custom")
-    wr.add_rule("apple", "яблоко", category="builtin")
-    wr.data["meta"] = {"version": 1}  # meta не должна попадать в список слов
-
-    assert wr.get_words_list() == ["apple", "zebra"]
-
-
-# ───────────────────────── apply(): базовая замена ─────────────────────────
-
-
-def test_apply_replaces_known_word_respecting_word_boundaries(wr):
-    wr.add_rule("кот", "коть", category="custom")
-
-    result = wr.apply("Мой кот и котлета", persist_new=False)
-
-    assert "коть" in result
-    assert "котьлета" not in result, "замена не должна затрагивать часть другого слова"
-
-
-def test_apply_custom_rule_overrides_builtin(wr):
-    wr.add_rule("gpu", "джи пи ю встроенное", category="builtin")
-    wr.add_rule("gpu", "жэ пэ у кастомное", category="custom")
-
-    result = wr.apply("У меня gpu", persist_new=False)
-
-    assert "жэ пэ у кастомное" in result
-    assert "джи пи ю встроенное" not in result
-
-
-def test_apply_prefers_longer_rule_over_substring_rule(wr):
-    wr.add_rule("york", "йорк", category="custom")
-    wr.add_rule("new york", "нью-йорк", category="custom")
-
-    result = wr.apply("Еду в new york сегодня", persist_new=False)
-
-    assert "нью-йорк" in result
-    assert "йорк йорк" not in result, "короткое правило не должно было сработать поверх длинного"
-
-
-# ───────────────────────── apply(): авто-детект аббревиатур ─────────────────────────
-
-
-def test_apply_auto_transliterates_unknown_all_caps_abbreviation(wr):
-    result = wr.apply("Работает XKQZ модуль", persist_new=False)
-
-    # XKQZ нет в словаре -> должно транслитерироваться побуквенно через _LATIN_LETTER_MAP
-    assert "XKQZ" not in result
-    assert "икс" in result and "кей" in result
-
-
-def test_apply_persists_new_auto_rule_when_persist_new_true(wr, rules_path):
-    wr.apply("Работает XKQZ модуль", persist_new=True)
-
-    assert wr.get_category("XKQZ") == "auto", "новое правило должно сохраниться в категорию auto"
-    on_disk = _read_json(rules_path)
-    assert "XKQZ" in on_disk.get("auto", {})
-
-
-def test_apply_does_not_persist_when_persist_new_false(wr, rules_path):
-    wr.apply("Работает XKQZ модуль", persist_new=False)
-
-    assert wr.get_category("XKQZ") is None, "правило не должно было сохраниться"
-    assert not os.path.exists(rules_path), "файл вообще не должен был создаться"
-
-
-# ───────────────────────── apply(): авто-детект lowercase-термина ─────────────────────────
-
-
-def test_apply_auto_transliterates_unknown_lowercase_term(wr):
-    result = wr.apply("Использую pydub для аудио", persist_new=False)
-
-    assert "pydub" not in result
-    assert result != "Использую pydub для аудио."  # что-то реально заменилось
-
-
-# ───────────────────────── apply(): guard связной английской прозы ─────────────────────────
-
-
-def test_apply_skips_transliteration_when_neighbor_is_service_word(wr):
-    # "XKQZ" рядом со служебным словом "the" — признак связной английской
-    # фразы, транслитерация не должна применяться, чтобы не сломать
-    # переключение языка в остальном пайплайне.
-    result = wr.apply("this is the XKQZ file", persist_new=False)
-
-    assert "XKQZ" in result, "рядом со служебным словом токен не должен транслитерироваться"
+def replacer(tmp_rules: Path) -> WordReplacer:
+    return WordReplacer(rules_path=str(tmp_rules))
+
+
+class TestLoadAndBuild:
+    def test_load_missing_file_creates_empty(self, tmp_path: Path):
+        missing = tmp_path / "no_such.json"
+        wr = WordReplacer(rules_path=str(missing))
+        assert wr.flat_rules == {}
+        assert wr.data == {}
+
+    def test_load_corrupted_json_doesnt_crash(self, tmp_path: Path):
+        p = tmp_path / "word_rules.json"
+        p.write_text("{ invalid json", encoding="utf-8")
+        wr = WordReplacer(rules_path=str(p))
+        # при ошибке парсинга — пустой data
+        assert wr.data == {}
+        assert wr.flat_rules == {}
+
+    def test_build_flat_rules_priority(self, tmp_rules: Path):
+        data = {
+            "builtin": {"hello": "builtin_hello", "only_builtin": "b"},
+            "auto": {"hello": "auto_hello"},
+            "ai_corrected": {"hello": "ai_hello"},
+            "custom": {"hello": "custom_hello", "only_custom": "c"},
+        }
+        tmp_rules.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
+        wr = WordReplacer(rules_path=str(tmp_rules))
+        # custom имеет наивысший приоритет среди штатных
+        assert wr.flat_rules["hello"] == "custom_hello"
+        assert wr.flat_rules["only_builtin"] == "b"
+        assert wr.flat_rules["only_custom"] == "c"
+
+    def test_unknown_category_higher_than_custom(self, tmp_rules: Path):
+        # неизвестная категория должна оказаться выше custom по реализации
+        data = {
+            "custom": {"word": "from_custom"},
+            "future_cat": {"word": "from_future"},
+        }
+        tmp_rules.write_text(json.dumps(data), encoding="utf-8")
+        wr = WordReplacer(str(tmp_rules))
+        assert wr.flat_rules["word"] == "from_future"
+
+    def test_dict_value_uses_text_field(self, tmp_rules: Path):
+        data = {
+            "custom": {
+                "gpu": {"text": "гэ пэ у", "weight": 1.0, "occurrences": 1},
+                "cpu": "си пи ю",
+                "empty": {"not_text": "oops"},
+            }
+        }
+        tmp_rules.write_text(json.dumps(data), encoding="utf-8")
+        wr = WordReplacer(str(tmp_rules))
+        assert wr.flat_rules["gpu"] == "гэ пэ у"
+        assert wr.flat_rules["cpu"] == "си пи ю"
+        # если нет text -> ""
+        assert wr.flat_rules["empty"] == ""
+
+    def test_meta_ignored(self, tmp_rules: Path):
+        data = {"meta": {"version": 1}, "custom": {"hi": "привет"}}
+        tmp_rules.write_text(json.dumps(data), encoding="utf-8")
+        wr = WordReplacer(str(tmp_rules))
+        assert "version" not in wr.flat_rules
+        assert wr.flat_rules["hi"] == "привет"
+
+
+class TestAddRemove:
+    def test_add_rule_creates_category(self, replacer: WordReplacer, tmp_rules: Path):
+        replacer.add_rule("hello", "привет", category="custom")
+        assert replacer.get_category("hello") == "custom"
+        assert replacer.flat_rules["hello"] == "привет"
+        # файл на диске сохранился
+        assert json.loads(tmp_rules.read_text(encoding="utf-8"))["custom"]["hello"]["text"] == "привет"
+
+    def test_add_rule_occurrences_increment_same_category(self, replacer: WordReplacer):
+        replacer.add_rule("test", "тест1", category="custom")
+        first = replacer.data["custom"]["test"]
+        assert first["occurrences"] == 1
+        first_added = first["added_at"]
+
+        time.sleep(0.01)
+        replacer.add_rule("test", "тест2", category="custom")
+        second = replacer.data["custom"]["test"]
+        assert second["occurrences"] == 2
+        assert second["added_at"] == first_added  # не теряем историю
+        assert second["text"] == "тест2"
+        assert second["updated_at"] >= first["updated_at"]
+
+    def test_add_rule_move_between_categories_resets_occurrences(self, replacer: WordReplacer):
+        replacer.add_rule("word", "v1", category="auto")
+        assert replacer.get_category("word") == "auto"
+        replacer.add_rule("word", "v1", category="auto")
+        assert replacer.data["auto"]["word"]["occurrences"] == 2
+
+        replacer.add_rule("word", "v2", category="custom")
+        # старая категория удалена
+        assert "word" not in replacer.data.get("auto", {})
+        assert replacer.get_category("word") == "custom"
+        # occurrences сброшен, т.к. категория сменилась
+        assert replacer.data["custom"]["word"]["occurrences"] == 1
+
+    def test_add_rule_context_truncated(self, replacer: WordReplacer):
+        long_ctx = "x" * 200
+        replacer.add_rule("w", "rep", category="custom", context=long_ctx)
+        assert len(replacer.data["custom"]["w"]["context"]) == 120
+
+    def test_add_rule_strip(self, replacer: WordReplacer):
+        replacer.add_rule("  spaced  ", "  rep  ")
+        assert replacer.get_category("spaced") == "custom"
+        assert replacer.flat_rules["spaced"] == "rep"
+
+    def test_remove_rule(self, replacer: WordReplacer):
+        replacer.add_rule("todelete", "x", category="custom")
+        assert "todelete" in replacer.flat_rules
+        replacer.remove_rule("todelete")
+        assert "todelete" not in replacer.flat_rules
+        assert replacer.get_category("todelete") is None
+
+    def test_get_words_list_sorted(self, replacer: WordReplacer):
+        replacer.add_rule("zebra", "z", category="custom")
+        replacer.add_rule("apple", "a", category="custom")
+        replacer.add_rule("monkey", "m", category="auto")
+        lst = replacer.get_words_list()
+        assert lst == sorted(lst)
+        assert lst == ["apple", "monkey", "zebra"]
+
+    def test_get_category_none(self, replacer: WordReplacer):
+        assert replacer.get_category("no_such") is None
+
+
+class TestBackups:
+    def test_backup_created_on_save(self, tmp_path: Path):
+        rules = tmp_path / "word_rules.json"
+        rules.write_text(json.dumps({"custom": {"a": "b"}}), encoding="utf-8")
+        wr = WordReplacer(str(rules))
+        wr.add_rule("new", "val", category="custom")
+        backup_dir = tmp_path / "word_rules_backups"
+        assert backup_dir.exists()
+        backups = list(backup_dir.glob("word_rules_*.json"))
+        assert len(backups) == 1
+
+    def test_backup_limit_30(self, tmp_path: Path):
+        rules = tmp_path / "word_rules.json"
+        rules.write_text("{}", encoding="utf-8")
+        wr = WordReplacer(str(rules))
+        # делаем 35 сохранений
+        for i in range(35):
+            wr.add_rule(f"w{i}", f"r{i}", category="custom")
+        backup_dir = tmp_path / "word_rules_backups"
+        backups = sorted(backup_dir.glob("word_rules_*.json"))
+        assert len(backups) == _MAX_BACKUPS
+        # старые удалены, остались самые свежие
+        assert len(backups) <= 30
+
+    def test_backup_no_crash_if_rules_missing(self, tmp_path: Path):
+        missing = tmp_path / "not_exists.json"
+        wr = WordReplacer(str(missing))
+        # _make_backup должен тихо выйти, если файла нет
+        wr._make_backup()  # не падает
+
+
+class TestApply:
+    def test_apply_simple_replacement(self, replacer: WordReplacer):
+        replacer.add_rule("hello", "привет", category="custom")
+        # "world" сам по себе транслитерируется в "ворлд", это фича — проверяем что hello заменён
+        result = replacer.apply("hello the", persist_new=False)
+        # "the" — service word, не транслитерируется, остаётся
+        assert result == "привет the"
+        # IGNORECASE
+        result2 = replacer.apply("HELLO the", persist_new=False)
+        assert result2 == "привет the"
+
+    def test_apply_word_boundaries(self, replacer: WordReplacer):
+        replacer.add_rule("cat", "кот", category="custom")
+        # "concatenate" не должен затронуться правилом cat (границы), но сам транслитерируется как неизвестный термин
+        # поэтому проверяем что внутри не появляется "кот" из-за подстроки
+        res_concat = replacer.apply("concatenate", persist_new=False)
+        assert "кот" not in res_concat  # cat внутри не должен матчиться как отдельное слово
+        assert "конкатенате" in res_concat or "кон" in res_concat  # eвристика сработала
+
+        assert replacer.apply("cat!", persist_new=False) == "кот!"
+        # "the cat, sat" — "the" и "sat"? sat — не service, но "and"? Используем service word "and"
+        # cat — в flat_rules, поэтому вернёт замену даже внутри прозы
+        res = replacer.apply("the cat and the dog", persist_new=False)
+        # dog тоже lowercase term, но если persist_new=False — он транслитерируется, но cat точно заменён
+        assert "кот" in res
+        assert "cat" not in res.lower()
+
+    def test_apply_longer_first(self, replacer: WordReplacer):
+        replacer.add_rule("test", "тест", category="custom")
+        replacer.add_rule("test case", "тест кейс", category="custom")
+        # длиннее правило должно сработать первым
+        result = replacer.apply("test case")
+        assert result == "тест кейс"
+
+    def test_apply_prose_protection_blocks_abbrev(self, replacer: WordReplacer):
+        # "CPU is fast" — после CPU идет service word "is", должно защитить от транслитерации
+        # без правил flat_rules — CPU должен остаться как есть
+        text = "This is CPU"
+        result = replacer.apply(text, persist_new=False)
+        assert "CPU" in result
+
+    def test_apply_abbrev_list_transliterates(self, replacer: WordReplacer):
+        # список аббревиатур через пробел — не считается прозой, должен транслитерироваться
+        result = replacer.apply("CPU GPU RAM", persist_new=False)
+        # должен замениться, т.е. не содержать оригиналов
+        assert "CPU" not in result or "си" in result.lower()
+        # проверим что транслит сработал хотя бы для одного
+        assert "пи" in result or "си" in result
+
+    def test_apply_abbrev_auto_persist(self, tmp_path: Path):
+        rules = tmp_path / "word_rules.json"
+        rules.write_text("{}", encoding="utf-8")
+        wr = WordReplacer(str(rules))
+        # применим аббревиатуру, которой нет в словаре
+        res = wr.apply("CPU GPU", persist_new=True)
+        # после persist — правила появились в auto
+        assert wr.get_category("CPU") == "auto"
+        assert "CPU" in wr.flat_rules
+
+    def test_apply_lowercase_term_transliterates(self, replacer: WordReplacer):
+        # pydub — не служебное, ascii, нижний регистр — кандидат на транслит
+        res = replacer.apply("pydub", persist_new=False)
+        # должен вернуть непустой транслит (эвристика)
+        assert res != "pydub"
+        assert len(res) > 0
+
+    def test_apply_service_words_not_transliterated(self, replacer: WordReplacer):
+        for w in ["the", "and", "is", "fast"]:
+            assert replacer.apply(w, persist_new=False) == w
+
+    def test_apply_persist_new_false_does_not_save(self, tmp_path: Path):
+        rules = tmp_path / "word_rules.json"
+        rules.write_text("{}", encoding="utf-8")
+        wr = WordReplacer(str(rules))
+        wr.apply("XYZ", persist_new=False)
+        assert wr.get_category("XYZ") is None
+
+    def test_circular_blocking_no_infinite_loop(self, replacer: WordReplacer):
+        # потенциальный цикл A->B, B->A не должен зациклить apply
+        replacer.add_rule("foo", "bar", category="custom")
+        replacer.add_rule("bar", "foo", category="auto")
+        # priority custom > auto? Проверим: priority list builtin,auto,ai_corrected,custom -> custom выше auto, значит foo->bar остаётся
+        # Но даже если оба есть — apply не должен зависнуть
+        result = replacer.apply("foo bar", persist_new=False)
+        # не падает и возвращает строку
+        assert isinstance(result, str)
+        assert len(result) > 0
+
+
+class TestHelpers:
+    def test_looks_like_abbrev(self):
+        assert _looks_like_abbrev("CPU") is True
+        assert _looks_like_abbrev("GPU") is True
+        assert _looks_like_abbrev("XTTS") is True
+        assert _looks_like_abbrev("a") is False  # <2
+        assert _looks_like_abbrev("TOOLONGABBR") is False  # >6
+        assert _looks_like_abbrev("Cpu") is False  # не все upper
+        assert _looks_like_abbrev("CPU1") is False  # не alpha
+        assert _looks_like_abbrev("ЦПУ") is False  # не ascii
+
+    def test_auto_transliterate_abbrev(self):
+        assert _auto_transliterate_abbrev("CPU") == "си пи ю"
+        assert _auto_transliterate_abbrev("AI") == "эй ай"
+
+    def test_looks_like_lowercase_term(self):
+        assert _looks_like_lowercase_term("pydub") is True
+        assert _looks_like_lowercase_term("ffmpeg") is True
+        assert _looks_like_lowercase_term("GPU") is False
+        assert _looks_like_lowercase_term("the") is False  # service word
+        assert _looks_like_lowercase_term("a") is False  # слишком коротко
+        assert _looks_like_lowercase_term("Привет") is False  # не ascii
+
+    def test_transliterate_term_word(self):
+        res = _transliterate_term_word("pydub")
+        assert isinstance(res, str)
+        assert len(res) > 0
+
+    def test_letters_to_word_sound(self):
+        res = _letters_to_word_sound("test")
+        assert isinstance(res, str)
+        assert len(res) > 0

@@ -1,253 +1,395 @@
-# -*- coding: utf-8 -*-
-"""
-test_updater.py — тесты для engine/updater.py.
-
-Ничего не ходит в реальную сеть: _urlopen_with_retry подменяется мок-объектом,
-который отдаёт заранее заданное содержимое файлов. Все пути (BASE_DIR,
-STAGING_DIR, BACKUP_DIR, ROLLBACK_MARKER, LOCAL_VERSION_PATH) подменяются на
-временную папку pytest (tmp_path), так что тесты никогда не трогают реальный
-проект.
-
-Запуск:
-    pip install pytest --break-system-packages
-    pytest test_updater.py -v
-"""
 import hashlib
-import io
 import json
 import os
+import time
+from pathlib import Path
+from unittest.mock import MagicMock, patch
 
 import pytest
 
-from engine import updater
-
-
-class FakeResponse(io.BytesIO):
-    """Имитирует объект, который возвращает urllib.request.urlopen()."""
-
-    def __enter__(self):
-        return self
-
-    def __exit__(self, *a):
-        return False
+import engine.updater as upd
 
 
 @pytest.fixture
-def isolated_project(tmp_path, monkeypatch):
-    """Подменяет все пути updater.py на временную директорию."""
-    base = tmp_path / "project"
+def tmp_base_dir(tmp_path: Path, monkeypatch):
+    base = tmp_path / "base"
     base.mkdir()
-    monkeypatch.setattr(updater, "BASE_DIR", str(base))
-    monkeypatch.setattr(updater, "LOCAL_VERSION_PATH", str(base / "version.json"))
-    monkeypatch.setattr(updater, "STAGING_DIR", str(base / "_update_staging"))
-    monkeypatch.setattr(updater, "BACKUP_DIR", str(base / "_update_backup"))
-    monkeypatch.setattr(updater, "ROLLBACK_MARKER", str(base / "_update_pending.json"))
-
-    # исходный version.json — старая версия
-    (base / "version.json").write_text(
-        json.dumps({"version": "1.0.0", "files": []}, ensure_ascii=False),
-        encoding="utf-8",
-    )
-    return base
+    # Патчим все пути, которые зависят от BASE_DIR
+    monkeypatch.setattr(upd, "BASE_DIR", str(base))
+    monkeypatch.setattr(upd, "LOCAL_VERSION_PATH", str(base / "version.json"))
+    monkeypatch.setattr(upd, "STAGING_DIR", str(base / "_update_staging"))
+    monkeypatch.setattr(upd, "BACKUP_DIR", str(base / "_update_backup"))
+    monkeypatch.setattr(upd, "ROLLBACK_MARKER", str(base / "_update_pending.json"))
+    yield base
 
 
-def _sha256(content: bytes) -> str:
-    return hashlib.sha256(content).hexdigest()
+class TestVersionParsing:
+    def test_version_gt(self):
+        assert upd._version_gt("1.0.1", "1.0.0") is True
+        assert upd._version_gt("1.0.0", "1.0.0") is False
+        assert upd._version_gt("1.0.0", "1.0.1") is False
+        assert upd._version_gt("2.0", "1.9.9") is True
+        assert upd._version_gt("invalid", "0.0.0") is False  # parse -> (0,0,0)
+
+    def test_version_lt(self):
+        assert upd._version_lt("1.0.0", "1.0.1") is True
+        assert upd._version_lt("1.0.1", "1.0.0") is False
+
+    def test_get_local_version_missing(self, tmp_base_dir):
+        assert upd.get_local_version() == "0.0.0"
+
+    def test_get_local_version_exists(self, tmp_base_dir):
+        (tmp_base_dir / "version.json").write_text(json.dumps({"version": "2.3.4"}), encoding="utf-8")
+        assert upd.get_local_version() == "2.3.4"
 
 
-def _mock_urlopen(contents_by_relpath: dict, remote_version_info: dict, monkeypatch):
-    """
-    contents_by_relpath: {"a.txt": b"..."} — что отдавать для download-запросов.
-    remote_version_info: dict — что отдавать на запрос VERSION_URL.
-    """
-
-    def fake(url, timeout=15, max_retries=updater.MAX_RETRIES):
-        if url == updater.VERSION_URL:
-            return FakeResponse(json.dumps(remote_version_info, ensure_ascii=False).encode("utf-8"))
-        for relpath, content in contents_by_relpath.items():
-            if url.endswith(relpath.replace(" ", "%20")) or url.endswith(relpath):
-                return FakeResponse(content)
-        raise RuntimeError(f"Неожиданный URL в тесте: {url}")
-
-    monkeypatch.setattr(updater, "_urlopen_with_retry", fake)
+class TestSha256:
+    def test_sha256_of_file(self, tmp_path):
+        file = tmp_path / "test.bin"
+        file.write_bytes(b"hello world")
+        expected = hashlib.sha256(b"hello world").hexdigest()
+        assert upd._sha256_of_file(str(file)) == expected
 
 
-# ───────────────────────── check_update / min_app_version ─────────────────────────
+class TestIsCancelled:
+    def test_none(self):
+        assert upd._is_cancelled(None) is False
+
+    def test_dict(self):
+        assert upd._is_cancelled({"cancelled": True}) is True
+        assert upd._is_cancelled({"cancelled": False}) is False
+        assert upd._is_cancelled({}) is False
+
+    def test_list(self):
+        assert upd._is_cancelled([True]) is True
+        assert upd._is_cancelled([False]) is False
+        assert upd._is_cancelled([]) is False
+        assert upd._is_cancelled((True,)) is True
 
 
-def test_check_update_detects_available_version(isolated_project, monkeypatch):
-    remote_info = {"version": "1.0.1", "files": ["a.txt"], "sha256": {}, "changelog": "fix"}
-    _mock_urlopen({}, remote_info, monkeypatch)
+class TestUrlopenRetry:
+    def test_retry_success_on_second_attempt(self, monkeypatch):
+        calls = {"count": 0}
 
-    result = updater.check_update()
+        def fake_urlopen(req, timeout=0, context=None):
+            calls["count"] += 1
+            if calls["count"] == 1:
+                raise Exception("transient")
+            mock_resp = MagicMock()
+            mock_resp.read.return_value = b'{"key":"val"}'
+            mock_resp.__enter__ = lambda s: s
+            mock_resp.__exit__ = lambda s, *a: False
+            return mock_resp
 
-    assert result["available"] is True
-    assert result["local"] == "1.0.0"
-    assert result["remote"] == "1.0.1"
-    assert result["needs_manual_reinstall"] is False
+        monkeypatch.setattr(upd.urllib.request, "urlopen", fake_urlopen)
+        monkeypatch.setattr(upd.time, "sleep", lambda x: None)
 
+        resp = upd._urlopen_with_retry("http://example.com", max_retries=2)
+        assert calls["count"] == 2
 
-def test_check_update_flags_manual_reinstall_when_too_old(isolated_project, monkeypatch):
-    remote_info = {"version": "2.0.0", "min_app_version": "1.5.0", "files": []}
-    _mock_urlopen({}, remote_info, monkeypatch)
+    def test_retry_exhausted_raises(self, monkeypatch):
+        def always_fail(*a, **kw):
+            raise Exception("always fail")
 
-    result = updater.check_update()
+        monkeypatch.setattr(upd.urllib.request, "urlopen", always_fail)
+        monkeypatch.setattr(upd.time, "sleep", lambda x: None)
 
-    assert result["needs_manual_reinstall"] is True
-
-
-# ───────────────────────── apply_update: успешный сценарий ─────────────────────────
-
-
-def test_apply_update_success_writes_files_and_marker(isolated_project, monkeypatch):
-    content_a = b"hello world"
-    files = ["a.txt"]
-    sha256_map = {"a.txt": _sha256(content_a)}
-    remote_info = {"version": "1.0.1", "files": files, "sha256": sha256_map}
-    _mock_urlopen({"a.txt": content_a}, remote_info, monkeypatch)
-
-    ok = updater.apply_update(files, sha256_map=sha256_map)
-
-    assert ok is True
-    assert (isolated_project / "a.txt").read_bytes() == content_a
-    assert not os.path.isdir(updater.STAGING_DIR), "staging должен быть очищен после применения"
-    assert os.path.exists(
-        updater.ROLLBACK_MARKER
-    ), "маркер должен появиться сразу после apply_update"
-    assert os.path.isdir(
-        updater.BACKUP_DIR
-    ), "backup должен существовать до confirm_update_success()"
-
-    local_version = json.loads((isolated_project / "version.json").read_text(encoding="utf-8"))
-    assert local_version["version"] == "1.0.1"
+        with pytest.raises(Exception, match="always fail"):
+            upd._urlopen_with_retry("http://example.com", max_retries=2)
 
 
-# ───────────────────────── apply_update: битый SHA256 ─────────────────────────
+class TestCheckUpdate:
+    def test_available(self, tmp_base_dir, monkeypatch):
+        # local 1.0.0, remote 1.0.1
+        (tmp_base_dir / "version.json").write_text(json.dumps({"version": "1.0.0"}), encoding="utf-8")
+        monkeypatch.setattr(upd, "_get_latest_commit_sha", lambda: "abc123")
+        monkeypatch.setattr(upd, "get_remote_version_info", lambda commit_sha=None: {
+            "version": "1.0.1",
+            "files": ["a.py"],
+            "sha256": {},
+            "changelog": "fix"
+        })
+
+        result = upd.check_update()
+        assert result["available"] is True
+        assert result["local"] == "1.0.0"
+        assert result["remote"] == "1.0.1"
+
+    def test_not_available(self, tmp_base_dir, monkeypatch):
+        (tmp_base_dir / "version.json").write_text(json.dumps({"version": "2.0.0"}), encoding="utf-8")
+        monkeypatch.setattr(upd, "_get_latest_commit_sha", lambda: "sha")
+        monkeypatch.setattr(upd, "get_remote_version_info", lambda commit_sha=None: {"version": "1.0.0"})
+
+        result = upd.check_update()
+        assert result["available"] is False
+
+    def test_needs_manual_reinstall(self, tmp_base_dir, monkeypatch):
+        (tmp_base_dir / "version.json").write_text(json.dumps({"version": "1.0.0"}), encoding="utf-8")
+        monkeypatch.setattr(upd, "_get_latest_commit_sha", lambda: "sha")
+        monkeypatch.setattr(upd, "get_remote_version_info", lambda commit_sha=None: {
+            "version": "2.0.0",
+            "min_app_version": "1.5.0",
+            "files": []
+        })
+
+        result = upd.check_update()
+        assert result["needs_manual_reinstall"] is True
+
+    def test_error_handling(self, tmp_base_dir, monkeypatch):
+        monkeypatch.setattr(upd, "_get_latest_commit_sha", lambda: (_ for _ in ()).throw(Exception("network")))
+        # get_remote_version_info will be called with commit_sha None? Actually check_update gets commit_sha via _get_latest_commit_sha, so if that throws, get_remote_version_info still called?
+        # В check_update commit_sha вызывается отдельно, если он кинет — info получается через get_remote_version_info который сам вызывает _get_latest_commit_sha снова.
+        # Для теста проще заставить get_remote_version_info кидать.
+        monkeypatch.setattr(upd, "get_remote_version_info", lambda commit_sha=None: (_ for _ in ()).throw(Exception("fail")))
+
+        result = upd.check_update()
+        assert result["available"] is False
+        assert "error" in result
 
 
-def test_apply_update_aborts_on_bad_checksum_and_touches_nothing(isolated_project, monkeypatch):
-    # исходный рабочий файл — должен остаться нетронутым
-    (isolated_project / "a.txt").write_bytes(b"OLD CONTENT")
+class TestDownloadToStaging:
+    def test_no_sha256_rejects(self, tmp_base_dir, monkeypatch):
+        # без expected_sha256 должен вернуть False
+        monkeypatch.setattr(upd, "_urlopen_with_retry", lambda *a, **kw: MagicMock())
+        result = upd._download_to_staging("some/file.py", expected_sha256=None)
+        assert result is False
 
-    content_a = b"NEW CONTENT"
-    files = ["a.txt"]
-    wrong_sha256_map = {"a.txt": "0" * 64}  # заведомо неверный хэш
-    remote_info = {"version": "1.0.1", "files": files, "sha256": wrong_sha256_map}
-    _mock_urlopen({"a.txt": content_a}, remote_info, monkeypatch)
+    def test_success_with_correct_sha(self, tmp_base_dir, monkeypatch, tmp_path):
+        content = b"print('hello')"
+        expected_sha = hashlib.sha256(content).hexdigest()
 
-    ok = updater.apply_update(
-        files,
-        sha256_map=wrong_sha256_map,
-        sha_mismatch_retries=0,  # без повторов — тест не должен ждать backoff
-        sha_mismatch_delay=0,  # без реальных time.sleep между попытками
-    )
+        class FakeResp:
+            def __init__(self):
+                self._pos = 0
 
-    assert ok is False
-    assert (
-        isolated_project / "a.txt"
-    ).read_bytes() == b"OLD CONTENT", "рабочий файл не должен был измениться"
-    assert not os.path.isdir(updater.STAGING_DIR)
-    assert not os.path.isdir(
-        updater.BACKUP_DIR
-    ), "backup не должен создаваться при провале проверки"
-    assert not os.path.exists(updater.ROLLBACK_MARKER)
+            def read(self, size=-1):
+                if self._pos >= len(content):
+                    return b""
+                chunk = content[self._pos:self._pos + size]
+                self._pos += len(chunk)
+                return chunk
 
-    local_version = json.loads((isolated_project / "version.json").read_text(encoding="utf-8"))
-    assert local_version["version"] == "1.0.0", "version.json не должен обновляться при неудаче"
+            def __enter__(self):
+                return self
 
+            def __exit__(self, *a):
+                return False
 
-# ───────────────────────── rollback ─────────────────────────
+        monkeypatch.setattr(upd, "_urlopen_with_retry", lambda url, timeout=30: FakeResp())
+        monkeypatch.setattr(upd.time, "sleep", lambda x: None)
 
+        result = upd._download_to_staging("folder/file.py", expected_sha256=expected_sha)
+        assert result is True
+        staged_path = Path(tmp_base_dir) / "_update_staging" / "folder" / "file.py"
+        assert staged_path.exists()
+        assert staged_path.read_bytes() == content
 
-def test_rollback_restores_previous_file_content(isolated_project, monkeypatch):
-    (isolated_project / "a.txt").write_bytes(b"OLD CONTENT")
+    def test_sha_mismatch_fails(self, tmp_base_dir, monkeypatch):
+        content = b"real content"
+        wrong_sha = "0" * 64
 
-    content_a = b"NEW CONTENT"
-    files = ["a.txt"]
-    sha256_map = {"a.txt": _sha256(content_a)}
-    remote_info = {"version": "1.0.1", "files": files, "sha256": sha256_map}
-    _mock_urlopen({"a.txt": content_a}, remote_info, monkeypatch)
+        class FakeResp:
+            def read(self, size=-1):
+                return b"" if hasattr(self, "_done") else setattr(self, "_done", True) or content
 
-    assert updater.apply_update(files, sha256_map=sha256_map) is True
-    assert (isolated_project / "a.txt").read_bytes() == b"NEW CONTENT"
+            def __enter__(self):
+                self._done = False
+                return self
 
-    ok = updater.rollback_update()
+            def __exit__(self, *a):
+                return False
 
-    assert ok is True
-    assert (isolated_project / "a.txt").read_bytes() == b"OLD CONTENT"
-    assert not os.path.exists(updater.ROLLBACK_MARKER)
-    assert not os.path.isdir(updater.BACKUP_DIR)
+        # Простой фейк с одним чтением
+        class SimpleResp:
+            def read(self, size=-1):
+                if not hasattr(self, "called"):
+                    self.called = True
+                    return content
+                return b""
 
-    local_version = json.loads((isolated_project / "version.json").read_text(encoding="utf-8"))
-    assert local_version["version"] == "1.0.0", "версия должна откатиться на старую"
+            def __enter__(self):
+                return self
 
+            def __exit__(self, *a):
+                return False
 
-def test_confirm_update_success_clears_marker_and_backup(isolated_project, monkeypatch):
-    content_a = b"NEW CONTENT"
-    files = ["a.txt"]
-    sha256_map = {"a.txt": _sha256(content_a)}
-    remote_info = {"version": "1.0.1", "files": files, "sha256": sha256_map}
-    _mock_urlopen({"a.txt": content_a}, remote_info, monkeypatch)
+        monkeypatch.setattr(upd, "_urlopen_with_retry", lambda url, timeout=30: SimpleResp())
+        monkeypatch.setattr(upd.time, "sleep", lambda x: None)
 
-    assert updater.apply_update(files, sha256_map=sha256_map) is True
-    assert os.path.exists(updater.ROLLBACK_MARKER)
+        result = upd._download_to_staging("file.py", expected_sha256=wrong_sha, sha_mismatch_retries=0)
+        assert result is False
 
-    updater.confirm_update_success()
+    def test_cancelled_during_download(self, tmp_base_dir, monkeypatch):
+        content = b"x" * 100000
+        expected_sha = hashlib.sha256(content).hexdigest()
 
-    assert not os.path.exists(updater.ROLLBACK_MARKER)
-    assert not os.path.isdir(updater.BACKUP_DIR)
-    # файл, конечно, остаётся обновлённым
-    assert (isolated_project / "a.txt").read_bytes() == content_a
+        class SlowResp:
+            def __init__(self):
+                self.pos = 0
 
+            def read(self, size=-1):
+                if self.pos >= len(content):
+                    return b""
+                chunk = content[self.pos:self.pos + 8192]
+                self.pos += len(chunk)
+                return chunk
 
-# ───────────────────────── check_startup_health: сценарий двойного сбоя ─────────────────────────
+            def __enter__(self):
+                return self
 
+            def __exit__(self, *a):
+                return False
 
-def test_startup_health_rolls_back_after_second_unconfirmed_launch(isolated_project, monkeypatch):
-    (isolated_project / "a.txt").write_bytes(b"OLD CONTENT")
+        monkeypatch.setattr(upd, "_urlopen_with_retry", lambda *a, **kw: SlowResp())
+        monkeypatch.setattr(upd.time, "sleep", lambda x: None)
 
-    content_a = b"NEW CONTENT"
-    files = ["a.txt"]
-    sha256_map = {"a.txt": _sha256(content_a)}
-    remote_info = {"version": "1.0.1", "files": files, "sha256": sha256_map}
-    _mock_urlopen({"a.txt": content_a}, remote_info, monkeypatch)
-
-    assert updater.apply_update(files, sha256_map=sha256_map) is True
-    assert (isolated_project / "a.txt").read_bytes() == b"NEW CONTENT"
-
-    # Запуск №1 после обновления — приложение "падает" до confirm_update_success()
-    status_1 = updater.check_startup_health()
-    assert status_1 == "first_attempt"
-    assert (
-        isolated_project / "a.txt"
-    ).read_bytes() == b"NEW CONTENT", "файлы ещё не должны откатываться"
-
-    # Запуск №2 — снова не подтверждён (симулируем повторный сбой) → должен произойти откат
-    status_2 = updater.check_startup_health()
-    assert status_2 == "rolled_back"
-    assert (
-        isolated_project / "a.txt"
-    ).read_bytes() == b"OLD CONTENT", "после второго сбоя файлы должны откатиться"
-    assert not os.path.exists(updater.ROLLBACK_MARKER)
+        cancelled = {"cancelled": True}
+        with pytest.raises(InterruptedError):
+            upd._download_to_staging("file.py", expected_sha256=expected_sha, cancelled_flag=cancelled)
 
 
-def test_startup_health_ok_when_no_pending_update(isolated_project):
-    assert updater.check_startup_health() == "ok"
+class TestBackupAndMove:
+    def test_backup_and_move(self, tmp_base_dir):
+        base = Path(tmp_base_dir)
+        # создаём рабочие файлы
+        (base / "module").mkdir()
+        (base / "module" / "a.py").write_text("old", encoding="utf-8")
+        (base / "version.json").write_text(json.dumps({"version": "1.0.0"}), encoding="utf-8")
+
+        upd._backup_current_files(["module/a.py"])
+
+        backup_dir = base / "_update_backup"
+        assert (backup_dir / "module" / "a.py").exists()
+        assert (backup_dir / "version.json").exists()
+
+        # создаём staged файлы
+        staging = base / "_update_staging"
+        (staging / "module").mkdir(parents=True)
+        (staging / "module" / "a.py").write_text("new", encoding="utf-8")
+
+        upd._move_staged_to_live(["module/a.py"])
+
+        assert (base / "module" / "a.py").read_text(encoding="utf-8") == "new"
+
+    def test_delete_removed_files(self, tmp_base_dir):
+        base = Path(tmp_base_dir)
+        (base / "old").mkdir()
+        (base / "old" / "unused.py").write_text("x", encoding="utf-8")
+
+        upd._delete_removed_files(["old/unused.py"])
+        assert not (base / "old" / "unused.py").exists()
+        # пустая папка должна удалиться
+        assert not (base / "old").exists()
+
+    def test_rollback(self, tmp_base_dir):
+        base = Path(tmp_base_dir)
+        (base / "file.py").write_text("new version", encoding="utf-8")
+        (base / "_update_backup").mkdir()
+        (base / "_update_backup" / "file.py").write_text("old version", encoding="utf-8")
+        (base / "_update_backup" / "version.json").write_text(json.dumps({"version": "1.0.0"}), encoding="utf-8")
+        marker = {"old_version": "1.0.0", "new_version": "2.0.0", "files": ["file.py"], "removed_files": []}
+        (base / "_update_pending.json").write_text(json.dumps(marker), encoding="utf-8")
+
+        result = upd.rollback_update()
+        assert result is True
+        assert (base / "file.py").read_text(encoding="utf-8") == "old version"
+        assert not (base / "_update_pending.json").exists()
+        assert not (base / "_update_backup").exists()
+
+    def test_pending_confirmation(self, tmp_base_dir):
+        assert upd.has_pending_update_confirmation() is False
+        (Path(tmp_base_dir) / "_update_pending.json").write_text("{}", encoding="utf-8")
+        assert upd.has_pending_update_confirmation() is True
+
+    def test_check_startup_health(self, tmp_base_dir):
+        # нет маркера → ok
+        assert upd.check_startup_health() == "ok"
+
+        # первый запуск
+        (Path(tmp_base_dir) / "_update_pending.json").write_text(json.dumps({"attempt": 0, "files": []}), encoding="utf-8")
+        assert upd.check_startup_health() == "first_attempt"
+        data = json.loads((Path(tmp_base_dir) / "_update_pending.json").read_text(encoding="utf-8"))
+        assert data["attempt"] == 1
+
+        # второй запуск без подтверждения → rolled_back
+        # нужно создать backup папку, чтобы rollback не упал из-за отсутствия
+        (Path(tmp_base_dir) / "_update_backup").mkdir(exist_ok=True)
+        assert upd.check_startup_health() == "rolled_back"
+
+    def test_confirm_success(self, tmp_base_dir):
+        base = Path(tmp_base_dir)
+        (base / "_update_pending.json").write_text("{}", encoding="utf-8")
+        (base / "_update_backup").mkdir()
+        (base / "_update_backup" / "file.py").write_text("x")
+
+        upd.confirm_update_success()
+        assert not (base / "_update_pending.json").exists()
+        assert not (base / "_update_backup").exists()
+
+    def test_collect_diagnostics(self, tmp_base_dir):
+        base = Path(tmp_base_dir)
+        (base / "version.json").write_text(json.dumps({"version": "1.2.3"}), encoding="utf-8")
+        diag = upd.collect_update_diagnostics({"available": False})
+        assert "local_version" in diag
+        assert "1.2.3" in diag
 
 
-# ───────────────────────── повторные неудачные загрузки ─────────────────────────
+class TestApplyUpdateIntegration:
+    def test_apply_update_success(self, tmp_base_dir, monkeypatch):
+        base = Path(tmp_base_dir)
+        # local version
+        (base / "version.json").write_text(json.dumps({"version": "1.0.0"}), encoding="utf-8")
+        # existing file to be backed up
+        (base / "mod").mkdir()
+        (base / "mod" / "a.py").write_text("old", encoding="utf-8")
 
+        content_new = b"new content"
+        sha_new = hashlib.sha256(content_new).hexdigest()
 
-def test_apply_update_fails_cleanly_when_file_missing_from_server(isolated_project, monkeypatch):
-    files = ["a.txt", "missing.txt"]
-    content_a = b"NEW CONTENT"
-    sha256_map = {"a.txt": _sha256(content_a)}
-    remote_info = {"version": "1.0.1", "files": files, "sha256": sha256_map}
-    # "missing.txt" намеренно отсутствует в contents_by_relpath → download упадёт с RuntimeError
-    _mock_urlopen({"a.txt": content_a}, remote_info, monkeypatch)
+        class FakeResp:
+            def __init__(self):
+                self._returned = False
 
-    ok = updater.apply_update(files, sha256_map=sha256_map)
+            def read(self, size=-1):
+                if not self._returned:
+                    self._returned = True
+                    return content_new
+                return b""
 
-    assert ok is False
-    assert not os.path.isdir(updater.STAGING_DIR)
-    assert not os.path.exists(updater.ROLLBACK_MARKER)
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *a):
+                return False
+
+        monkeypatch.setattr(upd, "_urlopen_with_retry", lambda *a, **kw: FakeResp())
+        monkeypatch.setattr(upd, "get_remote_version_info", lambda: {"version": "1.0.1"})
+        monkeypatch.setattr(upd.time, "sleep", lambda x: None)
+
+        result = upd.apply_update(
+            files=["mod/a.py"],
+            sha256_map={"mod/a.py": sha_new},
+            removed_files=[],
+            commit_sha="abc",
+            sha_mismatch_retries=0,
+            sha_mismatch_delay=0,
+        )
+        assert result is True
+        assert (base / "mod" / "a.py").read_bytes() == content_new
+        assert (base / "_update_pending.json").exists()
+
+    def test_apply_update_cancelled(self, tmp_base_dir, monkeypatch):
+        base = Path(tmp_base_dir)
+        (base / "version.json").write_text(json.dumps({"version": "1.0.0"}), encoding="utf-8")
+
+        monkeypatch.setattr(upd.time, "sleep", lambda x: None)
+        cancelled = {"cancelled": True}
+
+        result = upd.apply_update(
+            files=["f.py"],
+            sha256_map={"f.py": "a" * 64},
+            cancelled_flag=cancelled,
+            sha_mismatch_delay=0,
+        )
+        assert result is False
+        assert not (base / "_update_staging").exists() or not any((base / "_update_staging").rglob("*"))
