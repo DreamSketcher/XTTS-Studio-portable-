@@ -4,125 +4,125 @@
 
 # 🎙️ XTTS Studio
 
-### Clone any voice. Speak any text. Stay offline.
+### Local voice cloning and text-to-speech without a subscription
 
-**Portable offline voice cloning & text-to-speech for Windows — powered by XTTS v2**
+**A portable Windows application built on XTTS v2: reference + text → WAV or MP3**
 
 <br/>
 
 [![CI](https://github.com/DreamSketcher/XTTS-Studio/actions/workflows/ci.yml/badge.svg)](https://github.com/DreamSketcher/XTTS-Studio/actions/workflows/ci.yml)
-[![Windows](https://img.shields.io/badge/Windows-10%2F11%20x64-0078D6?logo=windows&logoColor=white)](https://github.com/DreamSketcher/XTTS-Studio/releases/tag/v1)
-[![Offline](https://img.shields.io/badge/100%25-Offline-2da44e)](https://github.com/DreamSketcher/XTTS-Studio)
-[![Portable](https://img.shields.io/badge/Portable-no%20install-orange)](https://github.com/DreamSketcher/XTTS-Studio/releases/tag/v1)
+[![Windows](https://img.shields.io/badge/Windows-10%2F11%20x64-0078D6?logo=windows&logoColor=white)](https://github.com/DreamSketcher/XTTS-Studio/releases)
+[![Core Offline](https://img.shields.io/badge/Core-Offline-2da44e)](https://github.com/DreamSketcher/XTTS-Studio)
+[![Portable](https://img.shields.io/badge/Portable-no%20install-orange)](https://github.com/DreamSketcher/XTTS-Studio/releases)
 [![RU/EN](https://img.shields.io/badge/UI-RU%20%2F%20EN-58a6ff)](https://github.com/DreamSketcher/XTTS-Studio)
-[![RVC](https://img.shields.io/badge/RVC-voice%20enhance-e11d48)](https://github.com/DreamSketcher/XTTS-Studio)
-[![Themes](https://img.shields.io/badge/Themes-Dark%20%2F%20Light-7c3aed)](https://github.com/DreamSketcher/XTTS-Studio)
+[![RVC](https://img.shields.io/badge/RVC-voice%20conversion-e11d48)](https://github.com/DreamSketcher/XTTS-Studio)
 
 <br/>
 
-**[📥 Download Github Releases 3 GB → 5.7 GB](https://github.com/DreamSketcher/XTTS-Studio/releases/tag/v1)** · **[🎧 Hear samples](#-hear-it)** · **[📖 Documentation](./DOCUMENTATION.EN.md)** · **[📜 License](./LICENSE.md)**
+**[📥 Download](https://github.com/DreamSketcher/XTTS-Studio/releases)** · **[📖 Documentation EN](./DOCUMENTATION.EN.md)** · **[📖 Документация RU](./DOCUMENTATION.RU.md)** · **[📜 License](./LICENSE.md)**
 
 </div>
 
 ---
 
-## Why XTTS Studio
+## What it is
 
-Most voice tools want your data, your subscription, and a permanent internet connection.
+XTTS Studio runs XTTS v2 locally and provides the surrounding workflow that otherwise has to be assembled by hand:
 
-**XTTS Studio is different:**
+- voice-reference preparation;
+- long-text normalization and chunking;
+- task queue and chunk quality control;
+- voice library and embedding cache;
+- RVC post-processing;
+- generation history with waveforms;
+- WAV/MP3 export;
+- optional cloud or local AI.
 
-| Feature                  | Cloud TTS          | XTTS Studio                     |
-|--------------------------|--------------------|---------------------------------|
-| Internet required        | Always             | **Never** (AI optional)         |
-| Installation             | App + accounts     | **Unpack & run**                |
-| Your voice/text leaves PC| Yes                | **No**                          |
-| Long scripts             | Often limited      | **No length limit**             |
-| GPU                      | Often paid         | **CPU free · CUDA on demand**   |
+Core synthesis does not send the reference or text to a cloud service. A network connection is used only for features that inherently need one: cloud AI, model catalogues/downloads, update checks, and installation of some optional components.
 
-One portable folder. One double-click. Your machine, your rules.
-
----
-
-## Hear it
-
-> Real demos are coming soon — they sell better than any feature list.
-
-<!--
-  HOW TO FILL IN (GitHub doesn't play mp3 inline in README — only <video> embeds work):
-  1. Render a short screen/video (10-20s) with a static image (waveform, spectrogram, or plain logo)
-     and the demo audio as its soundtrack.
-  2. Drag-and-drop the .mp4 into any GitHub Issue/PR comment box (no need to publish it) —
-     GitHub uploads it and gives you a permanent asset URL
-     (github.com/user-attachments/assets/... or user-images.githubusercontent.com/...).
-  3. Paste that URL into the src="" below, replacing the placeholder.
-  4. Keep the raw .mp3/.wav in media/ and link it under each video for people who want the pure file.
--->
-
-**Voice cloning — before / after**
-Original speaker sample cloned into a new voice in seconds.
-
-<video src="PASTE_GITHUB_ASSET_URL_HERE" controls width="480"></video>
-
-📥 [Download raw audio](media/demo-before-after.mp3)
-
-**RVC enhancement — before / after**
-Same clip with RVC post-processing applied for closer voice match.
-
-<video src="PASTE_GITHUB_ASSET_URL_HERE" controls width="480"></video>
-
-📥 [Download raw audio](media/demo-rvc-enhance.mp3)
-
-**Long-form stability**
-A longer passage, showing consistent quality with no length limit.
-
-<video src="PASTE_GITHUB_ASSET_URL_HERE" controls width="480"></video>
-
-📥 [Download raw audio](media/demo-long-form.mp3)
+| Task | Internet |
+|------|----------|
+| XTTS with a local reference | not required |
+| RVC with an installed model | not required |
+| Installed local GGUF model | not required |
+| RVC catalogue, model downloads, updates | required |
+| Groq / OpenRouter / another cloud AI | required |
 
 ---
 
-## Features at a glance
+## What you can do
 
-### 🎤 Voice that sounds like *someone*
+### 🎤 Clone a voice
 
-- Clone from a **10–20 s** reference clip
-- Voice library with cached embeddings
-- **RVC post-processing** — per-chunk second stage (index rate, pitch, f0)
-- Built-in RVC model picker (local + offline catalog + optional Hugging Face search)
-- One-click RVC stack installation (Windows-safe wheels)
-- Long-form ready: books, scripts, ads, narration
+- use a reference of roughly **10–20 seconds**;
+- automatically convert to mono 24 kHz WAV, trim, normalize, and estimate SNR;
+- keep voices under `library/<voice>/`;
+- reuse cached speaker embeddings;
+- process long-form text in chunks and merge it into one file.
 
-### 🧠 Text that reads naturally
+### 🎭 Change timbre with RVC
 
-- Numbers → words, abbreviations → dictionary
-- Russian **ё-restoration**, smart pauses, clean prosody
-- Initials protected (`А. С. Пушкин`)
+- use local `.pth` and optional `.index` files;
+- browse **★ Curated · 🆕 New · 🔥 Top** and live search;
+- hear a model demo before downloading;
+- preview an already installed model;
+- render a separate parameter preview on the first 6 seconds of your reference;
+- adjust Index, Pitch shift, and f0 method;
+- clear preview cache and leftovers from interrupted downloads.
 
-### 🎛 Quality you control
+> Index is meaningful only when a matching `.index` exists. RVC changes the timbre of generated audio, but it does not repair poor base-XTTS pronunciation.
 
-- **4 presets:** High Quality · Narrative · Dynamic · Expressive
-- Sticky tabbed settings (RVC · Trim · Output · XTTS)
-- Fine-tuning saved between sessions
-- Chunk QC with auto-retry
-- Export **WAV** or **MP3**
+### 📚 Produce long-form narration
 
-### 🤖 AI when you want it — offline when you don’t
+- chapters, scripts, lectures, and voice-over;
+- four presets: **High Quality · Narrative · Dynamic · Expressive**;
+- QC with automatic retries for suspicious chunks;
+- smart pauses, prosody, trim, and de-esser;
+- batch processing for multiple TXT files;
+- sequential queue with cancellation.
 
-- Optional **AI Conductor** (per-chunk temperature/speed/pauses + style rewrite)
-- Built-in **AI chat** with multi-provider fallback (Groq / OpenRouter / RU proxy)
-- **Local GGUF LLMs** (llama-cpp) with safe fallback
+### 📝 Prepare text for speech
 
-### 🖥 Desktop app, not a browser toy
+- numbers and dates → spoken words;
+- pronunciation dictionary with custom rules taking priority;
+- Russian ё restoration;
+- protected initials such as `А. С. Пушкин`;
+- automatic chunking at roughly 50–175 characters;
+- RU/EN text and adaptive language detection.
 
-- Dark / light themes + full theme constructor
-- RU / EN interface
-- Portable layout with neon accents
-- Safe auto-update with **SHA256** + rollback
+### 🤖 Use AI only when needed
+
+- AI Conductor assigns parameters and pauses per chunk;
+- optional style rewrite;
+- AI chat with provider fallback;
+- Groq, OpenRouter, and custom OpenAI-compatible APIs;
+- local GGUF models through `llama-cpp-python`.
+
+### 🎧 Return to previous results
+
+History keeps the latest 100 generations. Every card has a waveform: play, stop, click to seek, and use **↩** to return the text to the editor.
 
 ---
 
-## See it
+## Practical workflows
+
+- **Audiobook:** clean calm reference → Narrative preset → full chapter → inspect questionable places in History.
+- **Character voice:** intelligible XTTS first → `.pth` model → parameter preview → tune Pitch/Index/f0.
+- **A set of lines:** multiple TXT files through batch → queue → separate WAV/MP3 outputs.
+- **Private text:** disable cloud AI or use a local GGUF model; synthesis and installed RVC stay on the machine.
+
+---
+
+## Interface
+
+- dark and light themes;
+- theme constructor for colors, font size, layout, and neon effects;
+- sidebar on the left or right;
+- RU/EN interface;
+- persistent quality-preset settings;
+- normal Ctrl+A/C/V/X/Z/Y and context menu in API-key fields.
+
+### Screenshots
 
 <p align="center">
   <img src="images/main.PNG" width="45%" alt="Main window" />
@@ -136,68 +136,81 @@ A longer passage, showing consistent quality with no length limit.
 
 <p align="center">
   <img src="images/ai-settings.PNG" width="45%" alt="AI settings" />
-  <img src="images/preset-settings.PNG" width="45%" alt="AI-настройки" />
+  <img src="images/preset-settings.PNG" width="45%" alt="Preset settings" />
 </p>
 
 ---
 
-## Download
+## Installation
 
-> Git Realeases
+1. Download the portable archive from [GitHub Releases](https://github.com/DreamSketcher/XTTS-Studio/releases).
+2. Run `XTTS Studio.exe`.
+3. Select a reference and generate a short test sentence.
+4. Start a chapter or batch only after the short test succeeds.
 
-**[📥 Download XTTS Studio](https://github.com/DreamSketcher/XTTS-Studio/releases/tag/v1)**
 
-- Runs on **CPU** immediately after unpacking
-- NVIDIA GPU? Enable CUDA in **⚙ Settings → Acceleration**
-- **License:** [LICENSE.md](./LICENSE.md) — free with attribution
+The build runs on CPU immediately. For a compatible NVIDIA GPU, install the CUDA variant through **⚙ Settings → Acceleration**.
+
+> The portable archive is several gigabytes because it includes the Python environment and models. Do not install its dependencies over system Python.
 
 ---
 
-## 60-second start
+## What `XTTS Studio.exe` is
 
-1. Unpack the archive (**no Cyrillic in the path**)
-2. Run `XTTS Studio.exe`
-3. Pick a **10–20 s** voice reference
-4. Paste text → **🚀 GENERATE**
-5. Find audio in `outputs/` folder
+`XTTS Studio.exe` is a small launcher converted from the startup BAT file. It does not contain the XTTS model, user settings, or the application source. It stores only the bundled-Python launch path, the path to `gui.py`, and the application icon.
+
+The launcher is part of the update system. If the portable folder layout changes and runtime/environment paths need to be rewritten, the updater replaces the `.exe` together with the other changed files.
+
+---
+
+## How updates work
+
+The full archive is needed for the first installation or for a rare incompatible upgrade. Normal releases are installed by the built-in client-side updater without downloading the entire heavy build again.
 
 ```text
-✔  C:\XTTS\
-✘  C:\Новая папка\XTTS\
-XTTS Studio.exe - this is a converted bat, just a nice launcher for launching, it contains only launch paths and an icon.
-Included in the update in case  have to rewrite the launch paths.
+version check
+  → changed-file list
+  → staging download
+  → SHA256
+  → backup
+  → file replacement
+  → successful-start confirmation
 ```
 
----
-
-## Who it’s for
-
-- **Creators** — YouTube, ads, podcasts, character VO
-- **Authors & studios** — audiobooks, long narration
-- **Privacy-first teams** — scripts that must not leave the LAN
-- **Power users** — presets, RVC, local AI, theme control
+If the new startup is not confirmed, the updater can restore the backup. A full reinstall is required when the installed version is below `min_app_version` or the portable folder structure changed incompatibly.
 
 ---
 
 ## Requirements
 
-|                  | CPU (default)       | CUDA (optional)               |
-|------------------|---------------------|-------------------------------|
-| **OS**           | Windows 10/11 x64   | Windows 10/11 x64             |
-| **RAM**          | 8+ GB               | 8+ GB                         |
-| **GPU**          | —                   | NVIDIA, 4+ GB VRAM, CC 6.0+   |
-| **Speed**        | Slower than real-time | Often faster than real-time |
+| | Minimum | Recommended |
+|---|---------|-------------|
+| OS | Windows 10/11 x64 | Windows 10/11 x64 |
+| RAM | 8 GB | 16+ GB for long jobs and local LLM |
+| CPU | modern x64 | more cores reduce waiting time |
+| GPU | not required | NVIDIA, 4+ GB VRAM, CC 6.0+ |
+| Disk | portable build + models | extra space for RVC, GGUF, outputs, and caches |
+
+CPU works out of the box, but XTTS, RVC, and local LLM may be noticeably slower than real time. CUDA accelerates supported workloads but requires a compatible NVIDIA GPU and the matching PyTorch build.
 
 ---
 
-## Documentation
+## Documentation and help
 
-This page is the **product pitch**.
+- [Full documentation in English](./DOCUMENTATION.EN.md)
+- [Полная документация на русском](./DOCUMENTATION.RU.md)
+- [License](./LICENSE.md)
+- [Issues](https://github.com/DreamSketcher/XTTS-Studio/issues)
 
-| Language | Full Docs                        | Function Reference                     |
-|----------|----------------------------------|----------------------------------------|
-| English  | [DOCUMENTATION.EN.md](./DOCUMENTATION.EN.md) | [unified_function_reference.EN.md](./unified_function_reference.EN.md) |
-| Русский  | [DOCUMENTATION.RU.md](./DOCUMENTATION.RU.md) | [unified_function_reference.RU.md](./unified_function_reference.RU.md) |
+If a result sounds poor, start with the reference rather than the sliders: disable RVC, test base XTTS on a short sentence, and add RVC and AI only after the base output is intelligible.
+
+---
+
+## Licenses
+
+- XTTS Studio code is covered by [LICENSE.md](./LICENSE.md).
+- XTTS v2 is used under the [Coqui Public Model License (CPML)](https://coqui.ai/cpml).
+- RVC and GGUF models may have their own licenses. A file being listed in a catalogue does not imply permission for commercial use.
 
 ---
 
@@ -209,16 +222,10 @@ If XTTS Studio saves you time or money:
 
 ---
 
-## Third-party components
-
-Uses **XTTS v2** (Coqui) under the [Coqui Public Model License (CPML)](https://coqui.ai/cpml).
-
----
-
 <div align="center">
 
 **XTTS Studio** · by EXIZ10TION · Made with ❤️
 
-[Download](https://github.com/DreamSketcher/XTTS-Studio/releases) · [Docs EN](./DOCUMENTATION.EN.md) · [Docs RU](./DOCUMENTATION.RU.md) · [License](./LICENSE.md)
+[Download](https://github.com/DreamSketcher/XTTS-Studio/releases) · [Documentation](./DOCUMENTATION.EN.md) · [License](./LICENSE.md)
 
 </div>
