@@ -1,6 +1,7 @@
 """Ed25519 verification for immutable XTTS Studio update manifests."""
 
 import base64
+import json
 
 # Release verification key. The matching private key must never be committed or
 # placed in a portable build. Rotate only through a separately authenticated
@@ -15,8 +16,24 @@ class ManifestSignatureError(RuntimeError):
     pass
 
 
+def canonical_manifest_bytes(manifest_bytes: bytes) -> bytes:
+    """Canonical JSON representation, independent of indentation and CRLF."""
+    try:
+        document = json.loads(manifest_bytes.decode("utf-8"))
+        if not isinstance(document, dict):
+            raise ValueError("manifest must be a JSON object")
+        return json.dumps(
+            document,
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode("utf-8")
+    except Exception as exc:
+        raise ManifestSignatureError(f"некорректный update-манифест: {exc}") from exc
+
+
 def verify_manifest_signature(manifest_bytes: bytes, signature_bytes: bytes) -> None:
-    """Raise ManifestSignatureError unless signature is valid for exact bytes."""
+    """Verify manifest semantics in a stable canonical JSON representation."""
     if not manifest_bytes or not signature_bytes:
         raise ManifestSignatureError("манифест или подпись пусты")
     try:
@@ -27,7 +44,7 @@ def verify_manifest_signature(manifest_bytes: bytes, signature_bytes: bytes) -> 
         if not isinstance(key, Ed25519PublicKey):
             raise TypeError("ожидался Ed25519 public key")
         signature = base64.b64decode(signature_bytes.strip(), validate=True)
-        key.verify(signature, manifest_bytes)
+        key.verify(signature, canonical_manifest_bytes(manifest_bytes))
     except ManifestSignatureError:
         raise
     except Exception as exc:

@@ -3,7 +3,12 @@
 import argparse
 import base64
 import os
+import sys
 from pathlib import Path
+
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
 
 
 def main():
@@ -27,7 +32,9 @@ def main():
     key = serialization.load_pem_private_key(key_path.read_bytes(), password=None)
     if not isinstance(key, Ed25519PrivateKey):
         raise TypeError("update signing key must be Ed25519")
-    signature = key.sign(args.manifest.read_bytes())
+    from engine.update_signing import canonical_manifest_bytes
+
+    signature = key.sign(canonical_manifest_bytes(args.manifest.read_bytes()))
     args.signature.write_bytes(base64.b64encode(signature) + b"\n")
     print(f"Signed {args.manifest} -> {args.signature}")
 

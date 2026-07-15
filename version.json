@@ -1,8 +1,7 @@
 {
-  "version": "1.1.300",
+  "version": "1.1.228",
   "files": [
     ".pre-commit-config.yaml",
-    "AUDIT_REPORT_RU.md",
     "DOCUMENTATION.EN.md",
     "DOCUMENTATION.RU.md",
     "PRIVACY.md",
@@ -139,14 +138,11 @@
     "json/rvc_catalog_seed.json",
     "pyproject.toml",
     "requirements.txt",
-    "sbom.cdx.json",
-    "update_manifest_public.pem",
-    "version.json.sig"
+    "sbom.cdx.json"
   ],
   "changelog": "- RVC: постобработка голоса после XTTS (на каждый чанк) — index rate, pitch, f0 (rmvpe/harvest/pm/crepe)\n- RVC: установка rvc-python в portable-окружение (Windows: prebuilt fairseq, без ручной компиляции)\n- RVC: каталог моделей — офлайн seed (json/rvc_catalog_seed.json), кэш, поиск/скачивание (HF; best-effort Google Drive)\n- RVC: выпадающий список моделей в настройках пресета (локальные 🗑, загрузка ⬇, отмена ✕, страница 🔗)\n- Настройки пресета: вкладки RVC · Обрезка · Вывод · XTTS (панель вкладок закреплена сверху, не уезжает при скролле)\n- Настройки пресета: ползунок trim вместе с режимом; де-эссер на вкладке «Вывод»; параметры XTTS отдельно\n- Сохранение RVC и параметров пресета между сессиями (quality_params в settings.json); запоминается последняя вкладка\n- Документация: README и DOCUMENTATION на RU/EN; справочник функций (API) на RU/EN\n- Единая сборка вместо CPU/CUDA-версий: CUDA по желанию в Настройках под конкретное железо\n- Самопроверка torch при запуске: кэш или переустановка совместимой версии\n- Диагностика и Устранение ошибок: проверка библиотек, карантин мусора, автопереустановка сломанных пакетов\n- Редизайн UI, конструктор тем, раскладка и панели\n- Автообновление: staged-загрузка, SHA256, бэкап и rollback; min_app_version для полной переустановки\n- Локальные LLM: автоскан окружения, каталог моделей, своя модель из папки\n- Исправления и оптимизация",
   "sha256": {
     ".pre-commit-config.yaml": "eb207f3e22bf3216adebfb371a5428e216a3d93513ee791288642faebe2ed6f5",
-    "AUDIT_REPORT_RU.md": "c10b1f7552725a953adc22f6978051a3cf339739df307556a3af944ce472bee8",
     "DOCUMENTATION.EN.md": "a44da995db0915f962df24f8920cb9a5c9583b4ebe4b4bd0fdbc7d4b7a009548",
     "DOCUMENTATION.RU.md": "1b27210746e48823e44da370a0b79db6fbe6a3431f6e2153c069bd190823d10e",
     "PRIVACY.md": "3e080153b11a7551a6371b91c511f93624afb8bb85d7c52c0b9493c235ca6371",
@@ -272,7 +268,7 @@
     "engine/tts/qc.py": "b002caf446630d38da71edd1fd78407b4b5ccbe02e02ad7a7875d4196b188451",
     "engine/tts/utils.py": "d3fe6e4fe020b4d29d5f046e6c03c64e348fc25d2b5f3e2b20e7702b1623d4d9",
     "engine/tts_runner.py": "cce1a0c70d0f53f7bb54a842876e9a3e0139fc10f7b686781408d7659bc2e180",
-    "engine/update_signing.py": "0fd504cd9452525c769762dc9e2e620fd54977215bc1d89050cc550b19274b09",
+    "engine/update_signing.py": "4a1902a7727a5ce0be86d94045919d377fdff86a929e2074d7f1ae52d7666118",
     "engine/updater.py": "d3cecf6cf0e92860fe55a0fb2d5d175a1804ff86a9ea5eaeb152bdaf5c451441",
     "engine/validation.py": "aec43f0a57e39d257b69690200fe053e0ec6a8bed705059fc633d3c55f264409",
     "engine/voice_manager.py": "bfeb24ef48e43bf23bcee625307a47ae7d93e83e28423ca30996646cabe307ce",
@@ -283,9 +279,7 @@
     "json/rvc_catalog_seed.json": "bec10a0686e29f80c928aa7bf2ab8b035f461efbd388a41189c15712b3c63235",
     "pyproject.toml": "0d0733a3de8858902a57510c8c6ec463b61db21b767246ed3a65303fd7207a92",
     "requirements.txt": "9dca9816876bc672e0dd78e3725d765856311535f38771c05d55c83259027068",
-    "sbom.cdx.json": "389cc7dec71ad8eb7f3e3619fa3d043026c909b39560ae4217c5a94b79a62224",
-    "update_manifest_public.pem": "051a740b793d2e147217c365a1c0b85e13131cc330904289f43969f17618f587",
-    "version.json.sig": "f59e8797f79928518573b47743829023a74f4237ac24f86f0c173558a04a616c"
+    "sbom.cdx.json": "389cc7dec71ad8eb7f3e3619fa3d043026c909b39560ae4217c5a94b79a62224"
   },
   "removed_files": [
     ".known_safe_files.json",
