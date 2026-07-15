@@ -26,7 +26,11 @@ def test_same_tree_produces_identical_archive(tmp_path, monkeypatch):
     )
     monkeypatch.setattr(update_signing, "UPDATE_MANIFEST_PUBLIC_KEY_PEM", public)
     signature = tmp_path / "version.json.sig"
-    signature.write_bytes(base64.b64encode(private.sign(manifest.read_bytes())))
+    signature.write_bytes(
+        base64.b64encode(
+            private.sign(update_signing.canonical_manifest_bytes(manifest.read_bytes()))
+        )
+    )
 
     first = tmp_path / "first.zip"
     second = tmp_path / "second.zip"

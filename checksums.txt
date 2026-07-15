@@ -1,9 +1,8 @@
-XTTS Studio — контрольные суммы SHA256 для версии 1.1.300
+XTTS Studio — контрольные суммы SHA256 для версии 1.1.228
 Проверка (Windows PowerShell): certutil -hashfile "имя_файла" SHA256
 Проверка (Linux/macOS): sha256sum имя_файла
 
 eb207f3e22bf3216adebfb371a5428e216a3d93513ee791288642faebe2ed6f5  .pre-commit-config.yaml
-c10b1f7552725a953adc22f6978051a3cf339739df307556a3af944ce472bee8  AUDIT_REPORT_RU.md
 a44da995db0915f962df24f8920cb9a5c9583b4ebe4b4bd0fdbc7d4b7a009548  DOCUMENTATION.EN.md
 1b27210746e48823e44da370a0b79db6fbe6a3431f6e2153c069bd190823d10e  DOCUMENTATION.RU.md
 3e080153b11a7551a6371b91c511f93624afb8bb85d7c52c0b9493c235ca6371  PRIVACY.md
@@ -129,7 +128,7 @@ d569d81e89b3ea440b3f4939b431af785bf03ac269eda7b0818c4c3aa700987e  engine/tts/__i
 b002caf446630d38da71edd1fd78407b4b5ccbe02e02ad7a7875d4196b188451  engine/tts/qc.py
 d3fe6e4fe020b4d29d5f046e6c03c64e348fc25d2b5f3e2b20e7702b1623d4d9  engine/tts/utils.py
 cce1a0c70d0f53f7bb54a842876e9a3e0139fc10f7b686781408d7659bc2e180  engine/tts_runner.py
-0fd504cd9452525c769762dc9e2e620fd54977215bc1d89050cc550b19274b09  engine/update_signing.py
+4a1902a7727a5ce0be86d94045919d377fdff86a929e2074d7f1ae52d7666118  engine/update_signing.py
 d3cecf6cf0e92860fe55a0fb2d5d175a1804ff86a9ea5eaeb152bdaf5c451441  engine/updater.py
 aec43f0a57e39d257b69690200fe053e0ec6a8bed705059fc633d3c55f264409  engine/validation.py
 bfeb24ef48e43bf23bcee625307a47ae7d93e83e28423ca30996646cabe307ce  engine/voice_manager.py
@@ -141,5 +140,3 @@ bec10a0686e29f80c928aa7bf2ab8b035f461efbd388a41189c15712b3c63235  json/rvc_catal
 0d0733a3de8858902a57510c8c6ec463b61db21b767246ed3a65303fd7207a92  pyproject.toml
 9dca9816876bc672e0dd78e3725d765856311535f38771c05d55c83259027068  requirements.txt
 389cc7dec71ad8eb7f3e3619fa3d043026c909b39560ae4217c5a94b79a62224  sbom.cdx.json
-051a740b793d2e147217c365a1c0b85e13131cc330904289f43969f17618f587  update_manifest_public.pem
-f59e8797f79928518573b47743829023a74f4237ac24f86f0c173558a04a616c  version.json.sig
