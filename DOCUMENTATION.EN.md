@@ -650,6 +650,94 @@ Special cases:
 
 **Real case:** garbage cleanup removed an `av`-related file and torchvision stopped importing. Recovery repairs the compatible PyAV build and checks `av.logging`; if torchvision imports again, its wheel is not downloaded unnecessarily.
 
+### Diagnostics before the main window (`gui.py`)
+
+`gui.py` does more than call `mainloop()`. Before heavy GUI and Torch imports, it runs a startup preflight so damaged packages can be replaced before the current process locks their DLL/PYD files.
+
+| Function | Responsibility |
+|----------|----------------|
+| `_acquire_single_instance_lock()` | prevent a second instance through a Windows named mutex; fallback to `%TEMP%/XTTS Studio.lock` |
+| `_show_already_running_error()` | show a clear dialog when another instance owns the lock |
+| `_log_startup_error()` | write startup-recovery traceback to `logs/startup_recovery_error.log` |
+| `_show_startup_install_window(variant)` | install/resume the selected Torch build before the main GUI, with progress and install lock |
+| `_show_startup_recovery_window(broken_packages)` | repair critical packages before importing the main application |
+| `_run_scan_with_splash(diagnostics_fn)` | run diagnostics in a background thread under a minimal Tk splash without CustomTkinter/PIL |
+| `_ensure_dependencies_before_startup()` | process startup flags, run diagnostics, separate critical/optional, and offer recovery |
+| `main()` | check previous-update health, create the main window, and enter Tk mainloop |
+
+#### Why the single-instance lock exists
+
+On Windows the application first creates `Global\\XTTS_Studio_Single_Instance_Mutex`. If that fails, it uses a cross-platform file lock containing the PID.
+
+This prevents two processes from modifying these resources simultaneously:
+
+- `settings.json` and `theme_settings.json`;
+- queue/history data;
+- portable `site-packages`;
+- installer checkpoints and caches.
+
+If no window is visible but the lock is held, the dialog asks the user to inspect the tray or Task Manager instead of starting a second process.
+
+#### Startup order
+
+```text
+add bundled site-packages to sys.path
+  → single-instance lock
+  → Cyrillic-path check
+  → startup install flags
+  → optional safe Torch install before GUI
+  → isolated full diagnostics under Tk splash
+  → broken critical only → recovery prompt
+  → import updater and main_window
+  → updater.check_startup_health()
+  → create_main_window()
+  → confirm_update_success() after the complete UI is built
+  → mainloop()
+```
+
+A comment in `main()` calls `check_startup_health()` the first update operation. Process-wide, lock/path/environment preflight has already run before `main()` is entered. This is intentional: recovery must happen before heavy imports.
+
+#### Safe Torch installation before GUI imports
+
+When `settings.json` contains `install_variant_on_startup`, `_ensure_dependencies_before_startup()`:
+
+1. clears the one-shot flag;
+2. opens the lightweight `_show_startup_install_window()`;
+3. acquires the shared install lock;
+4. runs `install_torch(..., resume=True, variant=...)` in a worker thread;
+5. parses percentages and `MB / MB` from pip output for the progress bar;
+6. releases the lock before closing the window;
+7. opens the regular environment settings afterwards.
+
+This allows Torch files to be replaced before TTS/GUI modules import and lock them.
+
+#### Startup recovery for critical components
+
+The normal startup scan runs through `_run_scan_with_splash()`. The splash uses only standard `tkinter` and `colorsys`, so it can still appear when `customtkinter` or PIL is damaged. If even the splash cannot be created, diagnostics still runs without it.
+
+`_ensure_dependencies_before_startup()` evaluates `get_broken_critical()`:
+
+- all critical components healthy → continue startup;
+- missing `llama_cpp` or `rvc_python` → no recovery prompt;
+- broken critical component → show the list and request recovery confirmation;
+- declining recovery exits because starting GUI/TTS without a critical package is considered unsafe.
+
+`_show_startup_recovery_window()` records the damaged package names in recovery history, acquires the install lock, and calls `run_error_recovery()` in a background thread. Real pip output is stored independently from the window. A failure of startup recovery itself is also written to `logs/startup_recovery_error.log`.
+
+**Real case:** `customtkinter` is damaged. The full main GUI cannot be imported safely, but the minimal Tk splash and recovery window do not depend on CustomTkinter, so the package can be repaired before `main_window` is created.
+
+#### Connection to safe updates
+
+After preflight, `main()` calls `updater.check_startup_health()`:
+
+- normal startup → `ok`;
+- first startup after update → `first_attempt`;
+- another startup without confirmation → rollback and `rolled_back` status.
+
+`create_main_window()` calls `confirm_update_success()` only after the UI has been built completely. An update is therefore not accepted when the application crashes between file replacement and a ready main window.
+
+---
+
 ### Important environment files
 
 | Path | Purpose |
@@ -665,9 +753,11 @@ Special cases:
 | `python/temp/` | temporary pip/build files |
 | `python/pip_cache/` | shared installer download cache |
 | `python/xtts_env/Quarantine/` | temporary isolation for deletion candidates |
-| `logs/recovery_pip_output.log` | complete recovery log |
+| `logs/recovery_pip_output.log` | complete package-recovery pip log |
+| `logs/startup_recovery_error.log` | traceback from startup preflight/recovery failures |
+| `%TEMP%/XTTS Studio.lock` | fallback single-instance lock containing the PID |
 
-Do not delete a checkpoint file during an active installation: it is needed for resume and interrupted-stage diagnostics.
+Do not delete a checkpoint file during an active installation: it is needed for resume and interrupted-stage diagnostics. Do not remove the lock file while an XTTS Studio process is actually running.
 
 ---
 
@@ -703,6 +793,14 @@ Quality presets are saved as a complete tree. Theme and other independent keys s
 ### The application does not start after moving it
 
 Check the path. Cyrillic characters and some unusual symbols break parts of the portable dependency stack.
+
+### “XTTS Studio is already running” appears
+
+Check the tray and Task Manager first. If no process is actually running, the fallback lock may have survived an abnormal exit; only then remove `%TEMP%/XTTS Studio.lock`. The Windows named mutex disappears automatically when its process exits.
+
+### Startup recovery failed
+
+The main traceback is in `logs/startup_recovery_error.log`; detailed pip output is in `logs/recovery_pip_output.log`. Do not run Torch, RVC, and llama.cpp installers concurrently because they share the target and installer cache.
 
 ### The cloned voice is not similar enough
 
@@ -770,7 +868,7 @@ Code is separated by responsibility:
 
 | Path | Responsibility |
 |------|----------------|
-| `gui.py` | application entry and startup checks |
+| `gui.py` | single-instance lock, path validation, pre-GUI diagnostics/recovery, and updater-status handoff |
 | `engine/tts/` | generation pipeline, QC, export, and cache |
 | `engine/gui/` | main window and user-facing panels |
 | `engine/env_core/__init__.py` | public system-environment facade |
@@ -793,9 +891,11 @@ Code is separated by responsibility:
 
 ```text
 XTTS Studio.exe
-  → gui.py
+  → gui.py: lock → path check → environment preflight/recovery
+  → updater.check_startup_health()
   → engine/gui/main_window.py
   → engine/gui/layout.py + panels
+  → updater.confirm_update_success() after the complete UI is built
 
 GENERATE button
   → engine/gui/generation.py
