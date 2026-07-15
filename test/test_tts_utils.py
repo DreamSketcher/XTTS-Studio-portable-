@@ -173,7 +173,7 @@ class TestGetEmbedding:
         latent, emb = utils._get_embedding(tts, "/tmp/ref.wav", str(cache))
         assert latent == "latent"
         assert emb == "emb"
-        assert mock_torch.load.called
+        mock_torch.load.assert_called_once_with(str(cache), map_location="cpu", weights_only=True)
 
     def test_compute_and_save(self, tmp_path, monkeypatch):
         mock_torch = MagicMock()

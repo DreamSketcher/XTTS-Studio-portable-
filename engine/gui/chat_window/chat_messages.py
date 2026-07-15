@@ -1,6 +1,17 @@
 from __future__ import annotations
 import tkinter as tk
 import engine.gui.chat_window.state as state
+
+_CHAT_INITIAL_CHARS = 8000
+_CHAT_PAGE_CHARS = 8000
+_CHAT_MEASURE_MAX_LINES = 40
+_CHAT_MEASURE_MAX_CHARS_PER_LINE = 800
+_session_render_token = 0
+_session_render_after_id = None
+_SESSION_RENDER_BATCH = 6
+_SESSION_VISIBLE_WINDOW = 40
+_session_visible_counts = {}
+_session_scroll_top_once = set()
 from engine.gui.chat_window.custom_widgets import (
     CTK_AVAILABLE,
     CTkFrame,
@@ -58,12 +69,16 @@ def _measure_text_px(text: str, font_spec) -> int:
     if not text:
         return 0
     widest = 0
-    for line in str(text).splitlines() or [""]:
+    # Width saturates at max_w later; measuring megabyte-long lines or every
+    # line is wasted Tcl work. A bounded sample is enough to select bubble width.
+    lines = str(text).splitlines() or [""]
+    for line in lines[:_CHAT_MEASURE_MAX_LINES]:
+        sample = line[:_CHAT_MEASURE_MAX_CHARS_PER_LINE]
         try:
-            widest = max(widest, int(f.measure(line)))
+            widest = max(widest, int(f.measure(sample)))
         except Exception:
             widest = max(
-                widest, len(line) * max(6, int(getattr(f, "cget", lambda k: 11)("size") or 11))
+                widest, len(sample) * max(6, int(getattr(f, "cget", lambda k: 11)("size") or 11))
             )
     return widest
 
@@ -72,6 +87,16 @@ def _chars_for_width(px: int, font_pt: int) -> int:
     """Оценка Text.width (в символах) по пикселям."""
     avg = max(5.5, float(font_pt) * 0.55)
     return max(8, min(100, int(px / avg)))
+
+
+def _estimate_display_lines(content: str, chars_per_line: int) -> int:
+    width = max(8, int(chars_per_line))
+    total = 0
+    for line in str(content or "").splitlines() or [""]:
+        total += max(1, (len(line) + width - 1) // width)
+        if total >= 80:
+            return 80
+    return max(1, total)
 
 
 def _bubble_needed_width_px(content: str, meta_text: str, font_body, font_meta, max_w: int) -> int:
@@ -92,7 +117,9 @@ def _add_message_bubble(message: dict, smooth_scroll: bool = True, force_scroll:
         return
 
     role = message.get("role", "assistant")
-    content = message.get("content", "")
+    content = str(message.get("content", "") or "")
+    displayed_content = content[:_CHAT_INITIAL_CHARS]
+    is_truncated = len(displayed_content) < len(content)
     ts = message.get("ts", _now_ts())
     tokens = _approx_tokens(content)
 
@@ -135,7 +162,9 @@ def _add_message_bubble(message: dict, smooth_scroll: bool = True, force_scroll:
     max_bubble_w = _bubble_max_width_px()
     author = t("chat_author_you") if is_user else _ai_display_name()
     meta_text = t("chat_meta_format", author, ts, tokens)
-    bubble_w = _bubble_needed_width_px(content, meta_text, _font_body, _font_meta, max_bubble_w)
+    bubble_w = _bubble_needed_width_px(
+        displayed_content, meta_text, _font_body, _font_meta, max_bubble_w
+    )
 
     bubble = None
     inner_bg = bubble_bg
@@ -244,7 +273,7 @@ def _add_message_bubble(message: dict, smooth_scroll: bool = True, force_scroll:
         cursor="arrow",
         takefocus=0,
     )
-    text_label.insert("1.0", content)
+    text_label.insert("1.0", displayed_content)
     text_label.bind("<Key>", lambda e: "break")
     text_label.bind("<<Paste>>", lambda e: "break")
     text_label.bind("<<Cut>>", lambda e: "break")
@@ -252,14 +281,17 @@ def _add_message_bubble(message: dict, smooth_scroll: bool = True, force_scroll:
     text_label.bind("<Button-1>", lambda e: _on_bubble_text_click(e))
     text_label.bind("<B1-Motion>", lambda e: "ignore_disabled_drag" or None)
 
-    # PATCH 2026-07-15: пузыри не перехватывают колесо мыши
-    text_label.bind("<MouseWheel>", lambda e: "break")
-    text_label.bind("<Button-4>", lambda e: "break")
-    text_label.bind("<Button-5>", lambda e: "break")
+    # Route wheel events from Text directly to the chat Canvas. Returning
+    # "break" only after scrolling prevents Text from swallowing the wheel.
+    text_label.bind("<MouseWheel>", _chat_mousewheel)
+    text_label.bind("<Button-4>", _chat_mousewheel)
+    text_label.bind("<Button-5>", _chat_mousewheel)
 
     # fill=x только внутри УЖЕ content-sized bubble — не раздувает row
     text_label.pack(fill="x", padx=4, pady=(0, 6))
-    text_label._bubble_content = content
+    text_label._bubble_content = displayed_content
+    text_label._bubble_full_content = content
+    text_label._bubble_displayed_chars = len(displayed_content)
     text_label._bubble_bg = inner_bg
     text_label._bubble_max_w = max_bubble_w
     text_label._bubble_w = bubble_w
@@ -267,6 +299,45 @@ def _add_message_bubble(message: dict, smooth_scroll: bool = True, force_scroll:
     text_label._font_body = _font_body
     text_label._font_meta = _font_meta
     text_label._meta_text = meta_text
+
+    more_btn = None
+    if is_truncated:
+        more_btn = tk.Button(
+            bubble,
+            text="Показать ещё",
+            bg=inner_bg,
+            fg=meta_fg,
+            activebackground=bubble_hover,
+            activeforeground=_c("TEXT_MAIN"),
+            relief="flat",
+            bd=0,
+            cursor="hand2",
+            font=_font_meta,
+            padx=8,
+            pady=2,
+        )
+        more_btn.pack(anchor="w", padx=12, pady=(0, 6))
+
+        def _show_next_page():
+            start = int(getattr(text_label, "_bubble_displayed_chars", 0))
+            end = min(len(content), start + _CHAT_PAGE_CHARS)
+            if end <= start:
+                return
+            text_label.insert("end", content[start:end])
+            text_label._bubble_displayed_chars = end
+            text_label._bubble_content = content[:end]
+            if end >= len(content):
+                more_btn.pack_forget()
+            else:
+                remaining = len(content) - end
+                more_btn.configure(text=f"Показать ещё · осталось {remaining:,} знаков")
+            try:
+                state._root.after_idle(lambda: _resize_bubble_text(text_label))
+            except Exception:
+                _resize_bubble_text(text_label)
+
+        more_btn.configure(command=_show_next_page)
+
     state._message_labels.append(text_label)
 
     def _send_selected_or_full2():
@@ -344,10 +415,13 @@ def _add_message_bubble(message: dict, smooth_scroll: bool = True, force_scroll:
 
     bubble._on_select_colors = (inner_bg, bubble_hover, meta, text_label, copy_btn, to_editor_btn)
 
-    for w in (row, bubble, meta, text_label, avatar):
+    for w in (row, bubble, meta, avatar):
         try:
             w.bind("<Enter>", on_enter)
             w.bind("<Leave>", on_leave)
+            w.bind("<MouseWheel>", _chat_mousewheel, add="+")
+            w.bind("<Button-4>", _chat_mousewheel, add="+")
+            w.bind("<Button-5>", _chat_mousewheel, add="+")
         except Exception:
             pass
 
@@ -362,7 +436,8 @@ def _add_message_bubble(message: dict, smooth_scroll: bool = True, force_scroll:
         elif role == "assistant" and smooth_scroll:
             _show_new_message_indicator()
 
-    _safe_after(150, _check_and_scroll)
+    if smooth_scroll or force_scroll:
+        _safe_after(150, _check_and_scroll)
 
 
 def _add_system_message(content: str, ts: str):
@@ -440,15 +515,11 @@ def _resize_bubble_text(text_widget):
                 except Exception:
                     pass
 
-        text_widget.update_idletasks()
-        try:
-            n = int(text_widget.tk.call(text_widget._w, "count", "-displaylines", "1.0", "end-1c"))
-        except Exception:
-            try:
-                n = int(text_widget.tk.call(text_widget._w, "count", "-displaylines", "1.0", "end"))
-            except Exception:
-                n = max(1, content.count("\n") + 1)
-        text_widget.config(height=max(1, min(80, n)))
+        # Tcl `count -displaylines` forces a synchronous layout of the entire
+        # Text widget and becomes pathological for long messages. The bounded
+        # estimate is stable, O(displayed text), and the widget is capped at 80.
+        n = _estimate_display_lines(content, char_w)
+        text_widget.config(height=n)
     except Exception:
         try:
             content = text_widget.get("1.0", "end-1c")
@@ -606,7 +677,6 @@ def _update_wraplengths(event=None):
             except Exception:
                 pass
         try:
-            state.chat_canvas.update_idletasks()
             state.chat_canvas.configure(scrollregion=state.chat_canvas.bbox("all"))
         except Exception:
             pass
@@ -615,20 +685,90 @@ def _update_wraplengths(event=None):
 
 
 def _render_current_session():
+    """Render message history in cancellable batches without changing data."""
+    global _session_render_token, _session_render_after_id
     _hide_new_message_indicator()
+    if _session_render_after_id is not None and state._root is not None:
+        try:
+            state._root.after_cancel(_session_render_after_id)
+        except Exception:
+            pass
+        _session_render_after_id = None
+    _session_render_token += 1
+    token = _session_render_token
     _clear_messages_ui()
     session = _get_current_session()
-    messages = session.get("messages", [])
-    if not messages:
+    all_messages = list(session.get("messages", []))
+    if not all_messages:
         _add_empty_state()
-    else:
-        for m in messages:
-            _add_message_bubble(m, smooth_scroll=False)
-    _safe_after(0, _update_wraplengths)
-    _safe_after(150, _update_wraplengths)
-    _scroll_chat_to_bottom(immediate=True)
-    _safe_after(200, lambda: _scroll_chat_to_bottom(immediate=True))
-    _update_token_counter()
+        _update_token_counter()
+        return
+
+    session_key = str(session.get("id") or id(session))
+    visible_count = max(
+        _SESSION_VISIBLE_WINDOW,
+        int(_session_visible_counts.get(session_key, _SESSION_VISIBLE_WINDOW)),
+    )
+    visible_count = min(len(all_messages), visible_count)
+    _session_visible_counts[session_key] = visible_count
+    first_visible = len(all_messages) - visible_count
+    messages = all_messages[first_visible:]
+
+    if first_visible > 0:
+        older_row = TkFrame(state.chat_messages_frame, bg=_c("BG_DARK"))
+        older_row.pack(fill="x", padx=18, pady=(8, 4))
+
+        def load_older():
+            _session_visible_counts[session_key] = min(
+                len(all_messages), visible_count + _SESSION_VISIBLE_WINDOW
+            )
+            _session_scroll_top_once.add(session_key)
+            _render_current_session()
+
+        older_btn = TkButton(
+            older_row,
+            text=f"Показать предыдущие сообщения · скрыто {first_visible}",
+            command=load_older,
+            bg=_c("BG_INPUT"),
+            fg=_c("TEXT_MAIN"),
+            activebackground=_c("BG_HOVER"),
+            activeforeground=_c("TEXT_MAIN"),
+            relief="flat",
+            cursor="hand2",
+            font=("Segoe UI", scaled_font_size(10), "bold"),
+            padx=12,
+            pady=6,
+        )
+        older_btn.pack(anchor="center")
+
+    def render_batch(start=0):
+        global _session_render_after_id
+        _session_render_after_id = None
+        if token != _session_render_token or not _widget_exists(state.chat_messages_frame):
+            return
+        end = min(len(messages), start + _SESSION_RENDER_BATCH)
+        for message in messages[start:end]:
+            _add_message_bubble(message, smooth_scroll=False)
+        if end < len(messages):
+            try:
+                _session_render_after_id = state._root.after(
+                    8, lambda next_start=end: render_batch(next_start)
+                )
+            except Exception:
+                _session_render_after_id = None
+            return
+        _update_wraplengths()
+        if session_key in _session_scroll_top_once:
+            _session_scroll_top_once.discard(session_key)
+            try:
+                state.chat_canvas.yview_moveto(0.0)
+            except Exception:
+                pass
+        else:
+            _scroll_chat_to_bottom(immediate=True)
+        _update_token_counter()
+
+    render_batch(0)
 
 
 def _add_empty_state():

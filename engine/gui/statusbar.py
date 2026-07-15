@@ -5,12 +5,14 @@
 PATCH 2026-07-14: плавное появление/исчезновение кнопки отмены
 через AnimationManager (slide-in/slide-out по ширине).
 """
+import threading
 import tkinter as tk
 
 import customtkinter as ctk
 
 from i18n import t
 from engine.gui.colors import Colors, scaled_font_size
+from engine.gui.progress_throttle import ProgressThrottle
 
 # Внедряются из main_window: root, status_var, stage_var, progress_value
 root = None
@@ -24,20 +26,40 @@ cancel_button = None
 _on_cancel_callback = None
 
 _CANCEL_BTN_WIDTH = 90
+_progress_throttle = ProgressThrottle(max_hz=12)
+_state_lock = threading.Lock()
+_last_status = None
+_last_stage = None
 
 
 def init(**deps):
     """Внедрение зависимостей из engine.gui.main_window.
     Имена совпадают с именами глобальных переменных исходного gui.py."""
+    global _last_status, _last_stage
     globals().update(deps)
+    _last_status = None
+    _last_stage = None
+    _progress_throttle.reset()
 
 
 def set_status(text):
-    root.after(0, lambda: status_var.set(text))
+    global _last_status
+    value = str(text)
+    with _state_lock:
+        if value == _last_status:
+            return
+        _last_status = value
+    root.after(0, lambda current=value: status_var.set(current))
 
 
 def set_stage(text):
-    root.after(0, lambda: stage_var.set(text))
+    global _last_stage
+    value = str(text)
+    with _state_lock:
+        if value == _last_stage:
+            return
+        _last_stage = value
+    root.after(0, lambda current=value: stage_var.set(current))
 
 
 def set_progress(value):
@@ -45,11 +67,13 @@ def set_progress(value):
         value = max(0, min(100, int(value)))
     except Exception:
         return
+    if not _progress_throttle.should_emit(value):
+        return
     root.after(
         0,
-        lambda: (
-            progress_value.set(value),
-            globals().get("progress_bar") and progress_bar.set(value / 100),
+        lambda current=value: (
+            progress_value.set(current),
+            globals().get("progress_bar") and progress_bar.set(current / 100),
         ),
     )
 
@@ -71,7 +95,6 @@ def show_cancel_button(on_cancel):
         # Slide-in: стартуем с минимальной ширины
         cancel_button.configure(width=1)
         cancel_button.pack(side="right", padx=(8, 0))
-        cancel_button.update_idletasks()
 
         try:
             from engine.gui.animation_manager import AnimationManager

@@ -89,7 +89,9 @@ def set_dark_titlebar(root):
     if sys.platform != "win32":
         return
 
-    root.update()
+    # Flush geometry only; update() would run a nested event loop and may
+    # re-enter unrelated callbacks while the theme is half-applied.
+    root.update_idletasks()
     hwnd = ctypes.windll.user32.GetParent(root.winfo_id())
     DWMWA_USE_IMMERSIVE_DARK_MODE = 20
     ctypes.windll.dwmapi.DwmSetWindowAttribute(

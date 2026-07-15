@@ -38,6 +38,8 @@ from engine.gui.colors import Colors, scaled_font_size, scaled_size
 from engine.gui.textbox import set_textbox_content
 from engine.gui.tooltip import ToolTip
 from engine.gui.widgets import CompatCTkFrame, CompatCTkButton, CompatCTkLabel
+from engine.gui.ui_thread_bridge import UIThreadBridge
+from engine.gui.configure_coalescer import ConfigureCoalescer
 
 # Внедряется из main_window: root, PYGAME_OK
 root = None
@@ -215,6 +217,7 @@ def open_history():
     win.minsize(700, 540)
     win.resizable(True, True)
     win.configure(bg=Colors.BG_DARK)
+    ui_bridge = UIThreadBridge(win, poll_ms=16, max_batch=32)
     _apply_window_icon(win)
     win.grab_set()
 
@@ -514,28 +517,28 @@ def open_history():
         def worker():
             return _compute_waveform_peaks(path)
 
+        ui_bridge.begin()
         future = _wave_executor.submit(worker)
+
+        def apply(peaks):
+            _wave_pending.discard(path)
+            if _closing["v"]:
+                return
+            _wave_cache[path] = peaks
+            for state in _states_for(path):
+                state["peaks"] = peaks
+                state["wave_ready"] = True
+            _redraw_card_wave(path)
 
         def done_callback(done_future):
             try:
-                peaks = done_future.result()
-            except Exception:
-                peaks = []
-
-            def apply():
-                _wave_pending.discard(path)
-                if _closing["v"]:
-                    return
-                _wave_cache[path] = peaks
-                for state in _states_for(path):
-                    state["peaks"] = peaks
-                    state["wave_ready"] = True
-                _redraw_card_wave(path)
-
-            try:
-                win.after(0, apply)
-            except Exception:
-                pass
+                try:
+                    peaks = done_future.result()
+                except Exception:
+                    peaks = []
+                ui_bridge.post(apply, peaks)
+            finally:
+                ui_bridge.producer_done()
 
         future.add_done_callback(done_callback)
 
@@ -1072,10 +1075,13 @@ def open_history():
                 ),
             )
             _load_waveform_async(output_path)
-        wave_canvas.bind(
-            "<Configure>",
-            lambda event, path=card_key: _redraw_card_wave(path),
+        wave_resize = ConfigureCoalescer(
+            wave_canvas,
+            lambda _width, _height, path=card_key: _redraw_card_wave(path),
+            threshold_px=3,
         )
+        state["wave_resize"] = wave_resize
+        wave_canvas.bind("<Configure>", wave_resize)
         _redraw_card_wave(card_key)
 
     # ── Layout: только шапка и прокручиваемые карточки; нижнего плеера нет. ──
@@ -1120,9 +1126,45 @@ def open_history():
     )
     list_frame.pack(fill="both", expand=True, padx=12, pady=(4, 12))
 
-    for history_entry in history:
-        _make_card(list_frame, history_entry)
-    _maybe_show_empty_state()
+    # Heavy cards contain Canvas, buttons and a waveform producer. Build only
+    # the first page, then append on demand in small UI-friendly batches.
+    history_render = {"index": 0, "target": 0, "after_id": None}
+    page_size = 20
+    batch_size = 5
+    load_more_btn = CompatCTkButton(
+        list_frame,
+        text="Показать ещё",
+        command=lambda: append_history_page(),
+        fg_color=Colors.BG_INPUT,
+        hover_color=Colors.BG_HOVER,
+        text_color=Colors.TEXT_MAIN,
+        height=32,
+    )
+
+    def render_history_batch():
+        history_render["after_id"] = None
+        end = min(history_render["target"], history_render["index"] + batch_size)
+        for entry in history[history_render["index"] : end]:
+            _make_card(list_frame, entry)
+        history_render["index"] = end
+        if end < history_render["target"]:
+            history_render["after_id"] = win.after(8, render_history_batch)
+            return
+        if history_render["index"] < len(history):
+            remaining = len(history) - history_render["index"]
+            load_more_btn.configure(text=f"Показать ещё · осталось {remaining}")
+            load_more_btn.pack(fill="x", padx=12, pady=10)
+        else:
+            load_more_btn.pack_forget()
+        _maybe_show_empty_state()
+
+    def append_history_page():
+        load_more_btn.pack_forget()
+        history_render["target"] = min(len(history), history_render["index"] + page_size)
+        if history_render["after_id"] is None:
+            render_history_batch()
+
+    append_history_page()
 
     if PYGAME_OK:
         try:
@@ -1139,6 +1181,18 @@ def open_history():
         if _closing["v"]:
             return
         _closing["v"] = True
+        if history_render.get("after_id") is not None:
+            try:
+                win.after_cancel(history_render["after_id"])
+            except Exception:
+                pass
+            history_render["after_id"] = None
+        for states in list(_card_widgets.values()):
+            for card_state in states:
+                resize = card_state.get("wave_resize")
+                if resize is not None:
+                    resize.cancel()
+        ui_bridge.destroy()
         _close_volume_popup()
         _stop_playback(reset_position=True)
         try:

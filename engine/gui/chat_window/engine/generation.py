@@ -39,6 +39,16 @@ def _run_generation(session: dict, prompt: str):
     _show_typing()
     set_chat_status(t("chat_ai_typing_status"))
 
+    bridge = state._ui_bridge
+    if bridge is not None:
+        bridge.begin()
+
+    def _deliver(callback):
+        if bridge is not None:
+            bridge.post(callback)
+        else:
+            _safe_after(0, callback)
+
     def _worker():
         try:
             import engine.gpt_client as _gpt
@@ -82,7 +92,7 @@ def _run_generation(session: dict, prompt: str):
                 _set_generation_ui(False)
                 set_chat_status(t("chat_reply_received"))
 
-            _safe_after(0, _apply_response)
+            _deliver(_apply_response)
         except Exception as e:
             import engine.gpt_client as _gpt
 
@@ -108,7 +118,7 @@ def _run_generation(session: dict, prompt: str):
                         t("chat_err_ai_title"), msg, parent=_get_app_parent() or state._root
                     )
 
-            _safe_after(0, _show_error)
+            _deliver(_show_error)
         finally:
 
             def _final_cleanup():
@@ -123,7 +133,9 @@ def _run_generation(session: dict, prompt: str):
                             state._generation_cancel_event = None
                     _set_generation_ui(False)
 
-            _safe_after(0, _final_cleanup)
+            _deliver(_final_cleanup)
+            if bridge is not None:
+                bridge.producer_done()
 
     threading.Thread(target=_worker, daemon=True).start()
 

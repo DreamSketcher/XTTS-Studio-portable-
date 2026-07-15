@@ -30,7 +30,7 @@ class TestBuildConstraints:
         # мок importlib.metadata.version
         def fake_version(name):
             if name.lower() == "torch":
-                return "2.2.2+cu118"
+                return "2.11.0+cu128"
             if name.lower() == "numpy":
                 return "1.26.4"
             raise Exception("not installed")
@@ -38,12 +38,12 @@ class TestBuildConstraints:
         monkeypatch.setattr("importlib.metadata.version", fake_version)
 
         frozen = {
-            "torch": "torch==2.2.2",
+            "torch": "torch==2.11.0",
             "numpy": "numpy==1.26.4",
             "unknown_pkg": "unknown_pkg==1.0.0",
         }
         lines = rvc._build_rvc_constraints(frozen, tmp_env["site"])
-        assert any("torch==2.2.2+cu118" in l for l in lines)
+        assert any("torch==2.11.0+cu128" in l for l in lines)
         assert any("numpy==1.26.4" in l for l in lines)
         # unknown остается как в requirements
         assert any("unknown_pkg==1.0.0" in l for l in lines)
@@ -53,17 +53,17 @@ class TestDetectTorchVariant:
     def test_from_metadata(self, tmp_env, monkeypatch):
         def fake_version(name):
             if name == "torch":
-                return "2.2.2+cu118"
+                return "2.11.0+cu128"
             raise Exception()
 
         monkeypatch.setattr("importlib.metadata.version", fake_version)
 
         variant = rvc._detect_installed_torch_variant(tmp_env["site"])
-        assert variant == "cu118"
+        assert variant == "cu128"
 
         def fake_version_cpu(name):
             if name == "torch":
-                return "2.2.2+cpu"
+                return "2.11.0+cpu"
             raise Exception()
 
         monkeypatch.setattr("importlib.metadata.version", fake_version_cpu)
@@ -95,10 +95,10 @@ class TestFallbackCuda:
 
 class TestDetectTorchBuild:
     def test_installed(self, tmp_env, monkeypatch):
-        monkeypatch.setattr(rvc, "_detect_installed_torch_variant", lambda sp: "cu118")
+        monkeypatch.setattr(rvc, "_detect_installed_torch_variant", lambda sp: "cu128")
         variant, url = rvc.detect_torch_build(tmp_env["site"])
-        assert variant == "cu118"
-        assert "cu118" in url
+        assert variant == "cu128"
+        assert "cu128" in url
 
     def test_not_installed_fallback_cpu(self, tmp_env, monkeypatch):
         monkeypatch.setattr(rvc, "_detect_installed_torch_variant", lambda sp: None)
@@ -119,7 +119,7 @@ class TestReadRequiresDist:
         dist_info = site / "somepackage-1.0.dist-info"
         dist_info.mkdir()
         (dist_info / "METADATA").write_text(
-            'Name: somepackage\nRequires-Dist: numpy>=1.0\nRequires-Dist: torch==2.2.2; extra == "dev"\nRequires-Dist: librosa\n',
+            'Name: somepackage\nRequires-Dist: numpy>=1.0\nRequires-Dist: torch==2.11.0; extra == "dev"\nRequires-Dist: librosa\n',
             encoding="utf-8",
         )
 

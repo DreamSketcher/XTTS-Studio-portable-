@@ -167,6 +167,68 @@ class TestCheckUpdate:
         assert "error" in result
 
 
+class TestManifestPathSecurity:
+    @pytest.mark.parametrize(
+        "unsafe",
+        [
+            "../outside.py",
+            "engine/../../outside.py",
+            r"..\outside.py",
+            r"C:\Windows\Temp\payload.py",
+            r"\\server\share\payload.py",
+            "/absolute/payload.py",
+            "engine//module.py",
+            "./engine/module.py",
+            "engine/module.py:stream",
+            "",
+        ],
+    )
+    def test_rejects_unsafe_manifest_paths(self, unsafe):
+        with pytest.raises(ValueError):
+            upd._safe_relative_path(unsafe)
+
+    def test_normalizes_windows_separators(self):
+        assert upd._safe_relative_path(r"engine\module.py") == "engine/module.py"
+
+    def test_safe_path_stays_under_root(self, tmp_base_dir):
+        result = Path(upd._safe_path_under(str(tmp_base_dir), "engine/module.py"))
+        result.relative_to(tmp_base_dir.resolve())
+
+    def test_apply_update_rejects_traversal_before_network(self, tmp_base_dir, monkeypatch):
+        network_called = {"value": False}
+
+        def should_not_call(*args, **kwargs):
+            network_called["value"] = True
+            raise AssertionError("network must not be called for an unsafe manifest")
+
+        monkeypatch.setattr(upd, "_urlopen_with_retry", should_not_call)
+        outside = tmp_base_dir.parent / "outside.py"
+        assert upd.apply_update(["../outside.py"], {"../outside.py": "0" * 64}) is False
+        assert network_called["value"] is False
+        assert not outside.exists()
+
+    def test_apply_update_rejects_update_remove_overlap(self, tmp_base_dir):
+        assert (
+            upd.apply_update(
+                ["engine/a.py"],
+                {"engine/a.py": "0" * 64},
+                removed_files=["engine/a.py"],
+            )
+            is False
+        )
+
+    def test_existing_symlink_cannot_escape_root(self, tmp_base_dir, tmp_path):
+        outside = tmp_path / "outside"
+        outside.mkdir()
+        link = tmp_base_dir / "linked"
+        try:
+            link.symlink_to(outside, target_is_directory=True)
+        except (OSError, NotImplementedError):
+            pytest.skip("symlinks are unavailable in this environment")
+        with pytest.raises(ValueError):
+            upd._safe_path_under(str(tmp_base_dir), "linked/payload.py")
+
+
 class TestDownloadToStaging:
     def test_no_sha256_rejects(self, tmp_base_dir, monkeypatch):
         # без expected_sha256 должен вернуть False
@@ -396,7 +458,9 @@ class TestApplyUpdateIntegration:
                 return False
 
         monkeypatch.setattr(upd, "_urlopen_with_retry", lambda *a, **kw: FakeResp())
-        monkeypatch.setattr(upd, "get_remote_version_info", lambda: {"version": "1.0.1"})
+        monkeypatch.setattr(
+            upd, "get_remote_version_info", lambda commit_sha=None: {"version": "1.0.1"}
+        )
         monkeypatch.setattr(upd.time, "sleep", lambda x: None)
 
         result = upd.apply_update(

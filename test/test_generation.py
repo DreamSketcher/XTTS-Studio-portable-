@@ -145,11 +145,11 @@ def mock_gen_deps(monkeypatch):
 
 class TestRegex:
     def test_collecting_re(self):
-        m = gen._torch_collecting_re.match("Collecting torch==2.2.2")
+        m = gen._torch_collecting_re.match("Collecting torch==2.11.0")
         assert m is not None
 
     def test_downloading_re(self):
-        m = gen._torch_downloading_re.match("Downloading torch-2.2.2+cpu-....whl (200.8 MB)")
+        m = gen._torch_downloading_re.match("Downloading torch-2.11.0+cpu-....whl (200.8 MB)")
         assert m is not None
 
     def test_installing_re(self):

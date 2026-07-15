@@ -11,7 +11,7 @@ import engine.env_core.torch_setup as ts
 
 class TestParseCudaVersion:
     def test_valid(self):
-        assert ts._parse_cuda_version("12.2") == (12, 2)
+        assert ts._parse_cuda_version("12.8") == (12, 8)
         assert ts._parse_cuda_version("11.8") == (11, 8)
         assert ts._parse_cuda_version("11") == (11, 0)
 
@@ -26,7 +26,7 @@ class TestPickTorchVariant:
         monkeypatch.setattr(
             "engine.settings_store.load_settings", lambda: {"torch_device_preference": "cpu"}
         )
-        gpu_info = {"vendor": "nvidia", "cuda_version": "12.2"}
+        gpu_info = {"vendor": "nvidia", "cuda_version": "12.8"}
         variant, url = ts._pick_torch_variant(gpu_info)
         assert variant == "cpu"
 
@@ -35,37 +35,37 @@ class TestPickTorchVariant:
             "engine.settings_store.load_settings", lambda: {"torch_device_preference": "gpu"}
         )
         monkeypatch.setattr(ts, "get_broken_torch_variants", lambda: set())
-        gpu_info = {"vendor": "nvidia", "cuda_version": "12.2"}
+        gpu_info = {"vendor": "nvidia", "cuda_version": "12.8"}
         variant, url = ts._pick_torch_variant(gpu_info)
-        assert variant == "cu118"
+        assert variant == "cu128"
 
     def test_pref_gpu_broken(self, monkeypatch):
         monkeypatch.setattr(
             "engine.settings_store.load_settings", lambda: {"torch_device_preference": "gpu"}
         )
-        monkeypatch.setattr(ts, "get_broken_torch_variants", lambda: {"cu118"})
-        gpu_info = {"vendor": "nvidia", "cuda_version": "12.2"}
-        # если cu118 сломан, но pref gpu, код всё равно вернёт cu118? В _pick_torch_variant проверяет broken только для pref gpu?
-        # Давайте проверим логику: if pref=="gpu" and "cu118" not in broken -> cu118 else?
-        # В коде: if pref=="gpu" and "cu118" not in broken: return cu118
-        # Если broken содержит cu118, то падает в общий путь ниже, который тоже проверяет broken
+        monkeypatch.setattr(ts, "get_broken_torch_variants", lambda: {"cu128"})
+        gpu_info = {"vendor": "nvidia", "cuda_version": "12.8"}
+        # если cu128 сломан, но pref gpu, код всё равно вернёт cu128? В _pick_torch_variant проверяет broken только для pref gpu?
+        # Давайте проверим логику: if pref=="gpu" and "cu128" not in broken -> cu128 else?
+        # В коде: if pref=="gpu" and "cu128" not in broken: return cu128
+        # Если broken содержит cu128, то падает в общий путь ниже, который тоже проверяет broken
         variant, url = ts._pick_torch_variant(gpu_info)
-        # так как broken содержит cu118, должен вернуть cpu
+        # так как broken содержит cu128, должен вернуть cpu
         assert variant == "cpu"
 
     def test_nvidia_cuda_ok(self, monkeypatch):
         monkeypatch.setattr("engine.settings_store.load_settings", lambda: {})
         monkeypatch.setattr(ts, "get_broken_torch_variants", lambda: set())
-        gpu_info = {"vendor": "nvidia", "cuda_version": "12.2"}
+        gpu_info = {"vendor": "nvidia", "cuda_version": "12.8"}
         variant, url = ts._pick_torch_variant(gpu_info)
-        assert variant == "cu118"
+        assert variant == "cu128"
 
     def test_nvidia_old_cuda(self, monkeypatch):
         monkeypatch.setattr("engine.settings_store.load_settings", lambda: {})
         monkeypatch.setattr(ts, "get_broken_torch_variants", lambda: set())
         gpu_info = {"vendor": "nvidia", "cuda_version": "10.1"}
         variant, url = ts._pick_torch_variant(gpu_info)
-        assert variant == "cpu"  # т.к. < TORCH_MIN_CUDA (11,8)
+        assert variant == "cpu"  # т.к. < TORCH_MIN_CUDA (12,8)
 
     def test_amd_returns_cpu(self, monkeypatch):
         monkeypatch.setattr("engine.settings_store.load_settings", lambda: {})
@@ -80,10 +80,10 @@ class TestCheckpoint:
         ckpt_path = tmp_path / "ckpt.json"
         monkeypatch.setattr(ts, "TORCH_CHECKPOINT_PATH", str(ckpt_path))
 
-        ts.save_torch_checkpoint("downloading", {"variant": "cu118"})
+        ts.save_torch_checkpoint("downloading", {"variant": "cu128"})
         data = ts.load_torch_checkpoint()
         assert data["stage"] == "downloading"
-        assert data["meta"]["variant"] == "cu118"
+        assert data["meta"]["variant"] == "cu128"
 
         ts.clear_torch_checkpoint()
         assert not ckpt_path.exists()
@@ -94,8 +94,8 @@ class TestCheckpoint:
         monkeypatch.setattr(ts, "TORCH_BROKEN_VARIANTS_PATH", str(broken_path))
 
         assert ts.get_broken_torch_variants() == set()
-        ts.mark_torch_variant_broken("cu118")
-        assert "cu118" in ts.get_broken_torch_variants()
+        ts.mark_torch_variant_broken("cu128")
+        assert "cu128" in ts.get_broken_torch_variants()
 
     def test_installed_variant(self, tmp_path, monkeypatch):
         inst_path = tmp_path / "installed.json"
@@ -111,8 +111,8 @@ class TestCheckpoint:
 class TestBuildCmd:
     def test_build_cmd(self, tmp_path):
         cmd = ts._build_torch_install_cmd("https://download.pytorch.org/whl/cpu", str(tmp_path))
-        assert "torch==2.2.2" in cmd
-        assert "torchaudio==2.2.2" in cmd
+        assert "torch==2.11.0" in cmd
+        assert "torchaudio==2.11.0" in cmd
         assert "--index-url" in cmd
         assert "--target" in cmd
 
@@ -133,7 +133,7 @@ class TestBuildCmd:
 
 class TestTorchStatus:
     def test_status_installed(self, monkeypatch):
-        script_output = "OK=/fake/torch/__init__.py\nVERSION=2.2.2+cpu\nCUDA_AVAILABLE=False\n"
+        script_output = "OK=/fake/torch/__init__.py\nVERSION=2.11.0+cpu\nCUDA_AVAILABLE=False\n"
 
         def fake_run(*a, **kw):
             return MagicMock(returncode=0, stdout=script_output, stderr="")
@@ -142,7 +142,7 @@ class TestTorchStatus:
 
         status = ts.torch_status()
         assert status["installed"] is True
-        assert status["version"] == "2.2.2+cpu"
+        assert status["version"] == "2.11.0+cpu"
         assert status["cuda_available"] is False
 
     def test_status_not_installed(self, monkeypatch):

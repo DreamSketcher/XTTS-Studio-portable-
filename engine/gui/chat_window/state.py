@@ -2,6 +2,7 @@ import os
 import threading
 
 _root = None
+_ui_bridge = None
 _colors = None
 _create_button = None
 _get_text = None

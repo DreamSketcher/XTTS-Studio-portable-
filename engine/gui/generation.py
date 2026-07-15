@@ -60,7 +60,7 @@ current_text_snapshot = ""
 model_ready = False
 
 # ── Парсинг прогресса pip для _ensure_torch_ready() ──
-# "Collecting torch==2.2.2" / "Downloading torch-2.2.2+cpu-....whl (200.8 MB)"
+# "Collecting torch==2.11.0" / "Downloading torch-2.11.0+cpu-....whl (200.8 MB)"
 _torch_collecting_re = re.compile(r"^Collecting\s+([A-Za-z0-9_.\-]+)")
 _torch_downloading_re = re.compile(r"^Downloading\s+([A-Za-z0-9_.\-]+)")
 _torch_installing_re = re.compile(r"^Installing collected packages")
@@ -114,7 +114,9 @@ def on_task_update(data):
                     text_box.delete("1.0", "end")
                     text_box.insert("1.0", nt)
                     lock_textbox()
-                    root.update_idletasks()
+                    # Text mutation is complete at this point; rendering can be
+                    # deferred naturally. A synchronous geometry flush only
+                    # stalls the UI and is not required by the worker handshake.
                     _textbox_updated.set()
                 except Exception as e:
                     print(f"[TextBox sync error]: {e}")
@@ -314,7 +316,6 @@ def generate():
         pass
     clear_chunk_highlight()
     lock_textbox()
-    text_box.update_idletasks()
     quality_name = quality_var.get()
     if quality_name not in quality_params:
         quality_name = "Высокое качество"

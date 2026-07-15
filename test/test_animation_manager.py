@@ -224,6 +224,86 @@ class TestAnimationManagerNoOp:
         assert mgr1 is mgr2
 
 
+class _FakeRoot:
+    def __init__(self):
+        self.callbacks = {}
+        self.cancelled = []
+        self.counter = 0
+
+    def winfo_exists(self):
+        return True
+
+    def after(self, delay, callback):
+        self.counter += 1
+        token = f"after-{self.counter}"
+        self.callbacks[token] = (delay, callback)
+        return token
+
+    def after_cancel(self, token):
+        self.cancelled.append(token)
+        self.callbacks.pop(token, None)
+
+
+class TestAnimationManagerAdaptiveQuality:
+    def test_sustained_slow_frames_enable_and_recover_adaptive_mode(self):
+        from engine.gui import motion_profile
+
+        motion_profile.set_motion_profile("balanced")
+        motion_profile.set_adaptive_degraded(False)
+        manager = AnimationManager(root=None, fps=60)
+        manager._frame_times.extend([30.0] * 60)
+        manager._frame_count = 30
+        manager._update_adaptive_motion()
+        manager._frame_count = 60
+        manager._update_adaptive_motion()
+        assert manager.performance_snapshot()["adaptive_degraded"] is True
+        assert motion_profile.get_effective_motion_profile() == "adaptive"
+
+        for index in range(6):
+            manager._frame_times.clear()
+            manager._frame_times.extend([2.0] * 60)
+            manager._frame_count = 90 + index * 30
+            manager._update_adaptive_motion()
+        assert manager.performance_snapshot()["adaptive_degraded"] is False
+        assert motion_profile.get_effective_motion_profile() == "balanced"
+
+
+class TestAnimationManagerScheduler:
+    def test_idle_manager_has_no_timer(self):
+        root = _FakeRoot()
+        mgr = AnimationManager(root=root)
+        assert mgr._tick_id is None
+        assert root.callbacks == {}
+
+    def test_first_animation_starts_single_timer(self):
+        root = _FakeRoot()
+        mgr = AnimationManager(root=root, fps=60)
+        mgr.animate(object(), lambda value: None, 0, 1, duration_ms=100)
+        assert len(root.callbacks) == 1
+        assert mgr._tick_id is not None
+        snapshot = mgr.performance_snapshot()
+        assert snapshot["fps_target"] == 60
+        assert snapshot["active"] == 1
+
+    def test_cancelling_last_animation_cancels_timer(self):
+        root = _FakeRoot()
+        mgr = AnimationManager(root=root)
+        animation_id = mgr.animate(object(), lambda value: None, 0, 1, duration_ms=100)
+        timer_id = mgr._tick_id
+        mgr.cancel(animation_id)
+        assert mgr._tick_id is None
+        assert timer_id in root.cancelled
+
+    def test_stop_all_enters_true_idle(self):
+        root = _FakeRoot()
+        mgr = AnimationManager(root=root)
+        mgr.animate(object(), lambda value: None, 0, 1, duration_ms=100)
+        mgr.stop_all()
+        assert mgr.performance_snapshot()["active"] == 0
+        assert mgr._tick_id is None
+        assert root.callbacks == {}
+
+
 # ═══════════════════════════════════════════════════════════════════
 #  3. AnimationManager с реальным Tk
 # ═══════════════════════════════════════════════════════════════════

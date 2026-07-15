@@ -12,6 +12,7 @@ from typing import Callable, Optional
 
 from engine.gui.colors import Colors
 from engine.gui.widgets import create_button
+from engine.gui.motion_profile import adjusted_interval, decorative_effects_enabled
 
 
 def _hex_to_rgb(h: str):
@@ -70,7 +71,7 @@ class _NeonPulse:
     def __init__(self, btn, base_color: str, speed_ms: int = 90):
         self.btn = btn
         self.base = base_color
-        self.speed_ms = max(40, min(200, int(speed_ms)))
+        self.speed_ms = adjusted_interval(max(40, min(200, int(speed_ms))))
         self.hue = 0.0
         self.timer = None
         self.alive = True
@@ -96,7 +97,8 @@ class _NeonPulse:
         self.timer = None
 
     def _tick(self):
-        if not self.alive:
+        if not self.alive or not decorative_effects_enabled():
+            self._stop()
             return
         try:
             if not self.btn.winfo_exists():
@@ -172,7 +174,7 @@ def create_neon_button(
     btn._neon_button_id = button_id  # type: ignore[attr-defined]
     btn._neon_enabled = enabled  # type: ignore[attr-defined]
 
-    if enabled:
+    if enabled and decorative_effects_enabled():
         speed = 90
         try:
             # speed_ms style ~ frame delay; map to pulse delay
@@ -207,7 +209,7 @@ def refresh_neon_button(btn) -> None:
     except Exception:
         pass
     pulse = getattr(btn, "_neon_pulse", None)
-    if enabled:
+    if enabled and decorative_effects_enabled():
         if pulse is None:
             try:
                 speed = max(50, min(160, int(style.get("speed_ms", 40)) + 50))

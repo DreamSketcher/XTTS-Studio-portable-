@@ -25,9 +25,62 @@ def clean_gpt_settings(tmp_path, monkeypatch):
     # Патчим константы модуля
     monkeypatch.setattr(gpt_client, "_SETTINGS_PATH", str(settings_file))
     monkeypatch.setattr(gpt_client, "_BASE_DIR", str(tmp_path))
+    monkeypatch.setenv("XTTS_TEST_SECRET_STORE", "1")
     # Очищаем кэш импорта local_llm_client если был
     # Ничего не делаем
     yield settings_file
+
+
+class TestSecurityAndSettings:
+    @pytest.mark.parametrize(
+        "url",
+        [
+            "file:///etc/passwd",
+            "ftp://example.com/api",
+            "http://example.com/v1/chat/completions",
+            "https://user:pass@example.com/api",
+            "https://example.com/api#fragment",
+            "",
+        ],
+    )
+    def test_rejects_unsafe_api_urls(self, url):
+        with pytest.raises(ValueError):
+            gpt_client._validate_api_url(url)
+
+    @pytest.mark.parametrize(
+        "url",
+        [
+            "https://example.com/v1/chat/completions",
+            "http://localhost:11434/v1/chat/completions",
+            "http://127.0.0.1:11434/v1/chat/completions",
+            "http://[::1]:11434/v1/chat/completions",
+        ],
+    )
+    def test_accepts_https_and_loopback_http(self, url):
+        assert gpt_client._validate_api_url(url) == url
+
+    def test_custom_provider_rejects_plain_http(self):
+        with pytest.raises(ValueError, match="HTTP"):
+            gpt_client.add_custom_provider(
+                "unsafe", "Unsafe", "http://example.com/api", ["model"], "model"
+            )
+
+    def test_settings_write_is_atomic_and_leaves_no_temp(self, clean_gpt_settings):
+        gpt_client._write_settings({"provider": "groq"})
+        data = json.loads(clean_gpt_settings.read_text(encoding="utf-8"))
+        assert data["provider"] == "groq"
+        assert not list(clean_gpt_settings.parent.glob(".gpt_settings_*.tmp"))
+
+    def test_api_key_is_not_stored_in_plaintext(self, clean_gpt_settings):
+        gpt_client.set_api_key("super-secret", "groq")
+        raw = clean_gpt_settings.read_text(encoding="utf-8")
+        assert "super-secret" not in raw
+        assert gpt_client.get_api_key("groq") == "super-secret"
+
+    def test_legacy_plaintext_key_is_migrated(self, clean_gpt_settings):
+        clean_gpt_settings.write_text('{"api_key_groq":"legacy-secret"}', encoding="utf-8")
+        assert gpt_client.get_api_key("groq") == "legacy-secret"
+        assert "legacy-secret" not in clean_gpt_settings.read_text(encoding="utf-8")
 
 
 class TestBuildProviderChain:

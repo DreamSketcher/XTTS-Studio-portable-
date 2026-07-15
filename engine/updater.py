@@ -7,7 +7,7 @@ import time
 import hashlib
 import urllib.request
 import urllib.parse
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 
 try:
     import certifi
@@ -116,22 +116,29 @@ def _get_latest_commit_sha() -> str:
 
 
 def get_remote_version_info(commit_sha: str = None) -> dict:
-    """
-    ВАЖНО: version.json нужно брать через commit-pinned URL (raw.githubusercontent.com/{sha}/...),
-    а НЕ через branch-URL (.../main/version.json) — последний кешируется Fastly на несколько
-    минут после пуша и может отдать старую версию сразу после релиза, из-за чего check_update()
-    решает, что обновлений нет, хотя коммит уже на GitHub.
+    """Download and authenticate an immutable release manifest.
 
-    Если commit_sha не передан — пытаемся получить его сами; при неудаче (сеть, rate limit)
-    откатываемся на branch-URL, как раньше.
+    Both files are fetched from the same commit-pinned base, but authenticity
+    comes from the embedded offline Ed25519 release key, not from GitHub or the
+    manifest's own SHA-256 map. Unsigned manifests fail closed.
     """
+    from engine.update_signing import verify_manifest_signature
+
     base = _raw_base_for(commit_sha or _get_latest_commit_sha())
     version_url = f"{base}/version.json"
+    signature_url = f"{base}/version.json.sig"
     try:
-        with _urlopen_with_retry(version_url, timeout=10) as r:
-            return json.loads(r.read().decode("utf-8"))
+        with _urlopen_with_retry(version_url, timeout=10) as response:
+            manifest_bytes = response.read()
+        with _urlopen_with_retry(signature_url, timeout=10) as response:
+            signature_bytes = response.read()
+        verify_manifest_signature(manifest_bytes, signature_bytes)
+        info = json.loads(manifest_bytes.decode("utf-8"))
+        if not isinstance(info, dict):
+            raise ValueError("update manifest must be a JSON object")
+        return info
     except Exception as e:
-        raise RuntimeError(f"Не удалось получить информацию об обновлении: {e}")
+        raise RuntimeError(f"Не удалось проверить информацию об обновлении: {e}") from e
 
 
 def _sha256_of_file(path: str) -> str:
@@ -202,6 +209,68 @@ def _clear_dir(path: str):
         shutil.rmtree(path, ignore_errors=True)
 
 
+def _safe_relative_path(relative_path: str) -> str:
+    """Validate and normalize an update-manifest path.
+
+    Manifest paths are always portable POSIX-style paths relative to BASE_DIR.
+    Reject traversal, absolute/drive/UNC paths and ambiguous Windows syntax even
+    when the updater is tested on a non-Windows host.
+    """
+    if not isinstance(relative_path, str):
+        raise ValueError("Путь обновления должен быть строкой")
+
+    value = relative_path.strip()
+    if not value or "\x00" in value:
+        raise ValueError("Пустой или некорректный путь обновления")
+
+    windows_path = PureWindowsPath(value)
+    if windows_path.is_absolute() or windows_path.drive or windows_path.root:
+        raise ValueError(f"Абсолютный путь запрещён: {relative_path!r}")
+
+    # Backslashes are separators on Windows. Normalize them before validating
+    # components so a manifest cannot behave differently across platforms.
+    normalized = value.replace("\\", "/")
+    parts = normalized.split("/")
+    if any(part in ("", ".", "..") for part in parts):
+        raise ValueError(f"Некорректный относительный путь: {relative_path!r}")
+    if any(":" in part for part in parts):
+        raise ValueError(f"Двоеточие в пути обновления запрещено: {relative_path!r}")
+
+    return "/".join(parts)
+
+
+def _safe_path_under(root: str, relative_path: str) -> str:
+    """Return a resolved path guaranteed to stay below *root*.
+
+    Path.resolve(strict=False) also follows existing parent symlinks, preventing
+    a junction/symlink inside staging or the app directory from escaping root.
+    """
+    rel = _safe_relative_path(relative_path)
+    root_path = Path(root).resolve()
+    candidate = (root_path / Path(*rel.split("/"))).resolve(strict=False)
+    try:
+        candidate.relative_to(root_path)
+    except ValueError as exc:
+        raise ValueError(
+            f"Путь выходит за пределы разрешённого каталога: {relative_path!r}"
+        ) from exc
+    return str(candidate)
+
+
+def _validate_manifest_paths(files: list, removed_files: list = None) -> tuple[list, list]:
+    """Fail closed before an update performs network or filesystem actions."""
+    if not isinstance(files, list) or not isinstance(removed_files or [], list):
+        raise ValueError("files и removed_files должны быть списками")
+
+    safe_files = [_safe_relative_path(item) for item in files]
+    safe_removed = [_safe_relative_path(item) for item in (removed_files or [])]
+    if len(set(safe_files)) != len(safe_files) or len(set(safe_removed)) != len(safe_removed):
+        raise ValueError("Манифест содержит повторяющиеся пути")
+    if set(safe_files) & set(safe_removed):
+        raise ValueError("Один путь нельзя одновременно обновлять и удалять")
+    return safe_files, safe_removed
+
+
 def _is_cancelled(cancelled_flag) -> bool:
     """Единый формат флага отмены — совместимо с engine/local_llm_client.py."""
     if cancelled_flag is None:
@@ -243,9 +312,10 @@ def _download_to_staging(
     _urlopen_with_retry тут не помогает — нужна отдельная пауза подольше
     и повторное скачивание, а не просто повтор запроса.
     """
+    relative_path = _safe_relative_path(relative_path)
     base = raw_base or BRANCH_RAW_BASE
     url = f"{base}/{urllib.parse.quote(relative_path)}"
-    dst = os.path.join(STAGING_DIR, relative_path.replace("/", os.sep))
+    dst = _safe_path_under(STAGING_DIR, relative_path)
     tmp = dst + ".part"
 
     if not expected_sha256:
@@ -319,7 +389,7 @@ def _delete_removed_files(removed_files: list):
     иначе успешное обновление.
     """
     for rel in removed_files:
-        path = os.path.join(BASE_DIR, rel.replace("/", os.sep))
+        path = _safe_path_under(BASE_DIR, rel)
         try:
             if os.path.isfile(path):
                 os.remove(path)
@@ -328,9 +398,7 @@ def _delete_removed_files(removed_files: list):
             print(f"[Updater] Не удалось удалить устаревший файл {rel}: {e}")
 
     # Подчищаем опустевшие после удаления директории (best-effort)
-    dirs = {
-        os.path.dirname(os.path.join(BASE_DIR, rel.replace("/", os.sep))) for rel in removed_files
-    }
+    dirs = {os.path.dirname(_safe_path_under(BASE_DIR, rel)) for rel in removed_files}
     for d in sorted(dirs, key=len, reverse=True):  # сначала самые глубокие
         try:
             if os.path.isdir(d) and not os.listdir(d):
@@ -345,9 +413,9 @@ def _backup_current_files(files: list):
     _clear_dir(BACKUP_DIR)
     os.makedirs(BACKUP_DIR, exist_ok=True)
     for rel in files:
-        src = os.path.join(BASE_DIR, rel.replace("/", os.sep))
+        src = _safe_path_under(BASE_DIR, rel)
         if os.path.exists(src):
-            dst = os.path.join(BACKUP_DIR, rel.replace("/", os.sep))
+            dst = _safe_path_under(BACKUP_DIR, rel)
             os.makedirs(os.path.dirname(dst), exist_ok=True)
             shutil.copy2(src, dst)
     if os.path.exists(LOCAL_VERSION_PATH):
@@ -356,10 +424,10 @@ def _backup_current_files(files: list):
 
 def _move_staged_to_live(files: list):
     for rel in files:
-        staged = os.path.join(STAGING_DIR, rel.replace("/", os.sep))
+        staged = _safe_path_under(STAGING_DIR, rel)
         if not os.path.exists(staged):
             continue
-        live = os.path.join(BASE_DIR, rel.replace("/", os.sep))
+        live = _safe_path_under(BASE_DIR, rel)
         os.makedirs(os.path.dirname(live), exist_ok=True)
         if os.path.exists(live):
             os.remove(live)
@@ -417,6 +485,11 @@ def apply_update(
     """
     sha256_map = sha256_map or {}
     removed_files = removed_files or []
+    try:
+        files, removed_files = _validate_manifest_paths(files, removed_files)
+    except ValueError as exc:
+        print(f"[Updater] Небезопасный манифест отклонён: {exc}")
+        return False
     raw_base = _raw_base_for(commit_sha)
     _clear_dir(STAGING_DIR)
     os.makedirs(STAGING_DIR, exist_ok=True)
@@ -502,7 +575,7 @@ def apply_update(
         _delete_removed_files(removed_files)
 
     try:
-        info = get_remote_version_info()
+        info = get_remote_version_info(commit_sha)
         new_version = info.get("version", "?")
         with open(LOCAL_VERSION_PATH, "w", encoding="utf-8") as fp:
             json.dump(info, fp, ensure_ascii=False, indent=2)
@@ -592,12 +665,13 @@ def rollback_update() -> bool:
         if os.path.exists(ROLLBACK_MARKER):
             with open(ROLLBACK_MARKER, "r", encoding="utf-8") as f:
                 marker = json.load(f)
-        files = marker.get("files", [])
-        removed_files = marker.get("removed_files", [])
+        files, removed_files = _validate_manifest_paths(
+            marker.get("files", []), marker.get("removed_files", [])
+        )
         for rel in files + removed_files:
-            backup_src = os.path.join(BACKUP_DIR, rel.replace("/", os.sep))
+            backup_src = _safe_path_under(BACKUP_DIR, rel)
             if os.path.exists(backup_src):
-                live = os.path.join(BASE_DIR, rel.replace("/", os.sep))
+                live = _safe_path_under(BASE_DIR, rel)
                 os.makedirs(os.path.dirname(live), exist_ok=True)
                 shutil.copy2(backup_src, live)
         backup_version = os.path.join(BACKUP_DIR, "version.json")

@@ -79,7 +79,7 @@ class TestCache:
 class TestParseRequirements:
     def test_parse(self, tmp_base):
         (tmp_base / "requirements.txt").write_text(
-            "numpy==1.26.4\ntorch==2.2.2\n# comment\n", encoding="utf-8"
+            "numpy==1.26.4\ntorch==2.11.0\n# comment\n", encoding="utf-8"
         )
         reqs = diag.parse_requirements_txt()
         assert "numpy" in reqs
@@ -113,15 +113,17 @@ class TestPipOutput:
 
 
 class TestDetectTorchSuffix:
-    def test_detect_cu118(self, tmp_base):
+    def test_detect_cu128(self, tmp_base):
         site = Path(tmp_base) / "site"
-        dist_info = site / "torch-2.2.2+cu118.dist-info"
+        dist_info = site / "torch-2.11.0+cu128.dist-info"
         dist_info.mkdir()
-        (dist_info / "METADATA").write_text("Name: torch\nVersion: 2.2.2+cu118\n", encoding="utf-8")
+        (dist_info / "METADATA").write_text(
+            "Name: torch\nVersion: 2.11.0+cu128\n", encoding="utf-8"
+        )
 
         # патчим SITE_PACKAGES уже через fixture
         suffix = diag._detect_installed_torch_suffix()
-        assert suffix == "cu118"
+        assert suffix == "cu128"
 
     def test_detect_cpu(self, tmp_base):
         site = Path(tmp_base) / "site"
@@ -131,9 +133,9 @@ class TestDetectTorchSuffix:
                 import shutil
 
                 shutil.rmtree(f)
-        dist_info = site / "torch-2.2.2+cpu.dist-info"
+        dist_info = site / "torch-2.11.0+cpu.dist-info"
         dist_info.mkdir()
-        (dist_info / "METADATA").write_text("Name: torch\nVersion: 2.2.2+cpu\n", encoding="utf-8")
+        (dist_info / "METADATA").write_text("Name: torch\nVersion: 2.11.0+cpu\n", encoding="utf-8")
 
         suffix = diag._detect_installed_torch_suffix()
         assert suffix == "cpu"

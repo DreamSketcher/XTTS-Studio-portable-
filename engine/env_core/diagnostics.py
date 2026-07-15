@@ -1023,9 +1023,9 @@ def finalize_deletion(quarantined_list: list) -> int:
 
 def _detect_installed_torch_suffix() -> Optional[str]:
     """
-    Определяет фактически установленный вариант torch (cu118/cpu) по METADATA
+    Определяет фактически установленный вариант torch (cu128/cpu) по METADATA
     в site-packages — БЕЗ импорта torch (он может быть сломан при восстановлении).
-    Возвращает 'cu118', 'cpu' или None (если torch не установлен / нет METADATA).
+    Возвращает 'cu128', 'cpu' или None (если torch не установлен / нет METADATA).
     """
     try:
         if not os.path.isdir(SITE_PACKAGES):
@@ -1040,8 +1040,8 @@ def _detect_installed_torch_suffix() -> Optional[str]:
                     for line in f:
                         if line.lower().startswith("version:"):
                             ver = line.split(":", 1)[1].strip().lower()
-                            if "+cu118" in ver:
-                                return "cu118"
+                            if "+cu128" in ver:
+                                return "cu128"
                             if "+cpu" in ver:
                                 return "cpu"
                             # Нейтральная версия без суффикса — трактуем как
@@ -1058,7 +1058,7 @@ def _resolve_recovery_torch_variant() -> tuple:
       1) по фактически установленному torch (METADATA в site-packages);
       2) по последней успешно установленной записи (.torch_installed_variant.json);
       3) фолбэк — предпочтение GPU/настроек (как при обычной установке).
-    Так восстановление НЕ тянет 2.7 ГБ cu118, когда в окружении стоит cpu-сборка.
+    Так восстановление НЕ тянет 2.7 ГБ cu128, когда в окружении стоит cpu-сборка.
     """
     suffix = _detect_installed_torch_suffix()
     if suffix:
@@ -1073,7 +1073,7 @@ def _resolve_recovery_torch_variant() -> tuple:
         from engine.env_core import torch_setup
 
         v = torch_setup.get_installed_torch_variant()
-        if v in ("cu118", "cpu"):
+        if v in ("cu128", "cpu"):
             return v, torch_setup._TORCH_INDEX_URLS[v]
     except Exception:
         pass
@@ -1092,7 +1092,7 @@ def _resolve_recovery_torch_variant() -> tuple:
 def _torch_already_ok(variant: str) -> bool:
     """
     True, если torch уже импортируется и соответствует нужному варианту
-    (cpu/cu118). Позволяет пропустить переустановку и не качать torch зря
+    (cpu/cu128). Позволяет пропустить переустановку и не качать torch зря
     (например, когда чиним soundfile, а torch и так работает).
     """
     try:
@@ -1104,15 +1104,15 @@ def _torch_already_ok(variant: str) -> bool:
     if not st.get("installed"):
         return False
     ver = (st.get("version") or "").lower()
-    if variant == "cu118":
-        return "+cu118" in ver
-    # cpu: подходит и нейтральная, и +cpu версия; cu118 — нет.
-    return "+cu118" not in ver
+    if variant == "cu128":
+        return "+cu128" in ver
+    # cpu: подходит и нейтральная, и +cpu версия; cu128 — нет.
+    return "+cu128" not in ver
 
 
 def _get_av_pin() -> str:
     """
-    Версия PyAV, совместимая с torchvision 0.17.2 проекта.
+    Версия PyAV, совместимая с torchvision 0.26.0 проекта.
     Приоритет: requirements.txt → rvc_setup.AV_PIN → av==12.3.0.
     """
     try:
@@ -1134,7 +1134,7 @@ def _get_av_pin() -> str:
 def _av_is_compatible() -> bool:
     """
     True, если av импортируется И имеет атрибут logging — ровно то, что
-    torchvision 0.17.2 (io/video.py) вызывает на import-time:
+    torchvision 0.26.0 (io/video.py) вызывает на import-time:
         av.logging.set_level(av.logging.ERROR)
     Ловится только ImportError, поэтому AttributeError (нет logging)
     валит весь import torchvision.
@@ -1185,7 +1185,7 @@ def _repair_av_for_torchvision(progress_cb=None) -> bool:
         emit(f"⏭️ PyAV уже совместим с torchvision ({av_pin}) — не трогаю.")
         return True
 
-    emit(f"🔧 Чиню PyAV ({av_pin}) — torchvision 0.17.2 требует av.logging на import...")
+    emit(f"🔧 Чиню PyAV ({av_pin}) — torchvision 0.26.0 требует av.logging на import...")
     env = os.environ.copy()
     env["PYTHONUNBUFFERED"] = "1"
     os.makedirs(PORTABLE_TEMP_DIR, exist_ok=True)
@@ -1288,8 +1288,8 @@ def run_error_recovery(progress_cb=None) -> list:
     Автоматически сопоставляет версии с requirements.txt для идеальной совместимости!
 
     Обработка torch — АДАПТИВНАЯ: берётся вариант, уже стоящий в окружении
-    (cpu/cu118), и переустановка пропускается, если torch уже работает.
-    Это исключает повторную закачку 2.7 ГБ cu118 при восстановлении других
+    (cpu/cu128), и переустановка пропускается, если torch уже работает.
+    Это исключает повторную закачку 2.7 ГБ cu128 при восстановлении других
     пакетов (например soundfile), когда фактически установлен cpu-вариант.
     """
     log_path = os.path.join(PROJECT_ROOT, "logs", "recovery_pip_output.log")
@@ -1349,10 +1349,10 @@ def run_error_recovery(progress_cb=None) -> list:
 
     # Дефолтная таблица сопоставления (зафиксирована жестко на стабильные версии из вашего requirements.txt)
     package_mapping = {
-        "torch": "torch==2.2.2+cu118 torchaudio==2.2.2+cu118 torchvision==0.17.2+cu118",
-        "torchaudio": "torchaudio==2.2.2+cu118",
-        "torchvision": "torchvision==0.17.2+cu118",
-        "tts": "TTS==0.22.0",
+        "torch": "torch==2.11.0+cu128 torchaudio==2.11.0+cu128 torchvision==0.26.0+cu128",
+        "torchaudio": "torchaudio==2.11.0+cu128",
+        "torchvision": "torchvision==0.26.0+cu128",
+        "tts": "coqui-tts==0.27.5",
         "numpy": "numpy==1.26.4",
         "pygame": "pygame==2.6.1",
         "customtkinter": "customtkinter==6.0.0",
@@ -1361,7 +1361,7 @@ def run_error_recovery(progress_cb=None) -> list:
         "soundfile": "soundfile==0.14.0",
         "rvc_python": "rvc-python",
         # av — транзитивная зависимость rvc-python, но критична для
-        # import torchvision 0.17.2 (av.logging). Без отдельного ключа
+        # import torchvision 0.26.0 (av.logging). Без отдельного ключа
         # recovery не чинил av, когда из карантина/удалений страдала
         # только папка av, а torchvision «ломался» как симптом.
         "av": _get_av_pin(),
@@ -1473,7 +1473,7 @@ def run_error_recovery(progress_cb=None) -> list:
 
         # ── av (PyAV): отдельный путь, не через torch-семейство ──
         # av не входит в CRITICAL_COMPONENTS, но без совместимого av
-        # torchvision 0.17.2 не импортируется (av.logging). Если в кэше
+        # torchvision 0.26.0 не импортируется (av.logging). Если в кэше
         # удалений есть av — чиним его специализированной процедурой
         # (пин + probe av.logging), а не общим pip --no-deps без пина.
         if key == "av":
@@ -1507,8 +1507,8 @@ def run_error_recovery(progress_cb=None) -> list:
         first_spec = pkg_specs[0].lower()
 
         # ── АДАПТИВНАЯ обработка torch-семейства (torch / torchaudio / torchvision) ──
-        # Берём вариант, УЖЕ стоящий в окружении (cpu/cu118), и ставим
-        # соответствующий wheel, чтобы не перекачивать 2.7 ГБ cu118, когда
+        # Берём вариант, УЖЕ стоящий в окружении (cpu/cu128), и ставим
+        # соответствующий wheel, чтобы не перекачивать 2.7 ГБ cu128, когда
         # фактически установлен cpu.
         # Триггер — ЯВНЫЕ префиксы torch-семейства (torch== / torchaudio== /
         # torchvision==), а НЕ подстрока "torch": иначе "torchvision" попадал
@@ -1537,9 +1537,13 @@ def run_error_recovery(progress_cb=None) -> list:
                     f"⚠️ Не удалось получить версии torch из torch_setup: {imp_err} "
                     f"— использую значения по умолчанию."
                 )
-                TORCH_VERSION, TORCHAUDIO_VERSION, TORCHVISION_VERSION = "2.2.2", "2.2.2", "0.17.2"
+                TORCH_VERSION, TORCHAUDIO_VERSION, TORCHVISION_VERSION = (
+                    "2.11.0",
+                    "2.11.0",
+                    "0.26.0",
+                )
 
-            suffix = "+cu118" if tvariant == "cu118" else "+cpu"
+            suffix = "+cu128" if tvariant == "cu128" else "+cpu"
             # torch пропускаем переустановку, только если он сам уже в норме
             # (чтобы не перекачивать 2.7 ГБ зря при починке torchvision/soundfile).
             torch_ok = False
@@ -1639,7 +1643,7 @@ def run_error_recovery(progress_cb=None) -> list:
                 tindex,
                 # Без --no-cache-dir: --force-reinstall гарантирует
                 # переустановку файлов, но pip возьмёт уже скачанный wheel
-                # (например torch ~2.7 ГБ для cu118) из локального
+                # (например torch ~2.7 ГБ для cu128) из локального
                 # PIP_CACHE_DIR вместо повторной закачки с сервера.
             ]
         else:

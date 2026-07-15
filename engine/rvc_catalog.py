@@ -71,6 +71,9 @@ RVC_PARAMETER_PREVIEW_CACHE_DIR = os.path.join(
 RVC_METADATA_DIR = os.path.join(RVC_MODELS_DIR, ".metadata")
 CATALOG_CACHE_PATH = os.path.join(RVC_MODELS_DIR, "catalog_cache.json")
 PREVIEW_MAX_BYTES = 32 * 1024 * 1024
+RVC_ARCHIVE_MAX_MEMBERS = 10_000
+RVC_ARCHIVE_MAX_EXTRACTED_BYTES = 2 * 1024 * 1024 * 1024
+RVC_ARCHIVE_MAX_COMPRESSION_RATIO = 200
 
 CATALOG_RAW_URL = f"https://raw.githubusercontent.com/{REPO}/{BRANCH}/rvc_catalog.json"
 
@@ -868,6 +871,24 @@ def is_downloaded(entry: dict) -> bool:
     return os.path.isfile(local_model_path(entry))
 
 
+def is_local_model_trusted(name: str) -> bool:
+    from engine.rvc_pipeline import is_rvc_checkpoint_trusted
+
+    model_path = os.path.join(RVC_MODELS_DIR, f"{os.path.basename(str(name or ''))}.pth")
+    return is_rvc_checkpoint_trusted(model_path)
+
+
+def trust_local_model(name: str, source: str = "user-confirmed") -> str:
+    from engine.rvc_pipeline import mark_rvc_checkpoint_trusted
+
+    safe_name = os.path.basename(str(name or "").strip())
+    if not safe_name or safe_name != str(name or "").strip():
+        raise ValueError("некорректное имя RVC-модели")
+    return mark_rvc_checkpoint_trusted(
+        os.path.join(RVC_MODELS_DIR, f"{safe_name}.pth"), source=source
+    )
+
+
 def _metadata_path_for_local_name(name: str) -> str:
     safe_name = os.path.basename(str(name or "").strip())
     return os.path.join(RVC_METADATA_DIR, f"{safe_name}.json")
@@ -1183,7 +1204,8 @@ def delete_local_model(name: str) -> bool:
         preview_path = str(metadata.get("preview_cache_path") or "")
 
     removed_any = False
-    for p in (pth, idx):
+    trust_path = pth + ".trust.json"
+    for p in (pth, idx, trust_path):
         try:
             if os.path.isfile(p):
                 os.remove(p)
@@ -1348,7 +1370,10 @@ def _extract_rvc_from_zip(zip_path: str, dest_pth: str) -> bool:
     """
     try:
         with zipfile.ZipFile(zip_path, "r") as zf:
-            names = [n for n in zf.namelist() if not n.endswith("/")]
+            infos = [info for info in zf.infolist() if not info.is_dir()]
+            if len(infos) > RVC_ARCHIVE_MAX_MEMBERS:
+                return False
+            names = [info.filename for info in infos]
             pths = [n for n in names if n.lower().endswith(".pth")]
             if not pths:
                 return False
@@ -1362,10 +1387,24 @@ def _extract_rvc_from_zip(zip_path: str, dest_pth: str) -> bool:
 
             pths.sort(key=_sz, reverse=True)
             chosen_pth = pths[0]
-            # extract pth
+
+            def _member_is_safe(name):
+                info = zf.getinfo(name)
+                if info.file_size < 0 or info.file_size > RVC_ARCHIVE_MAX_EXTRACTED_BYTES:
+                    return False
+                compressed = max(1, info.compress_size)
+                return (info.file_size / compressed) <= RVC_ARCHIVE_MAX_COMPRESSION_RATIO
+
+            if not _member_is_safe(chosen_pth):
+                return False
+
+            # Extract through temporary files so a failed/cancelled operation
+            # never leaves a truncated checkpoint under its final name.
             os.makedirs(os.path.dirname(dest_pth), exist_ok=True)
-            with zf.open(chosen_pth) as src, open(dest_pth, "wb") as dst:
+            temp_pth = dest_pth + ".extracting"
+            with zf.open(chosen_pth) as src, open(temp_pth, "wb") as dst:
                 shutil.copyfileobj(src, dst)
+            os.replace(temp_pth, dest_pth)
 
             # index
             dest_idx = os.path.splitext(dest_pth)[0] + ".index"
@@ -1379,12 +1418,14 @@ def _extract_rvc_from_zip(zip_path: str, dest_pth: str) -> bool:
             if not chosen_idx and idxs:
                 idxs.sort(key=_sz, reverse=True)
                 chosen_idx = idxs[0]
-            if chosen_idx:
+            if chosen_idx and _member_is_safe(chosen_idx):
                 try:
-                    with zf.open(chosen_idx) as src, open(dest_idx, "wb") as dst:
+                    temp_idx = dest_idx + ".extracting"
+                    with zf.open(chosen_idx) as src, open(temp_idx, "wb") as dst:
                         shutil.copyfileobj(src, dst)
+                    os.replace(temp_idx, dest_idx)
                 except Exception:
-                    pass
+                    _cleanup_tmp(dest_idx + ".extracting")
         return True
     except Exception:
         return False

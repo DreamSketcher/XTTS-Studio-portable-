@@ -38,6 +38,8 @@ from engine.gui.chat_window.custom_widgets import (
 # ПРИМЕЧАНИЕ: colors.py — лёгкий модуль без tkinter-зависимостей (палитра +
 # функция масштаба шрифта), безопасен для прямого импорта в любом GUI-файле.
 from engine.gui.colors import scaled_font_size
+from engine.gui.configure_coalescer import ConfigureCoalescer
+from engine.gui.ui_thread_bridge import UIThreadBridge
 
 
 def init(root, colors, create_button_fn, get_text_fn, set_text_fn, placeholder, use_gpt_var=None):
@@ -66,21 +68,42 @@ def open_chat_window():
     win = tk.Toplevel(state._root)
     win.title(t("chat_win_title"))
     # Главное окно «AI Чат — XTTS Studio»
-    win.geometry("1180x820")
-    win.minsize(760, 600)
+    # Compact default close to the reference 762×852 screenshot.
+    # ~842×786 including standard Windows title bar/borders.
+    win.geometry("840x750")
+    win.minsize(700, 600)
     win.resizable(True, True)
     win.configure(bg=_c("BG_DARK"))
     _set_dark_titlebar(win)
 
-    state._chat_window = win
+    # Root layout: draggable sash lets the user resize chat history width.
+    # Build the native PanedWindow before publishing the window in global
+    # state. If Tcl rejects an option, destroy the partial blank window so the
+    # user can retry instead of being stuck with a zombie Toplevel.
+    try:
+        main = TkFrame(win, bg=_c("BG_DARK"))
+        main.pack(fill="both", expand=True)
+        split = tk.PanedWindow(
+            main,
+            orient="horizontal",
+            sashwidth=6,
+            sashrelief="flat",
+            bg=_c("BORDER"),
+            bd=0,
+        )
+        split.pack(fill="both", expand=True)
+    except Exception:
+        try:
+            win.destroy()
+        except Exception:
+            pass
+        raise
 
-    # Root layout
-    main = TkFrame(win, bg=_c("BG_DARK"))
-    main.pack(fill="both", expand=True)
+    state._chat_window = win
+    state._ui_bridge = UIThreadBridge(win, poll_ms=16, max_batch=64)
 
     # Sidebar
-    sidebar = TkFrame(main, bg=_c("BG_CARD"), width=220)
-    sidebar.pack(side="left", fill="y")
+    sidebar = TkFrame(split, bg=_c("BG_CARD"), width=190)
     sidebar.pack_propagate(False)
 
     TkLabel(
@@ -153,7 +176,7 @@ def open_chat_window():
         activestyle="none",
         relief="flat",
         highlightthickness=0,
-        font=("Segoe UI", scaled_font_size(13)),
+        font=("Segoe UI", scaled_font_size(11)),
         yscrollcommand=list_scroll.set,
     )
     state.session_listbox.pack(fill="both", expand=True)
@@ -161,8 +184,13 @@ def open_chat_window():
     state.session_listbox.bind("<<ListboxSelect>>", _on_session_select)
 
     # Chat area
-    right = TkFrame(main, bg=_c("BG_DARK"))
-    right.pack(side="left", fill="both", expand=True)
+    right = TkFrame(split, bg=_c("BG_DARK"))
+    split.add(sidebar, minsize=145, width=190, stretch="never")
+    split.add(right, minsize=420, stretch="always")
+    try:
+        win.after_idle(lambda: split.sash_place(0, 190, 0))
+    except Exception:
+        pass
 
     header = TkFrame(right, bg=_c("BG_DARK"))
     header.pack(side="top", fill="x", padx=14, pady=(12, 8))
@@ -358,7 +386,8 @@ def open_chat_window():
     input_border = TkRawFrame(
         input_row, bg=_c("BORDER"), highlightthickness=1, highlightbackground=_c("BORDER")
     )
-    input_border.pack(side="left", fill="x", expand=True, padx=(0, 8))
+    # Pack after the send button: pack geometry allocates space in creation
+    # order, so an expand=True input packed first can consume the button slot.
 
     input_inner = TkRawFrame(input_border, bg=_c("BG_INPUT"))
     input_inner.pack(fill="x")
@@ -407,7 +436,8 @@ def open_chat_window():
         padx=8,
         pady=4,
     )
-    state.chat_send_btn.pack(side="right")
+    state.chat_send_btn.pack(side="right", fill="y")
+    input_border.pack(side="left", fill="both", expand=True, padx=(0, 8))
 
     # Messages scrollable canvas — после всех bottom элементов, займёт оставшееся место
     # ИСПРАВЛЕНО: тот же баг, что у list_outer выше — TkRawFrame(...,
@@ -453,13 +483,10 @@ def open_chat_window():
         width=1,
     )
 
-    def on_frame_configure(event=None):
+    def on_frame_configure(_width=0, _height=0):
         try:
             bbox = state.chat_canvas.bbox("all")
             if bbox:
-                # Расширяем scrollregion вниз на CHAT_BOTTOM_PADDING px —
-                # см. пояснение у CHAT_BOTTOM_PADDING выше (замена
-                # несработавшего pady=50 у chat_messages_frame).
                 x0, y0, x1, y1 = bbox
                 state.chat_canvas.configure(scrollregion=(x0, y0, x1, y1 + CHAT_BOTTOM_PADDING))
             else:
@@ -467,19 +494,20 @@ def open_chat_window():
         except Exception:
             pass
 
-    def on_canvas_configure(event):
+    def on_canvas_configure(new_width, _height):
         try:
-            new_width = event.width
             old_width = getattr(state.chat_canvas, "_last_width", None)
             state.chat_canvas._last_width = new_width
             state.chat_canvas.itemconfig(state.chat_canvas_window, width=new_width)
-            if old_width != new_width:
+            if old_width is None or abs(old_width - new_width) >= 3:
                 _update_wraplengths()
         except Exception:
             pass
 
-    state.chat_messages_frame.bind("<Configure>", on_frame_configure)
-    state.chat_canvas.bind("<Configure>", on_canvas_configure)
+    frame_configure = ConfigureCoalescer(state.chat_canvas, on_frame_configure, threshold_px=3)
+    canvas_configure = ConfigureCoalescer(state.chat_canvas, on_canvas_configure, threshold_px=3)
+    state.chat_messages_frame.bind("<Configure>", frame_configure)
+    state.chat_canvas.bind("<Configure>", canvas_configure)
 
     for target in (win, state.chat_canvas, state.chat_messages_frame):
         try:
@@ -597,6 +625,9 @@ def open_chat_window():
         except Exception:
             pass
 
+        if state._ui_bridge is not None:
+            state._ui_bridge.destroy()
+            state._ui_bridge = None
         state._chat_window = None
         state._search_window = None
         state._env_settings_window = None

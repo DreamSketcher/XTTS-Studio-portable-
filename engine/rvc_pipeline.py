@@ -1,9 +1,12 @@
 import contextlib
+import hashlib
+import json
 import logging
 import os
 import subprocess
 import shutil
 import sys
+import time
 from typing import Optional, Dict, Any
 
 
@@ -71,6 +74,89 @@ def _quiet_rvc_console():
     finally:
         # Некоторые дочерние логгеры создаются лениво при первом inference.
         _silence_rvc_loggers()
+
+
+def _checkpoint_sha256(path: str) -> str:
+    digest = hashlib.sha256()
+    with open(path, "rb") as source:
+        for chunk in iter(lambda: source.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _trust_path(model_path: str) -> str:
+    return model_path + ".trust.json"
+
+
+def mark_rvc_checkpoint_trusted(model_path: str, source: str = "user-confirmed") -> str:
+    """Persist explicit trust bound to the exact checkpoint SHA-256."""
+    if not os.path.isfile(model_path):
+        raise RVCPipelineError("невозможно подтвердить отсутствующую RVC-модель")
+    digest = _checkpoint_sha256(model_path)
+    record = {
+        "schema": 1,
+        "sha256": digest,
+        "source": str(source or "user-confirmed"),
+        "confirmed_at": int(time.time()),
+    }
+    destination = _trust_path(model_path)
+    temporary = destination + ".tmp"
+    try:
+        with open(temporary, "w", encoding="utf-8") as output:
+            json.dump(record, output, ensure_ascii=False, indent=2)
+            output.flush()
+            os.fsync(output.fileno())
+        os.replace(temporary, destination)
+    except Exception:
+        try:
+            os.remove(temporary)
+        except OSError:
+            pass
+        raise
+    return digest
+
+
+def is_rvc_checkpoint_trusted(model_path: str) -> bool:
+    """Trust is invalidated whenever checkpoint bytes change."""
+    try:
+        with open(_trust_path(model_path), "r", encoding="utf-8") as source:
+            record = json.load(source)
+        expected = str(record.get("sha256") or "").lower()
+        return len(expected) == 64 and expected == _checkpoint_sha256(model_path).lower()
+    except Exception:
+        return False
+
+
+def require_rvc_checkpoint_trusted(model_path: str) -> None:
+    if not is_rvc_checkpoint_trusted(model_path):
+        raise RVCPipelineError(
+            "RVC checkpoint не подтверждён пользователем или был изменён после подтверждения"
+        )
+
+
+def _safe_model_paths(models_dir: str, model_name: str) -> tuple[str, str]:
+    """Resolve an extension-less model name without allowing path traversal."""
+    name = str(model_name or "").strip()
+    if (
+        not name
+        or name in (".", "..")
+        or "\x00" in name
+        or any(char in name for char in ("/", "\\", ":"))
+        or name.lower().endswith((".pth", ".index"))
+    ):
+        raise RVCPipelineError("некорректное имя RVC-модели")
+
+    root = os.path.realpath(models_dir)
+    model_path = os.path.realpath(os.path.join(root, f"{name}.pth"))
+    index_path = os.path.realpath(os.path.join(root, f"{name}.index"))
+    try:
+        if os.path.commonpath([root, model_path]) != root:
+            raise RVCPipelineError("путь RVC-модели выходит за пределы каталога моделей")
+        if os.path.commonpath([root, index_path]) != root:
+            raise RVCPipelineError("путь RVC-index выходит за пределы каталога моделей")
+    except ValueError as exc:
+        raise RVCPipelineError("некорректный путь RVC-модели") from exc
+    return model_path, index_path
 
 
 def _validate_rvc_checkpoint(model_path: str):
@@ -167,8 +253,7 @@ class RVCPostProcessor:
         В консоли остаются только выбранная модель, устройство, параметры,
         успешное завершение и одна понятная ошибка на уровне вызывающего кода.
         """
-        model_path = os.path.join(self.models_dir, f"{model_name}.pth")
-        index_path = os.path.join(self.models_dir, f"{model_name}.index")
+        model_path, index_path = _safe_model_paths(self.models_dir, model_name)
 
         if not os.path.exists(model_path):
             raise RVCPipelineError(f"модель не найдена: {model_path}")
@@ -181,6 +266,7 @@ class RVCPostProcessor:
             f"[RVC] Модель: {model_name} | устройство: {device_label} | "
             f"index: {float(index_rate):.2f} | pitch: {int(pitch_shift):+d} | f0: {method}"
         )
+        require_rvc_checkpoint_trusted(model_path)
         _validate_rvc_checkpoint(model_path)
 
         try:
@@ -240,11 +326,11 @@ class RVCPostProcessor:
         Runs RVC conversion via a CLI subprocess call.
         Ideal for standalone executable environments or pre-built RVC packages.
         """
-        model_path = os.path.join(self.models_dir, f"{model_name}.pth")
-        index_path = os.path.join(self.models_dir, f"{model_name}.index")
+        model_path, index_path = _safe_model_paths(self.models_dir, model_name)
 
         if not os.path.exists(model_path):
             raise RVCPipelineError(f"модель не найдена: {model_path}")
+        require_rvc_checkpoint_trusted(model_path)
         _validate_rvc_checkpoint(model_path)
         print(
             f"[RVC] Модель: {model_name} | CLI | index: {float(index_rate):.2f} | "

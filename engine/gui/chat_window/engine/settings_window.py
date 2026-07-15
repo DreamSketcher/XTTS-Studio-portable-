@@ -30,6 +30,7 @@ from engine.gui.chat_window.custom_widgets import (
     TkRawFrame,
 )
 from i18n import t
+from engine.gui.configure_coalescer import ConfigureCoalescer
 
 # Убеждаемся, что папка site-packages bundled-окружения доступна для импортов
 try:
@@ -111,8 +112,10 @@ def open_gpt_settings(event=None):
     win.report_callback_exception = _win_report_callback_exception
 
     win.title(t("chat_settings_win_title"))
-    win.geometry("960x700")
-    win.minsize(750, 550)
+    # Compact AI settings window; content remains scrollable.
+    # ~568×665 including standard Windows title bar/borders.
+    win.geometry("566x630")
+    win.minsize(500, 500)
     win.resizable(True, True)
     win.configure(bg=_c("BG_DARK"))
     win.transient(_get_app_parent() or state._root)
@@ -122,7 +125,7 @@ def open_gpt_settings(event=None):
     main_container.pack(fill="both", expand=True)
 
     # Sidebar (Menu)
-    sidebar = TkFrame(main_container, bg=_c("BG_CARD"), width=220)
+    sidebar = TkFrame(main_container, bg=_c("BG_CARD"), width=175)
     sidebar.pack(side="left", fill="y")
     sidebar.pack_propagate(False)
 
@@ -148,20 +151,21 @@ def open_gpt_settings(event=None):
     canvas_frame = TkFrame(canvas, bg=_c("BG_CARD"))
     canvas_window = canvas.create_window((0, 0), window=canvas_frame, anchor="nw")
 
-    def update_scroll_region(event=None):
-        canvas.update_idletasks()
+    def update_scroll_region(_width=0, _height=0):
         bbox = canvas.bbox("all")
         if bbox:
             # Не даём скроллить ниже реального контента
             h = max(bbox[3], canvas.winfo_height())
             canvas.configure(scrollregion=(bbox[0], bbox[1], bbox[2], h))
 
-    def on_canvas_configure(event):
-        canvas.itemconfig(canvas_window, width=event.width)
+    def apply_canvas_size(width, _height):
+        canvas.itemconfig(canvas_window, width=width)
         update_scroll_region()
 
-    canvas_frame.bind("<Configure>", update_scroll_region)
-    canvas.bind("<Configure>", on_canvas_configure)
+    frame_configure = ConfigureCoalescer(canvas, update_scroll_region, threshold_px=3)
+    canvas_configure = ConfigureCoalescer(canvas, apply_canvas_size, threshold_px=3)
+    canvas_frame.bind("<Configure>", frame_configure)
+    canvas.bind("<Configure>", canvas_configure)
 
     # Виджеты, которые хотят свой скролл (лог env, listbox и т.п.)
     # при Enter/Leave помечаются; page-wheel их не перехватывает.
@@ -181,6 +185,7 @@ def open_gpt_settings(event=None):
             return units * 0.02
 
     _SCROLL_ANIM_ID = "_settings_smooth_scroll"
+    _scroll_target = [None]
 
     def _on_mousewheel(event):
         try:
@@ -188,14 +193,15 @@ def open_gpt_settings(event=None):
             if _scroll_over_child["widget"] is not None:
                 return None
             if getattr(event, "num", None) == 4:
-                units = -3
+                units = -8
             elif getattr(event, "num", None) == 5:
-                units = 3
+                units = 8
             else:
                 delta = int(getattr(event, "delta", 0) or 0)
                 if delta == 0:
                     return None
-                units = -3 if delta > 0 else 3
+                steps = max(1, min(3, abs(delta) // 120 or 1))
+                units = (-8 if delta > 0 else 8) * steps
 
             # PATCH 2026-07-14: плавный скролл через AnimationManager
             try:
@@ -207,19 +213,31 @@ def open_gpt_settings(event=None):
                 else:
                     current_top = canvas.yview()[0]
                     delta_frac = _estimate_scroll_delta(units)
-                    target = max(0.0, min(1.0, current_top + delta_frac))
+                    # Accumulate rapid wheel events toward one destination.
+                    # Starting every event from current_top alone makes fast
+                    # scrolling feel sticky because each animation is cancelled.
+                    base_target = (
+                        _scroll_target[0]
+                        if mgr.is_running(_SCROLL_ANIM_ID) and _scroll_target[0] is not None
+                        else current_top
+                    )
+                    target = max(0.0, min(1.0, base_target + delta_frac))
+                    _scroll_target[0] = target
 
                     if mgr.is_running(_SCROLL_ANIM_ID):
                         mgr.cancel(_SCROLL_ANIM_ID)
-                        canvas.yview_moveto(current_top)
+
+                    def _scroll_done():
+                        _scroll_target[0] = None
 
                     mgr.animate(
                         target=canvas,
                         property_setter=lambda v: canvas.yview_moveto(v),
                         start=current_top,
                         end=target,
-                        duration_ms=200,
-                        easing="ease_out",
+                        duration_ms=85,
+                        easing="ease_out_cubic",
+                        on_complete=_scroll_done,
                         animation_id=_SCROLL_ANIM_ID,
                     )
             except Exception:
@@ -357,7 +375,7 @@ def open_gpt_settings(event=None):
             activeforeground=_c("TEXT_MAIN"),
             relief="flat",
             bd=0,
-            font=("Segoe UI", 13),
+            font=("Segoe UI", 11),
             anchor="w",
             cursor="hand2",
             command=lambda: show_page(page_id),

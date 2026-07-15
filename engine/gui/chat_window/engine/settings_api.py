@@ -12,6 +12,7 @@ import webbrowser
 from tkinter import messagebox
 
 from i18n import t
+import engine.gui.chat_window.state as state
 from engine.gui.chat_window.custom_widgets import (
     CTK_AVAILABLE,
     CTkFrame,
@@ -306,13 +307,16 @@ def build_api_page(ctx):
             ).pack(anchor="w")
 
             if is_active:
+                # Put the status under the title: it stays prominent without
+                # competing with the provider name for horizontal space.
                 tk.Label(
-                    header,
-                    text=t("chat_active_label"),
+                    title_box,
+                    text=f"● {t('chat_active_label')}",
                     bg=_c("BG_CARD"),
                     fg=_c("TEXT_SUCCESS"),
-                    font=("Segoe UI", 11, "bold"),
-                ).pack(side="right")
+                    font=("Segoe UI", 10, "bold"),
+                    anchor="w",
+                ).pack(anchor="w", pady=(2, 0))
 
             header.bind("<Button-1>", lambda e, p=pid: _toggle_card(p))
             for w in title_box.winfo_children():
@@ -436,20 +440,46 @@ def build_api_page(ctx):
                 except Exception as e:
                     st.config(text=str(e), fg=_c("TEXT_ERROR"))
 
+            test_request = {"token": None}
+
             def _test_card(p=pid, kv=card_key_var, st=card_status):
                 st.config(text=t("chat_checking_key"), fg=_c("TEXT_DIM"))
+                # Read Tk variables in the UI thread before starting work.
+                key_value = kv.get().strip()
+                request_token = object()
+                test_request["token"] = request_token
+                bridge = state._ui_bridge
+                if bridge is not None:
+                    bridge.begin()
+
+                def deliver(callback):
+                    if bridge is not None:
+                        bridge.post(callback)
+                    else:
+                        _safe_after(0, callback)
 
                 def worker():
                     try:
-                        ok, msg = gpt_client.validate_key(kv.get().strip(), p)
-                        _safe_after(
-                            0,
-                            lambda: st.config(
-                                text=str(msg), fg=_c("TEXT_SUCCESS") if ok else _c("TEXT_ERROR")
-                            ),
-                        )
-                    except Exception as e:
-                        _safe_after(0, lambda err=e: st.config(text=str(err), fg=_c("TEXT_ERROR")))
+                        ok, msg = gpt_client.validate_key(key_value, p)
+
+                        def apply_result():
+                            if test_request["token"] is request_token and st.winfo_exists():
+                                st.config(
+                                    text=str(msg),
+                                    fg=_c("TEXT_SUCCESS") if ok else _c("TEXT_ERROR"),
+                                )
+
+                        deliver(apply_result)
+                    except Exception as error:
+
+                        def apply_error(err=error):
+                            if test_request["token"] is request_token and st.winfo_exists():
+                                st.config(text=str(err), fg=_c("TEXT_ERROR"))
+
+                        deliver(apply_error)
+                    finally:
+                        if bridge is not None:
+                            bridge.producer_done()
 
                 threading.Thread(target=worker, daemon=True).start()
 
@@ -494,6 +524,11 @@ def build_api_page(ctx):
                     pady=2,
                 ).pack(side="left", fill="x", expand=True, padx=(0, 4))
 
+            # Secondary/destructive actions use their own row so the primary
+            # Check/Save/Activate buttons always keep a usable width.
+            secondary_row = TkFrame(body, bg=_c("BG_CARD"))
+            secondary_row.pack(fill="x", pady=(5, 0))
+
             if is_custom:
 
                 def _edit_this(p=pid):
@@ -509,7 +544,7 @@ def build_api_page(ctx):
                         _rebuild_accordion()
 
                 _make_button(
-                    btn_row,
+                    secondary_row,
                     "✎",
                     _edit_this,
                     bg=_c("BG_INPUT"),
@@ -520,7 +555,7 @@ def build_api_page(ctx):
                     pady=2,
                 ).pack(side="left", padx=(0, 4))
                 _make_button(
-                    btn_row,
+                    secondary_row,
                     "🗑",
                     _delete_this,
                     bg=_c("BG_INPUT"),
@@ -542,7 +577,7 @@ def build_api_page(ctx):
                         _rebuild_accordion()
 
                 _make_button(
-                    btn_row,
+                    secondary_row,
                     t("chat_btn_hide"),
                     _hide_this,
                     bg=_c("BG_INPUT"),

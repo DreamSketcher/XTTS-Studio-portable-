@@ -297,7 +297,13 @@ def _get_embedding(tts, ref_wav, cache_path):
 
     if os.path.exists(cache_path):
         try:
-            data = torch.load(cache_path, map_location=device)
+            # Embedding caches are tensor-only data. weights_only=True blocks
+            # arbitrary pickle object construction if a cache file is replaced.
+            data = torch.load(cache_path, map_location=device, weights_only=True)
+            if not isinstance(data, dict):
+                raise ValueError("embedding cache must contain a mapping")
+            if set(data) != {"gpt_cond_latent", "speaker_embedding"}:
+                raise ValueError("embedding cache has an unexpected schema")
             print("[XTTS] Embedding loaded from cache")
             return data["gpt_cond_latent"], data["speaker_embedding"]
         except Exception as e:

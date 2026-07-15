@@ -4,7 +4,35 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from engine.rvc_pipeline import RVCPostProcessor, RVCPipelineError, XTTSWithRVCPipeline
+from engine.rvc_pipeline import (
+    RVCPostProcessor,
+    RVCPipelineError,
+    XTTSWithRVCPipeline,
+    is_rvc_checkpoint_trusted,
+    mark_rvc_checkpoint_trusted,
+)
+
+
+def _write_trusted(path: Path, content: str = "fake"):
+    path.write_text(content)
+    mark_rvc_checkpoint_trusted(str(path), source="unit-test")
+
+
+class TestRVCCheckpointTrust:
+    def test_unsigned_checkpoint_is_rejected(self, tmp_path):
+        model = tmp_path / "unsigned.pth"
+        model.write_bytes(b"checkpoint")
+        proc = RVCPostProcessor(models_dir=str(tmp_path), device="cpu:0")
+        with pytest.raises(RVCPipelineError, match="не подтверждён"):
+            proc.run_inference_via_lib("in.wav", "out.wav", "unsigned")
+
+    def test_trust_is_bound_to_exact_sha256(self, tmp_path):
+        model = tmp_path / "model.pth"
+        model.write_bytes(b"original")
+        mark_rvc_checkpoint_trusted(str(model), source="explicit-test")
+        assert is_rvc_checkpoint_trusted(str(model)) is True
+        model.write_bytes(b"replaced")
+        assert is_rvc_checkpoint_trusted(str(model)) is False
 
 
 class TestRVCPostProcessorDevice:
@@ -32,6 +60,15 @@ class TestRVCPostProcessorPaths:
         assert models_dir.exists()
         assert proc.device == "cpu:0"
 
+    @pytest.mark.parametrize(
+        "name",
+        ["../outside", r"..\outside", "/absolute", r"C:\temp\model", "model.pth", "a:b", ""],
+    )
+    def test_rejects_unsafe_model_names(self, tmp_path, name):
+        proc = RVCPostProcessor(models_dir=str(tmp_path), device="cpu:0")
+        with pytest.raises(RVCPipelineError, match="имя|путь"):
+            proc.run_inference_via_lib("in.wav", "out.wav", name)
+
     def test_model_not_found(self, tmp_path, monkeypatch):
         proc = RVCPostProcessor(models_dir=str(tmp_path), device="cpu:0")
         # мок rvc_python чтобы импорт прошёл, и тогда проверка файла сработает
@@ -54,7 +91,7 @@ class TestRunInferenceViaLib:
     def test_import_error(self, tmp_path, monkeypatch):
         proc = RVCPostProcessor(models_dir=str(tmp_path), device="cpu:0")
         # создаём модель файл чтобы пройти первую проверку
-        (tmp_path / "test.pth").write_text("fake")
+        _write_trusted(tmp_path / "test.pth")
 
         # мокаем отсутствие rvc_python
         import sys
@@ -79,7 +116,7 @@ class TestRunInferenceViaLib:
     def test_success_mocked(self, tmp_path, monkeypatch):
         proc = RVCPostProcessor(models_dir=str(tmp_path), device="cpu:0")
         model_path = tmp_path / "mymodel.pth"
-        model_path.write_text("fake model")
+        _write_trusted(model_path, "fake model")
         index_path = tmp_path / "mymodel.index"
         index_path.write_text("fake index")
 
@@ -124,7 +161,7 @@ class TestRunInferenceViaLib:
 
     def test_no_output_file_raises(self, tmp_path, monkeypatch):
         proc = RVCPostProcessor(models_dir=str(tmp_path), device="cpu:0")
-        (tmp_path / "model.pth").write_text("fake")
+        _write_trusted(tmp_path / "model.pth")
 
         import sys, types
 
@@ -154,7 +191,7 @@ class TestRunInferenceViaCli:
 
     def test_cli_success_mocked(self, tmp_path, monkeypatch):
         proc = RVCPostProcessor(models_dir=str(tmp_path))
-        (tmp_path / "model.pth").write_text("fake")
+        _write_trusted(tmp_path / "model.pth")
 
         mock_which = MagicMock(return_value="/usr/bin/python")
         monkeypatch.setattr("shutil.which", mock_which)
@@ -175,7 +212,7 @@ class TestRunInferenceViaCli:
 
     def test_cli_failure(self, tmp_path, monkeypatch):
         proc = RVCPostProcessor(models_dir=str(tmp_path))
-        (tmp_path / "model.pth").write_text("fake")
+        _write_trusted(tmp_path / "model.pth")
 
         monkeypatch.setattr("shutil.which", lambda x: "/usr/bin/python")
         import subprocess

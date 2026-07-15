@@ -58,7 +58,8 @@ def _scroll_chat_to_bottom(immediate: bool = False):
         if not _widget_exists(state.chat_canvas):
             return
         try:
-            state.chat_canvas.update_idletasks()
+            # This callback already runs after an 80 ms debounce, so Tk has
+            # completed geometry processing. Avoid another synchronous flush.
             state.chat_canvas.configure(scrollregion=state.chat_canvas.bbox("all"))
 
             # PATCH 2026-07-14: плавный скролл вниз через AnimationManager
@@ -172,14 +173,15 @@ def _chat_mousewheel(event):
             return None
 
         if getattr(event, "num", None) == 4:
-            units = -3
+            units = -9
         elif getattr(event, "num", None) == 5:
-            units = 3
+            units = 9
         else:
             delta = int(getattr(event, "delta", 0) or 0)
             if delta == 0:
                 return None
-            units = -3 if delta > 0 else 3
+            # Faster wheel response for long conversations.
+            units = -9 if delta > 0 else 9
 
         # PATCH 2026-07-14: плавный скролл через AnimationManager
         try:
@@ -208,8 +210,8 @@ def _chat_mousewheel(event):
                     property_setter=lambda v: state.chat_canvas.yview_moveto(v),
                     start=current_top,
                     end=target,
-                    duration_ms=200,
-                    easing="ease_out",
+                    duration_ms=95,
+                    easing="ease_out_cubic",
                     animation_id=anim_id,
                 )
 

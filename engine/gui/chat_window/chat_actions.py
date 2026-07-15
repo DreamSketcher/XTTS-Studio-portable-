@@ -101,6 +101,15 @@ def improve_text_with_gpt():
     _set_button_state(state.improve_btn, "disabled")
     _set_button_state(state.chat_send_btn, "disabled")
     set_chat_status(t("chat_improving"))
+    bridge = state._ui_bridge
+    if bridge is not None:
+        bridge.begin()
+
+    def _deliver(callback):
+        if bridge is not None:
+            bridge.post(callback)
+        else:
+            _safe_after(0, callback)
 
     def _worker():
         try:
@@ -128,7 +137,7 @@ def improve_text_with_gpt():
                     _set_button_state(state.improve_btn, "normal")
                     _set_button_state(state.chat_send_btn, "normal")
 
-            _safe_after(0, _apply)
+            _deliver(_apply)
 
         except Exception as e:
             msg = str(e) or t("chat_unknown_error")
@@ -141,7 +150,10 @@ def improve_text_with_gpt():
                     t("chat_err_ai_title"), msg, parent=_get_app_parent() or state._root
                 )
 
-            _safe_after(0, _show_error)
+            _deliver(_show_error)
+        finally:
+            if bridge is not None:
+                bridge.producer_done()
 
     threading.Thread(target=_worker, daemon=True).start()
 

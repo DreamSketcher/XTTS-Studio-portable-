@@ -500,20 +500,20 @@ An AMD/Intel GPU does not provide CUDA. In this project Torch GPU acceleration m
 `engine/env_core/torch_setup.py` manages a matching package set:
 
 ```text
-torch       2.2.2
-torchaudio  2.2.2
-torchvision 0.17.2
+torch       2.11.0
+torchaudio  2.11.0
+torchvision 0.26.0
 ```
 
 Available variants:
 
-- `cu118` — NVIDIA CUDA 11.8;
+- `cu128` — NVIDIA CUDA 12.8;
 - `cpu` — universal CPU build.
 
 Variant selection:
 
 1. respect the saved CPU/GPU preference;
-2. require NVIDIA with reported CUDA 11.8 or newer;
+2. require NVIDIA with reported CUDA 12.8 or newer;
 3. skip variants previously marked broken;
 4. force CPU when CUDA is requested on a non-NVIDIA machine.
 
@@ -530,7 +530,7 @@ The installer:
 
 `cancel_install_torch()` terminates the active pip process and releases the install lock. `clean_torch_cache()` removes shared temp/pip cache and the Torch checkpoint.
 
-**Real case:** a CUDA wheel installs but the driver/GPU still makes `torch.cuda.is_available()` false. The application records `cu118` in `.torch_broken_variants.json` and installs the CPU build instead of keeping a non-working GPU setup.
+**Real case:** a CUDA wheel installs but the driver/GPU still makes `torch.cuda.is_available()` false. The application records `cu128` in `.torch_broken_variants.json` and installs the CPU build instead of keeping a non-working GPU setup.
 
 ### Local llama.cpp installation
 
@@ -571,7 +571,7 @@ Why this is more involved than a normal `pip install`:
 
 The installer:
 
-- detects the installed Torch build (`cpu` or `cu118`) and reuses the same package index;
+- detects the installed Torch build (`cpu` or `cu128`) and reuses the same package index;
 - creates dynamic constraints from versions actually present in `site-packages`;
 - installs `rvc-python --no-deps`, then reads real `Requires-Dist` entries from its METADATA;
 - uses prebuilt fairseq wheels for Windows Python 3.10/3.11/3.12 when available;
@@ -584,7 +584,7 @@ The installer:
 
 `uninstall_rvc()` removes RVC/fairseq-specific packages but intentionally leaves `portalocker` because it is a shared dependency.
 
-**Real case:** RVC is installed into a CPU environment. Dynamic constraints pin the existing `torch+cpu`, preventing pip from replacing it with `cu118` and downloading several gigabytes again.
+**Real case:** RVC is installed into a CPU environment. Dynamic constraints pin the existing `torch+cpu`, preventing pip from replacing it with `cu128` and downloading several gigabytes again.
 
 ### Full diagnostics
 
@@ -745,7 +745,7 @@ After preflight, `main()` calls `updater.check_startup_health()`:
 | `.env_diagnostics_cache.json` | cache of a fully successful diagnostics run |
 | `.known_safe_files.json` | scanner safe/unsafe/deleted history |
 | `.torch_install_checkpoint.json` | interrupted Torch installation stage |
-| `.torch_installed_variant.json` | last successful `cpu` / `cu118` selection |
+| `.torch_installed_variant.json` | last successful `cpu` / `cu128` selection |
 | `.torch_broken_variants.json` | Torch variants that automatic selection should skip |
 | `.llama_install_checkpoint.json` | llama.cpp installation stage |
 | `.llama_installed_backend.json` | last successful llama.cpp backend |

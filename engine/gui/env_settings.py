@@ -7,6 +7,9 @@ import json
 import threading
 import subprocess
 import customtkinter as ctk
+
+from engine.gui.ui_thread_bridge import UIThreadBridge
+from engine.gui.progress_throttle import ProgressThrottle
 import tkinter as tk
 import tkinter.messagebox as mb
 
@@ -64,9 +67,9 @@ def _set_install_cancelled():
 # Используется в gui.py (startup recovery) и env_settings.py (recovery flow)
 # Единый источник истины — исключает расхождения при добавлении пакетов.
 PACKAGE_PIP_SPEC = {
-    "torch": "torch==2.2.2 torchaudio==2.2.2 torchvision==0.17.2",
-    "torchaudio": "torchaudio==2.2.2",
-    "torchvision": "torchvision==0.17.2",
+    "torch": "torch==2.11.0 torchaudio==2.11.0 torchvision==0.26.0",
+    "torchaudio": "torchaudio==2.11.0",
+    "torchvision": "torchvision==0.26.0",
     "tts": "coqui-tts",
     "numpy": "numpy==1.26.4",
     "pygame": "pygame",
@@ -75,7 +78,7 @@ PACKAGE_PIP_SPEC = {
     "llama_cpp": "llama-cpp-python",
     "soundfile": "soundfile",
     "rvc_python": "rvc-python",
-    "av": "av==10.0.0",  # PyAV, совместимый с torchvision 0.17.2
+    "av": "av==10.0.0",  # PyAV, совместимый с torchvision 0.26.0
 }
 
 # ── ПОТОКОБЕЗОПАСНЫЙ КЭШ ДИАГНОСТИКИ (thread-safe cache) ──
@@ -258,8 +261,49 @@ def _auto_check_update():
 class EnvSettingsWindow(ctk.CTkToplevel):
     """Окно системных настроек: интеграция CUDA, RVC, диагностика окружения и обновление ПО."""
 
+    def _post_ui(self, callback, *args, **kwargs):
+        return self._ui_bridge.post(callback, *args, **kwargs)
+
+    def _post_progress_text(self, text, *, force=False):
+        self._log_sequence += 1
+        if not force and not self._log_throttle.should_emit(self._log_sequence):
+            return
+
+        def apply(value=str(text)):
+            try:
+                if self.winfo_exists() and self.lbl_progress_status.winfo_exists():
+                    self.lbl_progress_status.configure(text=value)
+            except Exception:
+                pass
+
+        self._post_ui(apply)
+
+    def _start_worker(self, target):
+        """Start a producer whose UI results are delivered by the window bridge."""
+        self._ui_bridge.begin()
+
+        def wrapped():
+            try:
+                target()
+            finally:
+                self._ui_bridge.producer_done()
+
+        thread = threading.Thread(target=wrapped, daemon=True)
+        thread.start()
+        return thread
+
+    def destroy(self):
+        try:
+            self._ui_bridge.destroy()
+        except Exception:
+            pass
+        super().destroy()
+
     def __init__(self, master=None):
         super().__init__(master)
+        self._ui_bridge = UIThreadBridge(self, poll_ms=16, max_batch=64)
+        self._log_throttle = ProgressThrottle(max_hz=8)
+        self._log_sequence = 0
         self.title(t("win_update_settings_title"))
         self.geometry("600x820")  # Задали оптимальную высоту под раскрывающийся список зависимостей
         self.resizable(False, True)  # Разрешили ресайз по вертикали при раскрытии списка
@@ -477,7 +521,7 @@ class EnvSettingsWindow(ctk.CTkToplevel):
                 if variant is None:
                     lbl_text = t("torch_variant_not_defined")
                 else:
-                    lbl_text = {"cu118": "NVIDIA CUDA 11.8 (GPU)", "cpu": "CPU"}.get(
+                    lbl_text = {"cu128": "NVIDIA CUDA 12.8 (GPU)", "cpu": "CPU"}.get(
                         variant, variant
                     )
                 if self.lbl_torch_var.winfo_exists():
@@ -541,7 +585,7 @@ class EnvSettingsWindow(ctk.CTkToplevel):
         self.btn_gpu = ctk.CTkButton(
             sec_accel,
             text=t("btn_install_gpu"),
-            command=lambda: start_install("cu118"),
+            command=lambda: start_install("cu128"),
             fg_color=bg_active,
             hover_color=bg_hover,
             text_color=text_main,
@@ -606,9 +650,9 @@ class EnvSettingsWindow(ctk.CTkToplevel):
 
         self.dependency_pip = {
             "numpy": "numpy==1.26.4",
-            "torch": "torch==2.2.2 torchaudio==2.2.2 torchvision==0.17.2",
-            "torchaudio": "torchaudio==2.2.2",
-            "torchvision": "torchvision==0.17.2",
+            "torch": "torch==2.11.0 torchaudio==2.11.0 torchvision==0.26.0",
+            "torchaudio": "torchaudio==2.11.0",
+            "torchvision": "torchvision==0.26.0",
             "tts": "coqui-tts",
             "soundfile": "soundfile",
             "pygame": "pygame",
@@ -644,10 +688,9 @@ class EnvSettingsWindow(ctk.CTkToplevel):
                 return
 
             def _install_thread():
-                self.after(0, disable_buttons)
-                self.after(0, lambda: self.progress_bar.set(0.01))
-                self.after(
-                    0,
+                self._post_ui(disable_buttons)
+                self._post_ui(lambda: self.progress_bar.set(0.01))
+                self._post_ui(
                     lambda: self.lbl_progress_status.configure(
                         text=f"🔧 Восстанавливаю {pkg_key}..."
                     ),
@@ -657,14 +700,7 @@ class EnvSettingsWindow(ctk.CTkToplevel):
                 try:
 
                     def progress_cb(line):
-                        def _safe_cb():
-                            try:
-                                if self.winfo_exists() and self.lbl_progress_status.winfo_exists():
-                                    self.lbl_progress_status.configure(text=line)
-                            except Exception:
-                                pass
-
-                        self.after(0, _safe_cb)
+                        self._post_progress_text(line)
                         set_status(line)
 
                     if pkg_key == "torch":
@@ -719,7 +755,7 @@ class EnvSettingsWindow(ctk.CTkToplevel):
                         )
                         _release_install_lock()
 
-                    self.after(0, success_done)
+                    self._post_ui(success_done)
                 except Exception as e:
 
                     def failed_done(err_msg=str(e)):
@@ -737,9 +773,9 @@ class EnvSettingsWindow(ctk.CTkToplevel):
                         )
                         _release_install_lock()
 
-                    self.after(0, failed_done)
+                    self._post_ui(failed_done)
 
-            threading.Thread(target=_install_thread, daemon=True).start()
+            self._start_worker(_install_thread)
 
         # Строим пустые строки с индикатором ожидания в раскрывающемся списке
         for key, friendly_name in self.dependency_names.items():
@@ -892,9 +928,9 @@ class EnvSettingsWindow(ctk.CTkToplevel):
                     except Exception:
                         pass
 
-                self.after(0, _ui_update)
+                self._post_ui(_ui_update)
 
-            threading.Thread(target=_thread, daemon=True).start()
+            self._start_worker(_thread)
 
         # Быстрый старт: при открытии окна грузим кэш за 0мс (force_refresh=False)
         run_async_diagnostics(force_refresh=False)
@@ -930,10 +966,9 @@ class EnvSettingsWindow(ctk.CTkToplevel):
                 return
 
             def _scan_thread():
-                self.after(0, disable_buttons)
-                self.after(0, lambda: self.progress_bar.set(0.01))
-                self.after(
-                    0,
+                self._post_ui(disable_buttons)
+                self._post_ui(lambda: self.progress_bar.set(0.01))
+                self._post_ui(
                     lambda: self.lbl_progress_status.configure(
                         text="🧹 Сканирование и перенос файлов в карантин..."
                     ),
@@ -943,14 +978,7 @@ class EnvSettingsWindow(ctk.CTkToplevel):
                 try:
 
                     def progress_cb(line):
-                        def _safe_cb():
-                            try:
-                                if self.winfo_exists() and self.lbl_progress_status.winfo_exists():
-                                    self.lbl_progress_status.configure(text=line)
-                            except Exception:
-                                pass
-
-                        self.after(0, _safe_cb)
+                        self._post_progress_text(line)
                         set_status(line)
 
                     res = env_setup.scan_for_garbage(mode="deep", progress_cb=progress_cb)
@@ -985,14 +1013,12 @@ class EnvSettingsWindow(ctk.CTkToplevel):
 
                                 def _delete_thread():
                                     deleted = env_setup.finalize_deletion(res["quarantined_list"])
-                                    self.after(
-                                        0,
+                                    self._post_ui(
                                         lambda d=deleted: self.lbl_progress_status.configure(
                                             text=f"✅ Успешно очищено: {d} файлов."
                                         ),
                                     )
-                                    self.after(
-                                        0,
+                                    self._post_ui(
                                         lambda d=deleted: mb.showinfo(
                                             t("update_done_title"),
                                             f"✅ Очистка успешно завершена!\nУдалено навсегда: {d} файлов.",
@@ -1001,7 +1027,7 @@ class EnvSettingsWindow(ctk.CTkToplevel):
                                     )
                                     set_status("Ожидание...")
 
-                                threading.Thread(target=_delete_thread, daemon=True).start()
+                                self._start_worker(_delete_thread)
                             else:
                                 self.lbl_progress_status.configure(
                                     text="📁 Файлы сохранены в карантине."
@@ -1012,7 +1038,7 @@ class EnvSettingsWindow(ctk.CTkToplevel):
                             )
                             self.lbl_progress_status.configure(text="")
 
-                    self.after(0, after_scan)
+                    self._post_ui(after_scan)
                 except Exception as e:
 
                     def failed_done(err_msg=str(e)):
@@ -1027,9 +1053,9 @@ class EnvSettingsWindow(ctk.CTkToplevel):
                             parent=self,
                         )
 
-                    self.after(0, failed_done)
+                    self._post_ui(failed_done)
 
-            threading.Thread(target=_scan_thread, daemon=True).start()
+            self._start_worker(_scan_thread)
 
         def run_diagnostics():
             self.lbl_progress_status.configure(text="🔍 Выполняю диагностику...")
@@ -1053,7 +1079,7 @@ class EnvSettingsWindow(ctk.CTkToplevel):
             if not failed and not broken_optional:
                 torch_stat = env_setup.torch_status()
                 cuda_str = "Да" if torch_stat.get("cuda_available") else "Нет"
-                msg = t("msg_diagnostics_success", torch_stat.get("version", "2.2.2"), cuda_str)
+                msg = t("msg_diagnostics_success", torch_stat.get("version", "2.11.0"), cuda_str)
                 mb.showinfo(t("msg_diagnostics_title"), msg, parent=self)
             elif not failed and broken_optional:
                 # Критичные компоненты в порядке, но опциональный модуль
@@ -1121,10 +1147,9 @@ class EnvSettingsWindow(ctk.CTkToplevel):
                 return
 
             def _recovery_thread():
-                self.after(0, disable_buttons)
-                self.after(0, lambda: self.progress_bar.set(0.01))
-                self.after(
-                    0,
+                self._post_ui(disable_buttons)
+                self._post_ui(lambda: self.progress_bar.set(0.01))
+                self._post_ui(
                     lambda: self.lbl_progress_status.configure(text="🛠️ Восстановление пакетов..."),
                 )
                 set_status("Восстановление пакетов...")
@@ -1132,14 +1157,7 @@ class EnvSettingsWindow(ctk.CTkToplevel):
                 try:
 
                     def progress_cb(line):
-                        def _safe_cb():
-                            try:
-                                if self.winfo_exists() and self.lbl_progress_status.winfo_exists():
-                                    self.lbl_progress_status.configure(text=line)
-                            except Exception:
-                                pass
-
-                        self.after(0, _safe_cb)
+                        self._post_progress_text(line)
                         set_status(line)
 
                     restored = env_setup.run_error_recovery(progress_cb=progress_cb)
@@ -1170,7 +1188,7 @@ class EnvSettingsWindow(ctk.CTkToplevel):
                             )
                         _release_install_lock()
 
-                    self.after(0, success_done)
+                    self._post_ui(success_done)
                 except Exception as e:
 
                     def failed_done(err_msg=str(e)):
@@ -1186,9 +1204,9 @@ class EnvSettingsWindow(ctk.CTkToplevel):
                         )
                         _release_install_lock()
 
-                    self.after(0, failed_done)
+                    self._post_ui(failed_done)
 
-            threading.Thread(target=_recovery_thread, daemon=True).start()
+            self._start_worker(_recovery_thread)
 
         # Кнопка очистки кэша и сканирования мусора объединена
         self.btn_clean = ctk.CTkButton(
@@ -1227,14 +1245,7 @@ class EnvSettingsWindow(ctk.CTkToplevel):
                 return
             print(f"[Torch Setup UI] {line_str}")
 
-            def _safe_cb():
-                try:
-                    if self.winfo_exists() and self.lbl_progress_status.winfo_exists():
-                        self.lbl_progress_status.configure(text=line_str)
-                except Exception:
-                    pass
-
-            self.after(0, _safe_cb)
+            self._post_progress_text(line_str)
             set_status(f"Setup: {line_str}")
 
             m_coll = _torch_collecting_re.search(line_str)
@@ -1248,7 +1259,7 @@ class EnvSettingsWindow(ctk.CTkToplevel):
                 pkg = m_dl.group(1)
                 self.install_state["current_pkg"] = pkg
             elif m_inst:
-                self.after(0, lambda: self.progress_bar.set(0.95))
+                self._post_ui(lambda: self.progress_bar.set(0.95))
                 set_progress(95)
 
             m_pct = _torch_percent_re.search(line_str)
@@ -1256,17 +1267,17 @@ class EnvSettingsWindow(ctk.CTkToplevel):
 
             if m_pct:
                 pct = int(m_pct.group(1))
-                self.after(0, lambda: self.progress_bar.set(pct / 100.0))
+                self._post_ui(lambda: self.progress_bar.set(pct / 100.0))
                 set_progress(pct)
             elif m_ratio:
                 cur, total = float(m_ratio.group(1)), float(m_ratio.group(2))
                 if total > 0:
                     pct = int((cur / total) * 100)
-                    self.after(0, lambda: self.progress_bar.set(cur / total))
+                    self._post_ui(lambda: self.progress_bar.set(cur / total))
                     set_progress(pct)
 
         def start_install(variant, resume=False):
-            if variant == "cu118":
+            if variant == "cu128":
                 gpu = env_setup.detect_gpu()
                 if gpu.get("vendor") != "nvidia":
                     mb.showerror(
@@ -1296,7 +1307,7 @@ class EnvSettingsWindow(ctk.CTkToplevel):
             if not resume:
                 warning_msg = t(
                     "torch_install_warning",
-                    {"cu118": "GPU (CUDA)", "cpu": "CPU"}.get(variant, variant),
+                    {"cu128": "GPU (CUDA)", "cpu": "CPU"}.get(variant, variant),
                 )
                 confirmed = mb.askyesno(t("update_title"), warning_msg, parent=self)
                 if not confirmed:
@@ -1315,11 +1326,10 @@ class EnvSettingsWindow(ctk.CTkToplevel):
             self.install_was_stopped = False
 
             def _install_thread():
-                self.after(0, disable_buttons)
-                self.after(0, lambda: self.progress_bar.set(0.01))
+                self._post_ui(disable_buttons)
+                self._post_ui(lambda: self.progress_bar.set(0.01))
                 set_progress(1)
-                self.after(
-                    0,
+                self._post_ui(
                     lambda: self.lbl_progress_status.configure(
                         text=t("status_torch_setup", variant)
                     ),
@@ -1345,7 +1355,7 @@ class EnvSettingsWindow(ctk.CTkToplevel):
                         )
                         _release_install_lock()
 
-                    self.after(0, success_done)
+                    self._post_ui(success_done)
                 except Exception as e:
 
                     def failed_done(err_msg=str(e)):
@@ -1365,9 +1375,9 @@ class EnvSettingsWindow(ctk.CTkToplevel):
                             )
                         _release_install_lock()
 
-                    self.after(0, failed_done)
+                    self._post_ui(failed_done)
 
-            threading.Thread(target=_install_thread, daemon=True).start()
+            self._start_worker(_install_thread)
 
         # Автоматический запуск/продолжение установки после перезапуска в безопасном режиме
         auto_install_variant = self.settings.get("install_variant_on_startup")

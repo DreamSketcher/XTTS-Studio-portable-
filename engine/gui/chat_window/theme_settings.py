@@ -592,6 +592,37 @@ def open_theme_customizer(parent, on_layout_changed=None):
             pass
 
     _bind_mousewheel()
+
+    # Global motion quality affects decorative UI only, never XTTS/RVC/AI logic.
+    from engine.gui.motion_profile import get_motion_profile
+
+    motion_card = TkFrame(scroll_frame, bg=_c("BG_CARD"))
+    motion_card.pack(fill="x", pady=(0, 10))
+    TkLabel(
+        motion_card,
+        text="Плавность и эффекты",
+        bg=_c("BG_CARD"),
+        fg=_c("TEXT_MAIN"),
+        font=("Segoe UI", 12, "bold"),
+    ).pack(anchor="w", padx=12, pady=(10, 4))
+    TkLabel(
+        motion_card,
+        text="Ultra — максимум эффектов; Balanced — рекомендуемый; Performance/Reduced/Off — меньше нагрузки.",
+        bg=_c("BG_CARD"),
+        fg=_c("TEXT_DIM"),
+        font=("Segoe UI", 9),
+        wraplength=540,
+        justify="left",
+    ).pack(anchor="w", padx=12, pady=(0, 6))
+    motion_profile_var = tk.StringVar(value=get_motion_profile())
+    motion_selector = ttk.Combobox(
+        motion_card,
+        textvariable=motion_profile_var,
+        values=("ultra", "balanced", "performance", "reduced", "off"),
+        state="readonly",
+    )
+    motion_selector.pack(fill="x", padx=12, pady=(0, 10))
+
     # Destroy ТОЛЬКО окна (не детей) — снимаем бинды
     win.bind("<Destroy>", _unbind_mousewheel, add="+")
 
@@ -2294,6 +2325,17 @@ def open_theme_customizer(parent, on_layout_changed=None):
             "neon_buttons": neon_buttons_payload,
         }
         save_theme(new_theme)
+        try:
+            from engine.settings_store import load_settings as _load_app_settings
+            from engine.settings_store import save_settings as _save_app_settings
+            from engine.gui.motion_profile import set_motion_profile
+
+            app_settings = _load_app_settings()
+            app_settings["ui_motion_profile"] = motion_profile_var.get()
+            _save_app_settings(app_settings)
+            set_motion_profile(motion_profile_var.get())
+        except Exception:
+            pass
 
         # Live: заголовки + neon-кнопки тулбара
         try:
