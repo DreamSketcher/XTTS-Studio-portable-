@@ -412,9 +412,9 @@ def _show_startup_recovery_window(broken_packages):
                     return "unknown"
 
                 PACKAGE_PIP_SPEC = {
-                    "torch": "torch==2.2.2 torchaudio==2.2.2 torchvision==0.17.2",
-                    "torchaudio": "torchaudio==2.2.2",
-                    "torchvision": "torchvision==0.17.2",
+                    "torch": "torch==2.11.0 torchaudio==2.11.0 torchvision==0.26.0",
+                    "torchaudio": "torchaudio==2.11.0",
+                    "torchvision": "torchvision==0.26.0",
                     "tts": "coqui-tts",
                     "numpy": "numpy==1.26.4",
                     "pygame": "pygame",

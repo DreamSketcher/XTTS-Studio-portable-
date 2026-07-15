@@ -23,13 +23,17 @@ Provides:
   выбранного сервиса и указать его ключ в настройках приложения.
 """
 
+import ipaddress
 import json
 import os
+import tempfile
 import urllib.error
+import urllib.parse
 import urllib.request
 
 # Локализация подписей провайдеров (i18n не зависит от tkinter)
 from i18n import t as _t
+from engine.secret_store import is_protected, protect_secret, unprotect_secret
 
 
 class GroqRateLimitError(RuntimeError):
@@ -278,6 +282,10 @@ def fetch_models_from_url(models_url: str, api_key: str = "") -> list[str]:
     """
     if not models_url:
         return []
+    try:
+        models_url = _validate_api_url(models_url)
+    except ValueError:
+        return []
 
     headers = {"Content-Type": "application/json"}
     if api_key:
@@ -302,19 +310,59 @@ def fetch_models_from_url(models_url: str, api_key: str = "") -> list[str]:
         return []
 
 
+def _validate_api_url(url: str, *, allow_loopback_http: bool = True) -> str:
+    """Accept HTTPS endpoints and, optionally, explicit loopback HTTP only."""
+    value = str(url or "").strip()
+    parsed = urllib.parse.urlsplit(value)
+    if parsed.username or parsed.password:
+        raise ValueError("URL с учётными данными запрещён")
+    if parsed.fragment:
+        raise ValueError("Fragment в API URL запрещён")
+    if not parsed.hostname or parsed.scheme not in ("https", "http"):
+        raise ValueError("API URL должен использовать https://")
+    if parsed.scheme == "http":
+        is_loopback = parsed.hostname.lower() == "localhost"
+        try:
+            is_loopback = is_loopback or ipaddress.ip_address(parsed.hostname).is_loopback
+        except ValueError:
+            pass
+        if not (allow_loopback_http and is_loopback):
+            raise ValueError("Незашифрованный HTTP разрешён только для localhost")
+    return value
+
+
 def _read_settings() -> dict:
     try:
         with open(_SETTINGS_PATH, "r", encoding="utf-8") as f:
-            return json.load(f)
+            data = json.load(f)
+        return data if isinstance(data, dict) else {}
     except Exception:
         return {}
+
+
+def _write_all_settings(data: dict):
+    """Atomically replace settings so interruption cannot truncate the JSON."""
+    directory = os.path.dirname(os.path.abspath(_SETTINGS_PATH))
+    os.makedirs(directory, exist_ok=True)
+    fd, temp_path = tempfile.mkstemp(prefix=".gpt_settings_", suffix=".tmp", dir=directory)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(temp_path, _SETTINGS_PATH)
+    except Exception:
+        try:
+            os.remove(temp_path)
+        except OSError:
+            pass
+        raise
 
 
 def _write_settings(patch: dict):
     data = _read_settings()
     data.update(patch)
-    with open(_SETTINGS_PATH, "w", encoding="utf-8") as f:
-        json.dump(data, f, ensure_ascii=False, indent=2)
+    _write_all_settings(data)
 
 
 # ── provider management ─────────────────────────────────────────────────────────
@@ -350,12 +398,22 @@ def get_provider_info(provider: str = None) -> dict:
 
 def get_api_key(provider: str = None) -> str:
     provider = provider or get_provider()
-    return _read_settings().get(f"api_key_{provider}", "")
+    field = f"api_key_{provider}"
+    stored = _read_settings().get(field, "")
+    if not stored:
+        return ""
+    secret = unprotect_secret(stored)
+    if not is_protected(stored):
+        # One-time migration from legacy plaintext; fail closed if protected
+        # storage is unavailable rather than continuing to retain plaintext.
+        _write_settings({field: protect_secret(secret)})
+    return secret
 
 
 def set_api_key(key: str, provider: str = None):
     provider = provider or get_provider()
-    _write_settings({f"api_key_{provider}": key.strip()})
+    value = key.strip()
+    _write_settings({f"api_key_{provider}": protect_secret(value) if value else ""})
 
 
 def get_model(provider: str = None) -> str:
@@ -384,9 +442,27 @@ def get_fallback_model(provider: str = None) -> str:
 
 def list_keys(provider: str = None) -> list:
     """Вернуть список сохранённых ключей. Если provider задан — только для него."""
-    items = _read_settings().get("key_library", [])
-    if not isinstance(items, list):
+    stored_items = _read_settings().get("key_library", [])
+    if not isinstance(stored_items, list):
         return []
+    items = []
+    migration_needed = False
+    migrated = []
+    for raw in stored_items:
+        if not isinstance(raw, dict):
+            continue
+        entry = dict(raw)
+        stored_key = str(entry.get("key") or "")
+        plain_key = unprotect_secret(stored_key) if stored_key else ""
+        entry["key"] = plain_key
+        items.append(entry)
+        protected_entry = dict(raw)
+        if stored_key and not is_protected(stored_key):
+            protected_entry["key"] = protect_secret(plain_key)
+            migration_needed = True
+        migrated.append(protected_entry)
+    if migration_needed:
+        _write_settings({"key_library": migrated})
     if provider:
         return [it for it in items if it.get("provider") == provider]
     return items
@@ -402,14 +478,19 @@ def add_key(label: str, key: str, provider: str = None) -> dict:
     if not key:
         raise ValueError("Ключ пустой")
 
-    entry = {"id": str(_uuid.uuid4()), "label": label, "provider": provider, "key": key}
+    entry = {
+        "id": str(_uuid.uuid4()),
+        "label": label,
+        "provider": provider,
+        "key": protect_secret(key),
+    }
 
     items = _read_settings().get("key_library", [])
     if not isinstance(items, list):
         items = []
     items.append(entry)
     _write_settings({"key_library": items})
-    return entry
+    return {**entry, "key": key}
 
 
 def update_key(key_id: str, *, label: str = None, key: str = None):
@@ -424,7 +505,8 @@ def update_key(key_id: str, *, label: str = None, key: str = None):
                 it["label"] = label.strip()
                 changed = True
             if key is not None:
-                it["key"] = key.strip()
+                value = key.strip()
+                it["key"] = protect_secret(value) if value else ""
                 changed = True
     if changed:
         _write_settings({"key_library": items})
@@ -456,8 +538,7 @@ def hide_provider(pid: str):
     data["hidden_providers"] = list(hidden)
     data.pop(f"api_key_{pid}", None)
     data.pop(f"model_{pid}", None)
-    with open(_SETTINGS_PATH, "w", encoding="utf-8") as f:
-        json.dump(data, f, ensure_ascii=False, indent=2)
+    _write_all_settings(data)
 
 
 def show_provider(pid: str):
@@ -487,10 +568,11 @@ def add_custom_provider(
     if pid in existing:
         raise ValueError(f"Провайдер с ID {pid!r} уже существует")
 
+    validated_url = _validate_api_url(url)
     entry = {
         "id": pid,
         "label": label.strip() or pid,
-        "url": url.strip(),
+        "url": validated_url,
         "key_hint": key_hint or "",
         "default_model": models[0] if models else "",
         "fallback_model": fallback.strip() or (models[0] if models else ""),
@@ -504,6 +586,8 @@ def add_custom_provider(
 
 
 def update_custom_provider(pid: str, **kwargs):
+    if "url" in kwargs:
+        kwargs["url"] = _validate_api_url(kwargs["url"])
     items = list_custom_providers()
     for it in items:
         if it.get("id") == pid:
@@ -524,8 +608,7 @@ def delete_custom_provider(pid: str):
     # если это был активный провайдер — сбрасываем на дефолт
     if data.get("provider") == pid:
         data["provider"] = DEFAULT_PROVIDER
-    with open(_SETTINGS_PATH, "w", encoding="utf-8") as f:
-        json.dump(data, f, ensure_ascii=False, indent=2)
+    _write_all_settings(data)
 
 
 def get_key_entry(key_id: str):
@@ -612,8 +695,9 @@ def _call_api(
     if extra and isinstance(extra, dict):
         headers.update(extra)
 
+    endpoint_url = _validate_api_url(info["url"])
     req = urllib.request.Request(
-        info["url"],
+        endpoint_url,
         data=payload,
         headers=headers,
         method="POST",

@@ -4,6 +4,9 @@
 import os
 import tkinter as tk
 
+from engine.gui.configure_coalescer import ConfigureCoalescer
+from engine.gui.motion_profile import get_motion_profile
+
 try:
     from PIL import Image, ImageTk, ImageDraw
 
@@ -37,30 +40,30 @@ class GradientBackground:
         self.canvas.place(x=0, y=0, relwidth=1, relheight=1)
         self.canvas.tk.call("lower", self.canvas._w)
         self._photo = None
-        self._timer = None
+        self._resize = ConfigureCoalescer(win, self._draw_for_size, threshold_px=4)
         win.bind("<Configure>", self._on_resize, add="+")
-        win.update_idletasks()
-        self._draw()
+        win.after_idle(self._draw)
 
     def _on_resize(self, event):
-        if event.widget != self.win:
-            return
-        if self._timer is not None:
-            self.win.after_cancel(self._timer)
-        self._timer = self.win.after(150, self._draw)
+        if event.widget == self.win:
+            self._resize(event)
+
+    def _draw_for_size(self, _width, _height):
+        self._draw()
 
     def _draw(self):
-        self._timer = None
         w = self.win.winfo_width()
         h = self.win.winfo_height()
         if w < 10 or h < 10:
             return
-        if not PIL_AVAILABLE or Image is None:
+        if not PIL_AVAILABLE or Image is None or get_motion_profile() in ("performance", "off"):
             self.canvas.configure(bg=self.color1)
             return
         try:
-            base = Image.new("RGB", (w, h), self.color1)
-            draw = ImageDraw.Draw(base)
+            # The gradient is vertical, so render one pixel per row and expand
+            # horizontally in C instead of drawing `w * h` Python-level lines.
+            strip = Image.new("RGB", (1, h), self.color1)
+            draw = ImageDraw.Draw(strip)
             c1 = tuple(int(self.color1[i : i + 2], 16) for i in (1, 3, 5))
             c2 = tuple(int(self.color2[i : i + 2], 16) for i in (1, 3, 5))
             for y in range(h):
@@ -68,7 +71,8 @@ class GradientBackground:
                 r = int(c1[0] + (c2[0] - c1[0]) * ratio)
                 g = int(c1[1] + (c2[1] - c1[1]) * ratio)
                 b = int(c1[2] + (c2[2] - c1[2]) * ratio)
-                draw.line([(0, y), (w, y)], fill=(r, g, b))
+                draw.point((0, y), fill=(r, g, b))
+            base = strip.resize((w, h))
             self._photo = ImageTk.PhotoImage(base)
             self.canvas.delete("all")
             self.canvas.create_image(0, 0, anchor="nw", image=self._photo)

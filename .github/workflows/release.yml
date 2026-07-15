@@ -1,0 +1,60 @@
+name: Secure Release Gate
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify-and-build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install release verification tools
+        run: python -m pip install cryptography==49.0.0
+
+      - name: Verify Authenticode publisher signature
+        shell: pwsh
+        run: |
+          $signature = Get-AuthenticodeSignature -FilePath "XTTS Studio.exe"
+          $signature | Format-List *
+          if ($signature.Status -ne "Valid") {
+            throw "XTTS Studio.exe must have a valid Authenticode signature before release"
+          }
+          if (-not $signature.SignerCertificate) {
+            throw "Signer certificate is missing"
+          }
+
+      - name: Verify signed update manifest
+        run: >-
+          python -c "from engine.update_signing import verify_manifest_signature;
+          verify_manifest_signature(open('version.json','rb').read(), open('version.json.sig','rb').read())"
+
+      - name: Build deterministic archive twice
+        shell: pwsh
+        run: |
+          python tools/build_reproducible_release.py --source-root . --output release-a.zip
+          python tools/build_reproducible_release.py --source-root . --output release-b.zip
+          $a = (Get-FileHash release-a.zip -Algorithm SHA256).Hash
+          $b = (Get-FileHash release-b.zip -Algorithm SHA256).Hash
+          if ($a -ne $b) { throw "Release archive is not reproducible: $a != $b" }
+          Move-Item release-a.zip XTTS-Studio-portable.zip
+          Remove-Item release-b.zip
+          "$a  XTTS-Studio-portable.zip" | Set-Content release.sha256 -Encoding ascii
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: XTTS-Studio-secure-release
+          path: |
+            XTTS-Studio-portable.zip
+            release.sha256
+            sbom.cdx.json
+            version.json
+            version.json.sig
+          if-no-files-found: error

@@ -36,6 +36,8 @@ except ImportError:
 from engine.gui.colors import Colors, scaled_font_size, scaled_size
 from engine.gui.tooltip import ToolTip
 from engine.gui.widgets import CompatCTkFrame, CompatCTkButton, CompatCTkLabel
+from engine.gui.ui_thread_bridge import UIThreadBridge
+from engine.gui.configure_coalescer import ConfigureCoalescer
 
 # Внедряются из main_window: root, PYGAME_OK
 root = None
@@ -286,6 +288,7 @@ def open_outputs_folder():
     win.minsize(640, 500)
     win.resizable(True, True)
     win.configure(bg=Colors.BG_DARK)
+    ui_bridge = UIThreadBridge(win, poll_ms=16, max_batch=32)
     # ФИКС ИКОНКИ — сразу
     _apply_window_icon(win)
     win.grab_set()
@@ -445,18 +448,19 @@ def open_outputs_folder():
         _wave_state["path"] = path
         _redraw_waveform()
 
+        def apply(peaks):
+            if _wave_state["path"] == path:
+                _wave_state["peaks"] = peaks
+                _redraw_waveform()
+
+        ui_bridge.begin()
+
         def worker():
-            peaks = _compute_waveform_peaks(path)
-
-            def apply():
-                if _wave_state["path"] == path:
-                    _wave_state["peaks"] = peaks
-                    _redraw_waveform()
-
             try:
-                win.after(0, apply)
-            except Exception:
-                pass
+                peaks = _compute_waveform_peaks(path)
+                ui_bridge.post(apply, peaks)
+            finally:
+                ui_bridge.producer_done()
 
         threading.Thread(target=worker, daemon=True).start()
 
@@ -1023,7 +1027,12 @@ def open_outputs_folder():
     wave_canvas.pack(fill="x", padx=18, pady=(16, 6))
     wave_canvas.bind("<Button-1>", _wave_seek)
     wave_canvas.bind("<B1-Motion>", _wave_seek)
-    wave_canvas.bind("<Configure>", lambda e: _redraw_waveform())
+    wave_resize = ConfigureCoalescer(
+        wave_canvas,
+        lambda _width, _height: _redraw_waveform(),
+        threshold_px=3,
+    )
+    wave_canvas.bind("<Configure>", wave_resize)
 
     ctrl_pill = CompatCTkFrame(player_card, fg_color=Colors.BG_INPUT, corner_radius=26)
     ctrl_pill.pack(pady=(2, 18))
@@ -1072,6 +1081,8 @@ def open_outputs_folder():
         pass
 
     def on_close():
+        wave_resize.cancel()
+        ui_bridge.destroy()
         _close_volume_popup()
         _stop_ticker()
         try:

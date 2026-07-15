@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 """engine/gui/console.py — встроенная консоль единый размер 165, с сохранением позиции"""
+import queue
 import sys
 import tkinter as tk
 from i18n import t
@@ -23,45 +24,86 @@ def init(**deps):
 
 
 class ConsoleRedirect:
+    """Batch stdout/stderr delivery without Tk calls from worker threads."""
+
     def __init__(self):
         self.widget = None
         self._buffer = []
+        self._queue = queue.SimpleQueue()
+        self._pump_id = None
+        self._max_batch = 64
 
     def attach(self, widget):
         self.widget = widget
         for line in self._buffer:
-            try:
-                widget.after(0, self._write_to_widget, line)
-            except Exception:
-                pass
+            self._queue.put(line)
         self._buffer.clear()
+        self._schedule_pump(1)
 
-    def _write_to_widget(self, text):
-        if self.widget is None:
-            return
+    @staticmethod
+    def _tag_for(text):
         low = text.lower()
         if "error" in low or "ошибка" in low:
-            tag = "error"
-        elif "warn" in low or "warning" in low:
-            tag = "warn"
-        elif "done" in low or "готово" in low or "✔" in text:
-            tag = "ok"
-        else:
-            tag = "info"
+            return "error"
+        if "warn" in low or "warning" in low:
+            return "warn"
+        if "done" in low or "готово" in low or "✔" in text:
+            return "ok"
+        return "info"
+
+    def _schedule_pump(self, delay):
+        if self.widget is None or self._pump_id is not None:
+            return
         try:
-            self.widget.insert(tk.END, text, tag)
-            self.widget.see(tk.END)
+            self._pump_id = self.widget.after(delay, self._drain_queue)
+        except Exception:
+            self._pump_id = None
+
+    def _drain_queue(self):
+        self._pump_id = None
+        if self.widget is None:
+            return
+        try:
+            if not self.widget.winfo_exists():
+                self.widget = None
+                return
+        except Exception:
+            self.widget = None
+            return
+
+        grouped = []
+        processed = 0
+        while processed < self._max_batch:
+            try:
+                text = self._queue.get_nowait()
+            except queue.Empty:
+                break
+            tag = self._tag_for(text)
+            if grouped and grouped[-1][0] == tag:
+                grouped[-1][1] += text
+            else:
+                grouped.append([tag, text])
+            processed += 1
+
+        try:
+            for tag, text in grouped:
+                self.widget.insert(tk.END, text, tag)
+            if grouped:
+                self.widget.see(tk.END)
         except Exception:
             pass
 
+        # Stay responsive under heavy pip output, but use a low-frequency idle
+        # heartbeat so worker write() never has to touch Tk to wake the pump.
+        self._schedule_pump(16 if processed >= self._max_batch else 100)
+
     def write(self, text):
+        if not text:
+            return
         if self.widget is None:
             self._buffer.append(text)
         else:
-            try:
-                self.widget.after(0, self._write_to_widget, text)
-            except Exception:
-                pass
+            self._queue.put(text)
 
     def flush(self):
         pass
@@ -183,13 +225,52 @@ def _redistribute_left_panel():
                     vp.set_ref_info_font_size(10)
             except Exception:
                 pass
-        try:
-            if console_card and console_card.master and console_card.master.winfo_exists():
-                console_card.master.update_idletasks()
-        except Exception:
-            pass
     except Exception:
         pass
+
+
+def _animate_console_layout(is_open: bool):
+    """Synchronize all sidebar card heights in one quantized transition."""
+    try:
+        import engine.gui.voice_panel as vp
+        import engine.gui.queue_panel as qp
+        from engine.gui.animation_manager import AnimationManager
+
+        cards = [vp.ref_card, vp.voice_card, qp.queue_card, console_card]
+        targets = [165, 165, 165, 165] if is_open else [160, 220, 220, 32]
+        starts = []
+        for card, target in zip(cards, targets):
+            try:
+                starts.append(max(1, int(card.winfo_height())))
+            except Exception:
+                starts.append(target)
+        last_step = {"value": -1}
+
+        def apply(progress):
+            # Roughly 16 geometry commits are smoother in practice than 60
+            # full pack-tree reflows involving four CustomTkinter cards.
+            step = min(16, max(0, int(round(progress * 16))))
+            if step == last_step["value"]:
+                return
+            last_step["value"] = step
+            ratio = step / 16.0
+            for card, start, target in zip(cards, starts, targets):
+                height = round(start + (target - start) * ratio)
+                card.configure(height=max(1, height))
+                card.pack_propagate(False)
+
+        AnimationManager.get().animate(
+            target=console_card,
+            property_setter=apply,
+            start=0.0,
+            end=1.0,
+            duration_ms=210,
+            easing="ease_out_cubic",
+            on_complete=_redistribute_left_panel,
+            animation_id="_sidebar_cards_resize",
+        )
+    except Exception:
+        _redistribute_left_panel()
 
 
 def toggle_console():
@@ -208,7 +289,7 @@ def toggle_console():
         except Exception:
             pass
     _save_console_state()
-    _redistribute_left_panel()
+    _animate_console_layout(bool(console_visible.get()))
 
 
 def show_context_menu(event):

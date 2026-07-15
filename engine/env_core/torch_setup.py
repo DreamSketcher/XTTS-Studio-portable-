@@ -19,14 +19,14 @@ SITE_PACKAGES = os.path.join(PROJECT_ROOT, "python", "xtts_env", "Lib", "site-pa
 PORTABLE_TEMP_DIR = os.path.join(PROJECT_ROOT, "python", "temp")
 PORTABLE_CACHE_DIR = os.path.join(PROJECT_ROOT, "python", "pip_cache")
 
-TORCH_VERSION = "2.2.2"
-TORCHAUDIO_VERSION = "2.2.2"
-TORCHVISION_VERSION = "0.17.2"
+TORCH_VERSION = "2.11.0"
+TORCHAUDIO_VERSION = "2.11.0"
+TORCHVISION_VERSION = "0.26.0"
 
-TORCH_MIN_CUDA = (11, 8)
+TORCH_MIN_CUDA = (12, 8)
 
 _TORCH_INDEX_URLS = {
-    "cu118": "https://download.pytorch.org/whl/cu118",
+    "cu128": "https://download.pytorch.org/whl/cu128",
     "cpu": "https://download.pytorch.org/whl/cpu",
 }
 
@@ -123,8 +123,8 @@ def _pick_torch_variant(gpu_info: dict) -> tuple:
             return ("cpu", _TORCH_INDEX_URLS["cpu"])
         elif pref == "gpu":
             broken = get_broken_torch_variants()
-            if "cu118" not in broken:
-                return ("cu118", _TORCH_INDEX_URLS["cu118"])
+            if "cu128" not in broken:
+                return ("cu128", _TORCH_INDEX_URLS["cu128"])
     except Exception:
         pass
 
@@ -134,8 +134,8 @@ def _pick_torch_variant(gpu_info: dict) -> tuple:
 
     if vendor == "nvidia" and cuda_version:
         parsed = _parse_cuda_version(cuda_version)
-        if parsed and parsed >= TORCH_MIN_CUDA and "cu118" not in broken:
-            return ("cu118", _TORCH_INDEX_URLS["cu118"])
+        if parsed and parsed >= TORCH_MIN_CUDA and "cu128" not in broken:
+            return ("cu128", _TORCH_INDEX_URLS["cu128"])
 
     return ("cpu", _TORCH_INDEX_URLS["cpu"])
 
@@ -287,7 +287,7 @@ def install_torch(progress_cb=None, resume: bool = False, variant: str = None) -
 
     gpu = detect_gpu()
 
-    if variant == "cu118" and gpu.get("vendor") != "nvidia":
+    if variant == "cu128" and gpu.get("vendor") != "nvidia":
         emit(
             "⚠️ Внимание: затребована установка GPU-версии (CUDA), но ваша видеокарта не является NVIDIA."
         )
@@ -426,7 +426,7 @@ def install_torch(progress_cb=None, resume: bool = False, variant: str = None) -
 
     clear_torch_checkpoint()
     _save_installed_torch_variant(variant)
-    variant_msg = {"cu118": "NVIDIA CUDA 11.8", "cpu": "CPU"}.get(variant, variant)
+    variant_msg = {"cu128": "NVIDIA CUDA 12.8", "cpu": "CPU"}.get(variant, variant)
     emit(f"✅ Готово — torch ({variant_msg}) установлен и работает.")
     _release_install_lock()
     return status

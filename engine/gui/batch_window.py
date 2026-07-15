@@ -306,6 +306,13 @@ def open_batch_window():
         _refresh_rows()
 
     def _start_status_tracker():
+        def _set_if_changed(variable, value):
+            try:
+                if variable.get() != value:
+                    variable.set(value)
+            except Exception:
+                variable.set(value)
+
         def _tick():
             if not win.winfo_exists():
                 return
@@ -317,11 +324,11 @@ def open_batch_window():
                 for t in queue:
                     if (t.quality_params or {}).get("output_path_override") == dst:
                         if t.status == "done":
-                            win.after(0, lambda s=sv: s.set("✔ Готово"))
+                            _set_if_changed(sv, "✔ Готово")
                         elif t.status == "error":
-                            win.after(0, lambda s=sv: s.set("❌ Ошибка"))
+                            _set_if_changed(sv, "❌ Ошибка")
                         elif t.status == "cancelled":
-                            win.after(0, lambda s=sv: s.set("⛔ Отменено"))
+                            _set_if_changed(sv, "⛔ Отменено")
                         elif t.status in (
                             "running",
                             "generate",
@@ -330,9 +337,9 @@ def open_batch_window():
                             "normalize",
                             "reference",
                         ):
-                            win.after(0, lambda s=sv, p=t.progress: s.set(f"▶ {p}%"))
+                            _set_if_changed(sv, f"▶ {t.progress}%")
                         elif t.status == "queued":
-                            win.after(0, lambda s=sv: s.set("🕒 В очереди"))
+                            _set_if_changed(sv, "🕒 В очереди")
                         break
             try:
                 win.after(400, _tick)

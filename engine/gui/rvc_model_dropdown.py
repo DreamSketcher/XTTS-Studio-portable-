@@ -28,6 +28,8 @@ from tkinter import messagebox
 from engine.gui.colors import Colors, scaled_font_size, scaled_size
 from engine.gui.widgets import CompatCTkButton
 from engine.gui.tooltip import ToolTip
+from engine.gui.progress_throttle import ProgressThrottle
+from engine.gui.ui_thread_bridge import UIThreadBridge
 from engine import rvc_catalog
 
 # Тот же sentinel, что уже используется в presets.py (quality_params, reset()) —
@@ -118,12 +120,23 @@ class RVCModelDropdown:
         self._search_status_lbl = None
         self._active_row_key = None
         self._active_row_widget = None
+        self._row_records = {}
         self._render_token = 0
+        self._layout_after_id = None
+        self._batch_after_id = None
+        self._render_metrics = {
+            "renders": 0,
+            "last_initial_ms": 0.0,
+            "last_total_ms": 0.0,
+            "last_rows": 0,
+            "batched_rows": 0,
+        }
         self._downloading_key = None
         self._preview_loading_key = None
         self._preview_playing_key = None
         self._preview_token = 0
         self._cancel_flag = None
+        self._progress_throttle = ProgressThrottle(max_hz=10)
         self._enabled = True
 
         self._top_win = None
@@ -159,6 +172,12 @@ class RVCModelDropdown:
             anchor="w",
         )
         ToolTip(self.trigger_btn, t("tip_rvc_model"))
+        self._ui_bridge = UIThreadBridge(self.trigger_btn, poll_ms=16, max_batch=64)
+        self.trigger_btn.bind(
+            "<Destroy>",
+            lambda event: self._ui_bridge.destroy() if event.widget is self.trigger_btn else None,
+            add="+",
+        )
         self.variable.trace_add("write", lambda *a: self._sync_trigger_text())
 
     # ------------------------------------------------------------
@@ -238,6 +257,14 @@ class RVCModelDropdown:
 
         self._escape_bind_id = None
         self._top_win = None
+        for attr in ("_layout_after_id", "_batch_after_id"):
+            callback_id = getattr(self, attr, None)
+            if callback_id is not None:
+                try:
+                    self.trigger_btn.after_cancel(callback_id)
+                except Exception:
+                    pass
+                setattr(self, attr, None)
 
         popup = self._popup
         self._popup = None
@@ -670,18 +697,17 @@ class RVCModelDropdown:
         self._style_catalog_buttons()
         self._render_rows(reset_scroll=True)
 
+        self._ui_bridge.begin()
+
         def _worker():
             try:
-                results = rvc_catalog.browse_voice_models(selected, max_results=50)
-            except Exception:
-                results = []
-            try:
-                self.trigger_btn.after(
-                    0,
-                    lambda: self._on_catalog_done(token, selected, results),
-                )
-            except Exception:
-                pass
+                try:
+                    results = rvc_catalog.browse_voice_models(selected, max_results=50)
+                except Exception:
+                    results = []
+                self._ui_bridge.post(self._on_catalog_done, token, selected, results)
+            finally:
+                self._ui_bridge.producer_done()
 
         threading.Thread(target=_worker, daemon=True).start()
 
@@ -804,15 +830,17 @@ class RVCModelDropdown:
         if len(query) < 2:
             return
 
+        self._ui_bridge.begin()
+
         def _worker():
             try:
-                results = rvc_catalog.search_catalog(query, max_results=30, live=True)
-            except Exception:
-                results = []
-            try:
-                self.trigger_btn.after(0, lambda: self._on_search_done(token, query, results))
-            except Exception:
-                pass
+                try:
+                    results = rvc_catalog.search_catalog(query, max_results=30, live=True)
+                except Exception:
+                    results = []
+                self._ui_bridge.post(self._on_search_done, token, query, results)
+            finally:
+                self._ui_bridge.producer_done()
 
         threading.Thread(target=_worker, daemon=True).start()
 
@@ -1000,7 +1028,6 @@ class RVCModelDropdown:
         try:
             if not canvas.winfo_exists():
                 return
-            inner.update_idletasks()
             bbox = canvas.bbox("all")
             if bbox:
                 canvas.configure(scrollregion=bbox)
@@ -1069,7 +1096,6 @@ class RVCModelDropdown:
         try:
             if not canvas.winfo_exists() or not row.winfo_exists():
                 return
-            inner.update_idletasks()
             self._refresh_list_scroll()
 
             visible_top = float(canvas.canvasy(0))
@@ -1095,6 +1121,44 @@ class RVCModelDropdown:
         except Exception:
             pass
 
+    def render_performance_snapshot(self):
+        """Return cheap metrics for profiling/debug overlays."""
+        return dict(self._render_metrics)
+
+    def _schedule_remote_batches(self, entries, start_index, render_token, started_at, base_rows=1):
+        """Render non-visible catalog rows in small cancellable chunks."""
+        if start_index >= len(entries) or render_token != self._render_token:
+            self._batch_after_id = None
+            self._render_metrics["last_total_ms"] = round(
+                (time.perf_counter() - started_at) * 1000.0, 3
+            )
+            return
+
+        def _render_batch():
+            self._batch_after_id = None
+            if render_token != self._render_token or self._rows_container is None:
+                return
+            batch_end = min(start_index + 8, len(entries))
+            for entry in entries[start_index:batch_end]:
+                row = self._render_remote_row(entry)
+                self._bind_wheel_tree(row)
+            self._render_metrics["batched_rows"] += batch_end - start_index
+            self._render_metrics["last_rows"] = base_rows + batch_end
+            try:
+                self._refresh_list_scroll()
+            except Exception:
+                pass
+            self._schedule_remote_batches(
+                entries, batch_end, render_token, started_at, base_rows=base_rows
+            )
+
+        try:
+            # A short timer yields to input/animation events; after_idle alone
+            # could consume every idle slot while a large catalog is building.
+            self._batch_after_id = self.trigger_btn.after(8, _render_batch)
+        except Exception:
+            self._batch_after_id = None
+
     def _render_rows(self, reset_scroll=False, ensure_active=False):
         """
         Перестраивает строки, не теряя текущую позицию списка.
@@ -1104,6 +1168,16 @@ class RVCModelDropdown:
         """
         if self._rows_container is None:
             return
+
+        render_started = time.perf_counter()
+        if self._batch_after_id is not None:
+            try:
+                self.trigger_btn.after_cancel(self._batch_after_id)
+            except Exception:
+                pass
+            self._batch_after_id = None
+        self._render_metrics["renders"] += 1
+        self._render_metrics["batched_rows"] = 0
 
         canvas = getattr(self, "_list_canvas", None)
         old_view = None
@@ -1116,6 +1190,7 @@ class RVCModelDropdown:
         self._render_token += 1
         render_token = self._render_token
         self._active_row_widget = None
+        self._row_records = {}
         for w in self._rows_container.winfo_children():
             w.destroy()
 
@@ -1167,8 +1242,13 @@ class RVCModelDropdown:
                     bg=Colors.BORDER,
                     height=1,
                 ).pack(fill="x", padx=8, pady=(5, 3))
-            for entry in catalog_entries:
+            # Render roughly one viewport synchronously. Remaining rows are
+            # appended in small batches so opening/search never monopolizes Tk.
+            initial_remote_count = min(12, len(catalog_entries))
+            for entry in catalog_entries[:initial_remote_count]:
                 self._render_remote_row(entry)
+        else:
+            initial_remote_count = 0
 
         if shown_local == 0 and not catalog_entries and not self._search_pending:
             if self._catalog_loading:
@@ -1193,6 +1273,7 @@ class RVCModelDropdown:
         self._bind_wheel_tree(self._rows_container)
 
         def _finish_layout():
+            self._layout_after_id = None
             # Отложенный callback от старого render не должен менять новый список.
             if render_token != self._render_token:
                 return
@@ -1212,25 +1293,97 @@ class RVCModelDropdown:
             except Exception:
                 pass
 
-        _finish_layout()
+        # Geometry is valid after Tk has processed idle layout. Coalesce rapid
+        # search/selection renders into one callback instead of forcing three
+        # synchronous/redundant layout passes per render.
+        if self._layout_after_id is not None:
+            try:
+                self.trigger_btn.after_cancel(self._layout_after_id)
+            except Exception:
+                pass
         try:
-            # На Windows bbox("all") окончательно готов только после layout idle.
-            if self.trigger_btn:
-                self.trigger_btn.after(10, _finish_layout)
-                self.trigger_btn.after(50, _finish_layout)
+            self._layout_after_id = self.trigger_btn.after_idle(_finish_layout)
+        except Exception:
+            self._layout_after_id = None
+
+        initial_rows = shown_local + initial_remote_count + 1  # + «Не выбрана»
+        self._render_metrics["last_initial_ms"] = round(
+            (time.perf_counter() - render_started) * 1000.0, 3
+        )
+        self._render_metrics["last_rows"] = initial_rows
+        if initial_remote_count < len(catalog_entries):
+            self._schedule_remote_batches(
+                catalog_entries,
+                initial_remote_count,
+                render_token,
+                render_started,
+                base_rows=shown_local + 1,
+            )
+        else:
+            self._render_metrics["last_total_ms"] = self._render_metrics["last_initial_ms"]
+
+    def _render_row_actions(self, record, active):
+        slot = record.get("slot")
+        if slot is None:
+            return
+        try:
+            for child in slot.winfo_children():
+                child.destroy()
+        except Exception:
+            return
+        key = record["key"]
+        if not active and self._downloading_key != key:
+            return
+        preview_factory = record.get("preview_factory")
+        action_factory = record.get("action_factory")
+        if preview_factory is not None:
+            preview = preview_factory(slot)
+            preview.pack(side="left", expand=True, padx=(1, 0))
+        if action_factory is not None:
+            action = action_factory(slot)
+            action.pack(side="right", expand=True, padx=(0, 1))
+
+    def _refresh_row_record(self, key):
+        record = self._row_records.get(key)
+        if not record:
+            return
+        active = key == self._active_row_key
+        color = Colors.BG_HOVER if active else Colors.BG_INPUT
+        try:
+            record["row"].configure(bg=color)
+            record["label"].configure(bg=color)
+            if record.get("slot") is not None:
+                record["slot"].configure(bg=color)
+            self._render_row_actions(record, active)
+            if active:
+                self._active_row_widget = record["row"]
         except Exception:
             pass
 
+    def _activate_row(self, key, ensure_visible=True):
+        """Patch only old/new rows instead of rebuilding the entire list."""
+        previous = self._active_row_key
+        if previous == key:
+            return
+        self._active_row_key = key
+        self._refresh_row_record(previous)
+        self._refresh_row_record(key)
+        if ensure_visible:
+            try:
+                self.trigger_btn.after_idle(self._ensure_active_row_visible)
+            except Exception:
+                pass
+
     def _row_frame(self, text, key, select_cb, action_btn=None, preview_btn=None):
-        """Строка с зарезервированной правой колонкой для активных действий."""
+        """Строка with incremental active-state/action updates."""
         active = self._active_row_key == key
         row_bg = Colors.BG_HOVER if active else Colors.BG_INPUT
         row = tk.Frame(self._rows_container, bg=row_bg)
         if active:
             self._active_row_widget = row
 
-        # Важно: action-slot пакуется ПЕРВЫМ. Поэтому длинное имя сжимается,
-        # а кнопки справа никогда не выталкиваются за границу canvas.
+        # Action slot is stable; only its children change when active state moves.
+        action_slot = None
         if action_btn is not None or preview_btn is not None:
             has_two_actions = action_btn is not None and preview_btn is not None
             slot_width = 68 if has_two_actions else 38
@@ -1244,17 +1397,6 @@ class RVCModelDropdown:
             action_slot.pack_propagate(False)
             action_slot.bind("<Button-1>", lambda e: select_cb())
 
-            # Не рисуем бесполезные disabled-кнопки на каждой строке.
-            # Действия появляются только у выделенной строки (или у загрузки)
-            # и сразу находятся в видимой зарезервированной колонке.
-            if active or self._downloading_key == key:
-                if preview_btn is not None:
-                    preview = preview_btn(action_slot)
-                    preview.pack(side="left", expand=True, padx=(1, 0))
-                if action_btn is not None:
-                    btn = action_btn(action_slot)
-                    btn.pack(side="right", expand=True, padx=(0, 1))
-
         lbl = tk.Label(
             row,
             text=text,
@@ -1267,6 +1409,16 @@ class RVCModelDropdown:
         lbl.pack(side="left", fill="both", expand=True, padx=(8, 2), pady=4)
         lbl.bind("<Button-1>", lambda e: select_cb())
         row.bind("<Button-1>", lambda e: select_cb())
+        record = {
+            "key": key,
+            "row": row,
+            "label": lbl,
+            "slot": action_slot,
+            "action_factory": action_btn,
+            "preview_factory": preview_btn,
+        }
+        self._row_records[key] = record
+        self._render_row_actions(record, active)
         return row
 
     def _build_preview_button(self, parent, entry, key, local=False):
@@ -1312,10 +1464,25 @@ class RVCModelDropdown:
         key = ("local", name)
 
         def _select():
-            self._active_row_key = key
+            if not rvc_catalog.is_local_model_trusted(name):
+                confirmed = messagebox.askyesno(
+                    "Доверие к RVC-модели",
+                    (
+                        f"Файл «{name}.pth» является PyTorch checkpoint и может содержать "
+                        "исполняемые pickle-объекты.\n\nПодтвердите доверие только если источник "
+                        "модели вам известен. Доверие будет привязано к SHA-256 файла."
+                    ),
+                    parent=self._top_win,
+                )
+                if not confirmed:
+                    return
+                try:
+                    rvc_catalog.trust_local_model(name, source="explicit-gui-confirmation")
+                except Exception as error:
+                    self.on_status(f"❌ Не удалось подтвердить RVC-модель: {error}")
+                    return
             self.variable.set(name)
-            # Остаёмся открытыми: после выделения активируется 🗑
-            self._render_rows(ensure_active=True)
+            self._activate_row(key)
 
         def _btn(row):
             return CompatCTkButton(
@@ -1375,8 +1542,7 @@ class RVCModelDropdown:
                 downloadable = True
 
         def _select():
-            self._active_row_key = key
-            self._render_rows(ensure_active=True)
+            self._activate_row(key)
 
         preview_available = False
         try:
@@ -1474,11 +1640,11 @@ class RVCModelDropdown:
         ]
         ToolTip(row, "\n".join(p for p in tip_parts if p))
         row.pack(fill="x")
+        return row
 
     def _select_none(self):
-        self._active_row_key = ("none", None)
         self.variable.set(NONE_LABEL)
-        self._render_rows(ensure_active=True)
+        self._activate_row(("none", None))
 
     def _toggle_preview(self, entry, key=None):
         preview_key = key or ("remote", entry["id"])
@@ -1511,23 +1677,23 @@ class RVCModelDropdown:
             )
         )
 
+        self._ui_bridge.begin()
+
         def _worker():
             try:
-                audio_path = rvc_catalog.get_preview_audio_path(entry)
-            except Exception:
-                audio_path = ""
-            try:
-                self.trigger_btn.after(
-                    0,
-                    lambda: self._on_preview_ready(
-                        token,
-                        preview_key,
-                        entry,
-                        audio_path,
-                    ),
+                try:
+                    audio_path = rvc_catalog.get_preview_audio_path(entry)
+                except Exception:
+                    audio_path = ""
+                self._ui_bridge.post(
+                    self._on_preview_ready,
+                    token,
+                    preview_key,
+                    entry,
+                    audio_path,
                 )
-            except Exception:
-                pass
+            finally:
+                self._ui_bridge.producer_done()
 
         threading.Thread(target=_worker, daemon=True).start()
 
@@ -1634,6 +1800,19 @@ class RVCModelDropdown:
     # ------------------------------------------------------------
 
     def _start_download(self, entry):
+        confirmed = messagebox.askyesno(
+            "Скачать неподписанную RVC-модель?",
+            (
+                "Community RVC-модели не подписаны XTTS Studio. Файл .pth может содержать "
+                "опасные pickle-объекты.\n\nСкачать и явно доверять этой модели только при "
+                "условии, что вы доверяете указанному источнику?"
+            ),
+            parent=self._top_win,
+        )
+        if not confirmed:
+            return
+        entry["_explicit_trust_confirmed"] = True
+        self._progress_throttle.reset()
         self._downloading_key = ("remote", entry["id"])
         self._cancel_flag = {"cancelled": False}
         self._render_rows(ensure_active=True)
@@ -1642,22 +1821,23 @@ class RVCModelDropdown:
 
         def _progress_cb(downloaded, total):
             if total:
-                pct = int(downloaded * 100 / total)
-                try:
-                    self.trigger_btn.after(0, lambda: self.on_progress(pct))
-                except Exception:
-                    pass
+                pct = max(0, min(100, int(downloaded * 100 / total)))
+                if not self._progress_throttle.should_emit(pct):
+                    return
+                self._ui_bridge.post(self.on_progress, pct)
+
+        self._ui_bridge.begin()
 
         def _worker():
-            ok = rvc_catalog.download_model(
-                entry,
-                progress_callback=_progress_cb,
-                cancelled_flag=self._cancel_flag,
-            )
             try:
-                self.trigger_btn.after(0, lambda: self._on_download_done(ok, entry))
-            except Exception:
-                pass
+                ok = rvc_catalog.download_model(
+                    entry,
+                    progress_callback=_progress_cb,
+                    cancelled_flag=self._cancel_flag,
+                )
+                self._ui_bridge.post(self._on_download_done, ok, entry)
+            finally:
+                self._ui_bridge.producer_done()
 
         threading.Thread(target=_worker, daemon=True).start()
 
@@ -1672,6 +1852,14 @@ class RVCModelDropdown:
         self.on_progress(0)
         if ok:
             local_name = os.path.splitext(os.path.basename(rvc_catalog.local_model_path(entry)))[0]
+            try:
+                if not entry.pop("_explicit_trust_confirmed", False):
+                    raise RuntimeError("отсутствует явное подтверждение доверия")
+                rvc_catalog.trust_local_model(local_name, source="explicit-download-confirmation")
+            except Exception as error:
+                self.on_status(f"❌ Модель скачана, но не активирована: {error}")
+                self._render_rows(ensure_active=True)
+                return
             self.on_status(self.t("status_rvc_downloaded", entry.get("name", "")))
             self._active_row_key = ("local", local_name)
             self.variable.set(local_name)

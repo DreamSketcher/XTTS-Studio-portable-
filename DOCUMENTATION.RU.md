@@ -500,14 +500,14 @@ python/xtts_env/Lib/site-packages
 `engine/env_core/torch_setup.py` управляет согласованным набором:
 
 ```text
-torch       2.2.2
-torchaudio  2.2.2
-torchvision 0.17.2
+torch       2.11.0
+torchaudio  2.11.0
+torchvision 0.26.0
 ```
 
 Доступны варианты:
 
-- `cu118` — NVIDIA CUDA 11.8;
+- `cu128` — NVIDIA CUDA 12.8;
 - `cpu` — универсальный CPU build.
 
 Как выбирается вариант:
@@ -530,7 +530,7 @@ torchvision 0.17.2
 
 `cancel_install_torch()` завершает активный pip-процесс и освобождает install-lock. `clean_torch_cache()` удаляет общий temp/pip cache и checkpoint.
 
-**Практический случай:** CUDA wheel установился, но драйвер или GPU не позволяют `torch.cuda.is_available()`. Программа не должна оставлять такой вариант активным: `cu118` помечается в `.torch_broken_variants.json`, затем устанавливается CPU build.
+**Практический случай:** CUDA wheel установился, но драйвер или GPU не позволяют `torch.cuda.is_available()`. Программа не должна оставлять такой вариант активным: `cu128` помечается в `.torch_broken_variants.json`, затем устанавливается CPU build.
 
 ### Установка локального llama.cpp
 
@@ -571,7 +571,7 @@ CPU-вариант может собираться из исходников. `b
 
 Что делает установщик:
 
-- определяет уже установленный Torch build (`cpu` или `cu118`) и использует тот же индекс;
+- определяет уже установленный Torch build (`cpu` или `cu128`) и использует тот же индекс;
 - строит динамический constraint по версиям, реально лежащим в `site-packages`;
 - ставит `rvc-python --no-deps`, затем читает реальные `Requires-Dist` из его METADATA;
 - на Windows использует готовые fairseq wheels для Python 3.10/3.11/3.12, когда они доступны;
@@ -584,7 +584,7 @@ CPU-вариант может собираться из исходников. `b
 
 `uninstall_rvc()` удаляет RVC/fairseq-специфичные пакеты, но намеренно оставляет `portalocker`, потому что это общая зависимость, используемая и другими частями окружения.
 
-**Практический случай:** RVC устанавливается в CPU-сборку. Динамический constraint закрепляет уже установленный `torch+cpu`, поэтому pip не пытается заменить его на `cu118` и повторно скачать несколько гигабайт.
+**Практический случай:** RVC устанавливается в CPU-сборку. Динамический constraint закрепляет уже установленный `torch+cpu`, поэтому pip не пытается заменить его на `cu128` и повторно скачать несколько гигабайт.
 
 ### Полная диагностика
 
@@ -745,7 +745,7 @@ Optional-компонент может быть просто не установ
 | `.env_diagnostics_cache.json` | кэш успешной полной диагностики |
 | `.known_safe_files.json` | safe/unsafe/deleted history сканера |
 | `.torch_install_checkpoint.json` | этап незавершённой установки Torch |
-| `.torch_installed_variant.json` | последний успешный `cpu` / `cu118` |
+| `.torch_installed_variant.json` | последний успешный `cpu` / `cu128` |
 | `.torch_broken_variants.json` | варианты Torch, которые не следует выбирать автоматически |
 | `.llama_install_checkpoint.json` | этап установки llama.cpp |
 | `.llama_installed_backend.json` | последний успешный backend llama.cpp |

@@ -18,6 +18,7 @@ from engine.gui.tooltip import ToolTip
 from engine.gui.widgets import CompatCTkFrame, create_button
 from engine.gui.env_settings import check_and_update
 from engine.gui.ai_status_window import open_ai_status_window
+from engine.gui.motion_profile import adjusted_interval, decorative_effects_enabled
 
 # Внедряются из main_window: root, ui_lang_var, save_settings
 root = None
@@ -225,7 +226,7 @@ def _stop_author_rainbow():
 def _start_rainbow():
     global _rainbow_timer
     _stop_rainbow()
-    if not _rainbow_enabled or not _rainbow_frames:
+    if not _rainbow_enabled or not _rainbow_frames or not decorative_effects_enabled():
         return
     # пауза когда окно неактивно / свёрнуто
     try:
@@ -248,7 +249,12 @@ def _start_rainbow():
 def _rainbow_tick():
     global _rainbow_timer, _rainbow_index
     try:
-        if not _rainbow_enabled or not _rainbow_frames or _title_canvas is None:
+        if (
+            not _rainbow_enabled
+            or not _rainbow_frames
+            or _title_canvas is None
+            or not decorative_effects_enabled()
+        ):
             _rainbow_timer = None
             return
         frame = _rainbow_frames[_rainbow_index % len(_rainbow_frames)]
@@ -262,7 +268,7 @@ def _rainbow_tick():
         if root is not None:
             delay = int(_rainbow_style.get("speed_ms", 40))
             delay = max(16, min(200, delay))
-            _rainbow_timer = root.after(delay, _rainbow_tick)
+            _rainbow_timer = root.after(adjusted_interval(delay), _rainbow_tick)
     except Exception:
         _rainbow_timer = None
 
@@ -270,7 +276,7 @@ def _rainbow_tick():
 def _start_author_rainbow():
     global _author_timer
     _stop_author_rainbow()
-    if not _author_enabled or not _author_frames:
+    if not _author_enabled or not _author_frames or not decorative_effects_enabled():
         return
     try:
         if root is not None:
@@ -288,7 +294,12 @@ def _start_author_rainbow():
 def _author_tick():
     global _author_timer, _author_index
     try:
-        if not _author_enabled or not _author_frames or _author_canvas is None:
+        if (
+            not _author_enabled
+            or not _author_frames
+            or _author_canvas is None
+            or not decorative_effects_enabled()
+        ):
             _author_timer = None
             return
         frame = _author_frames[_author_index % len(_author_frames)]
@@ -300,7 +311,7 @@ def _author_tick():
         if root is not None:
             delay = int(_author_style.get("speed_ms", 50))
             delay = max(16, min(200, delay))
-            _author_timer = root.after(delay, _author_tick)
+            _author_timer = root.after(adjusted_interval(delay), _author_tick)
     except Exception:
         _author_timer = None
 
@@ -320,7 +331,7 @@ def _stop_underline():
 def _start_underline():
     global _underline_timer
     _stop_underline()
-    if not _is_rainbow_enabled():
+    if not _is_rainbow_enabled() or not decorative_effects_enabled():
         return
     _underline_tick()
 
@@ -330,7 +341,9 @@ def _underline_tick():
     import colorsys
 
     try:
-        if _title_underline is None and _author_underline is None:
+        if (
+            _title_underline is None and _author_underline is None
+        ) or not decorative_effects_enabled():
             _underline_timer = None
             return
         _underline_hue = (_underline_hue + 0.006) % 1.0
@@ -347,7 +360,7 @@ def _underline_tick():
             except Exception:
                 pass
         if root is not None:
-            _underline_timer = root.after(40, _underline_tick)
+            _underline_timer = root.after(adjusted_interval(40), _underline_tick)
     except Exception:
         _underline_timer = None
 

@@ -8,6 +8,10 @@ from tkinter import filedialog, messagebox
 import tkinter as tk
 
 import engine.gui.chat_window.state as state
+
+_input_refresh_after_id = None
+_INPUT_REFRESH_DEBOUNCE_MS = 60
+_chat_token_cache = {"key": None, "tokens": 0}
 from engine.gui.chat_window.custom_widgets import (
     CTK_AVAILABLE,
     CTkFrame,
@@ -126,7 +130,22 @@ def _update_token_counter(event=None):
     input_tokens = _approx_tokens(text)
 
     session = _get_current_session()
-    chat_tokens = sum(_approx_tokens(m.get("content", "")) for m in session.get("messages", []))
+    messages = session.get("messages", [])
+    last = messages[-1] if messages else None
+    cache_key = (
+        id(session),
+        len(messages),
+        id(last),
+        len(str(last.get("content", ""))) if isinstance(last, dict) else 0,
+    )
+    if _chat_token_cache["key"] != cache_key:
+        _chat_token_cache["tokens"] = sum(
+            _approx_tokens(message.get("content", ""))
+            for message in messages
+            if isinstance(message, dict)
+        )
+        _chat_token_cache["key"] = cache_key
+    chat_tokens = _chat_token_cache["tokens"]
 
     try:
         state.chat_token_label.config(text=t("chat_token_counter", input_tokens, chat_tokens))
@@ -148,10 +167,36 @@ def _on_input_focus_out(event=None):
     _sync_text_placeholder(state.chat_input)
 
 
-def _on_input_key_release(event=None):
+def _flush_input_refresh():
+    global _input_refresh_after_id
+    _input_refresh_after_id = None
     _resize_input()
     _update_token_counter()
     _sync_text_placeholder(state.chat_input)
+
+
+def _schedule_input_refresh(event=None):
+    """Coalesce resize/token/placeholder work during fast typing."""
+    global _input_refresh_after_id
+    if state._root is None:
+        _flush_input_refresh()
+        return
+    if _input_refresh_after_id is not None:
+        try:
+            state._root.after_cancel(_input_refresh_after_id)
+        except Exception:
+            pass
+    try:
+        _input_refresh_after_id = state._root.after(
+            _INPUT_REFRESH_DEBOUNCE_MS, _flush_input_refresh
+        )
+    except Exception:
+        _input_refresh_after_id = None
+        _flush_input_refresh()
+
+
+def _on_input_key_release(event=None):
+    _schedule_input_refresh(event)
 
 
 def _on_enter(event):

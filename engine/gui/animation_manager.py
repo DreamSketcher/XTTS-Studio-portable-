@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import time
 import tkinter
+from collections import deque
 from typing import Any, Callable, Optional
 
 
@@ -175,11 +176,18 @@ class AnimationManager:
         self._tick_id: Optional[str] = None
         self._counter: int = 0
         self._running: bool = True
+        self._frame_interval_ms: float = 1000.0 / self._fps
+        self._last_tick_duration_ms: float = 0.0
+        self._frame_count: int = 0
+        self._dropped_frames: int = 0
+        self._frame_times = deque(maxlen=240)
+        self._slow_windows = 0
+        self._good_windows = 0
+        self._adaptive_degraded = False
 
         self._no_op: bool = root is None
-
-        if not self._no_op:
-            self._schedule_tick()
+        # Event-driven: an idle manager owns no after() callback. animate()
+        # starts the loop when the first animation is registered.
 
     # ── Class-level API ────────────────────────────────────────────
 
@@ -201,7 +209,6 @@ class AnimationManager:
                 inst._root = root
                 inst._no_op = False
                 inst._running = True
-                inst._schedule_tick()
             return inst
 
         cls._instance = cls(root=root, fps=fps)
@@ -296,12 +303,14 @@ class AnimationManager:
         """Отменить анимацию по ID (без применения конечного значения)."""
         if animation_id in self._active:
             del self._active[animation_id]
+        self._cancel_tick_if_idle()
 
     def cancel_target(self, target: Any) -> None:
         """Отменить все анимации для указанного виджета/объекта."""
         to_remove = [aid for aid, anim in self._active.items() if anim.target is target]
         for aid in to_remove:
             del self._active[aid]
+        self._cancel_tick_if_idle()
 
     def is_running(self, animation_id: str) -> bool:
         """Проверить, активна ли анимация с данным ID."""
@@ -310,6 +319,64 @@ class AnimationManager:
     def stop_all(self) -> None:
         """Немедленно остановить все анимации."""
         self._active.clear()
+        self._cancel_tick_if_idle()
+
+    def _cancel_tick_if_idle(self) -> None:
+        if self._active or self._tick_id is None or self._root is None:
+            return
+        try:
+            self._root.after_cancel(self._tick_id)
+        except Exception:
+            pass
+        self._tick_id = None
+
+    def performance_snapshot(self) -> dict[str, float | int | bool]:
+        """Rolling metrics used by diagnostics and the adaptive motion policy."""
+        samples = sorted(self._frame_times)
+        if samples:
+            p95 = samples[min(len(samples) - 1, int((len(samples) - 1) * 0.95))]
+            average = sum(samples) / len(samples)
+        else:
+            p95 = average = 0.0
+        return {
+            "fps_target": self._fps,
+            "active": len(self._active),
+            "last_tick_ms": round(self._last_tick_duration_ms, 3),
+            "avg_tick_ms": round(average, 3),
+            "p95_tick_ms": round(p95, 3),
+            "sample_count": len(samples),
+            "frames": self._frame_count,
+            "dropped_frames": self._dropped_frames,
+            "adaptive_degraded": self._adaptive_degraded,
+        }
+
+    def _update_adaptive_motion(self) -> None:
+        if len(self._frame_times) < 60 or self._frame_count % 30:
+            return
+        snapshot = self.performance_snapshot()
+        p95 = float(snapshot["p95_tick_ms"])
+        slow = p95 > self._frame_interval_ms * 1.35
+        if slow:
+            self._slow_windows += 1
+            self._good_windows = 0
+        else:
+            self._good_windows += 1
+            self._slow_windows = 0
+
+        changed = False
+        if not self._adaptive_degraded and self._slow_windows >= 2:
+            self._adaptive_degraded = True
+            changed = True
+        elif self._adaptive_degraded and self._good_windows >= 6:
+            self._adaptive_degraded = False
+            changed = True
+        if changed:
+            try:
+                from engine.gui.motion_profile import set_adaptive_degraded
+
+                set_adaptive_degraded(self._adaptive_degraded)
+            except Exception:
+                pass
 
     def destroy(self) -> None:
         """Полная остановка менеджера: отмена всех анимаций и тик-цикла.
@@ -327,9 +394,9 @@ class AnimationManager:
 
     # ── Внутренний тик-цикл ────────────────────────────────────────
 
-    def _schedule_tick(self) -> None:
-        """Запланировать следующий тик."""
-        if self._no_op or not self._running:
+    def _schedule_tick(self, delay_ms: Optional[int] = None) -> None:
+        """Schedule one frame; never keep a timer alive while idle."""
+        if self._no_op or not self._running or not self._active or self._tick_id is not None:
             return
 
         if self._root is None:
@@ -344,14 +411,17 @@ class AnimationManager:
             self._running = False
             return
 
-        delay: int = max(8, min(32, int(1000.0 / self._fps)))
+        if delay_ms is None:
+            delay_ms = round(self._frame_interval_ms)
+        delay = max(1, min(100, int(delay_ms)))
         try:
             self._tick_id = self._root.after(delay, self._tick)
         except Exception:
             self._tick_id = None
 
     def _tick(self) -> None:
-        """Один тик: обработать все активные анимации."""
+        """Process one frame and compensate for time spent rendering it."""
+        frame_started = time.perf_counter()
         self._tick_id = None
 
         if not self._running:
@@ -412,5 +482,14 @@ class AnimationManager:
         for fid in finished:
             self._active.pop(fid, None)
 
-        # Планируем следующий тик
-        self._schedule_tick()
+        self._frame_count += 1
+        self._last_tick_duration_ms = (time.perf_counter() - frame_started) * 1000.0
+        self._frame_times.append(self._last_tick_duration_ms)
+        if self._last_tick_duration_ms > self._frame_interval_ms:
+            self._dropped_frames += 1
+        self._update_adaptive_motion()
+
+        # Keep start-to-start cadence close to target FPS instead of adding a
+        # fixed delay after expensive Tcl/Tk redraw work.
+        remaining_ms = self._frame_interval_ms - self._last_tick_duration_ms
+        self._schedule_tick(max(1, round(remaining_ms)))

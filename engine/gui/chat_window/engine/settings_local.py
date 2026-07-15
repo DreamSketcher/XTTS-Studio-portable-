@@ -15,6 +15,8 @@ import webbrowser
 from tkinter import filedialog, messagebox
 
 from i18n import t
+import engine.gui.chat_window.state as state
+from engine.gui.progress_throttle import ProgressThrottle
 from engine.gui.chat_window.custom_widgets import (
     CTK_AVAILABLE,
     CTkFrame,
@@ -107,6 +109,9 @@ def build_local_page(ctx):
             row.pack(fill="x", pady=2)
             is_active = m.get("id") == active_id
             dot = "🟢" if is_active else "⚪"
+            # Reserve action width before the expandable model label.
+            actions = TkFrame(row, bg=_c("BG_CARD"))
+            actions.pack(side="right", padx=(6, 0))
             TkLabel(
                 row,
                 text=f"{dot} {m.get('label', m.get('filename', '?'))}",
@@ -133,7 +138,7 @@ def build_local_page(ctx):
 
             if not is_active:
                 _make_button(
-                    row,
+                    actions,
                     t("local_model_activate_btn"),
                     _activate,
                     bg=_c("BG_ACTIVE"),
@@ -143,7 +148,7 @@ def build_local_page(ctx):
                     pady=2,
                 ).pack(side="right", padx=(4, 0))
             _make_button(
-                row,
+                actions,
                 "🗑",
                 _remove,
                 bg=_c("BG_INPUT"),
@@ -344,6 +349,13 @@ def build_local_page(ctx):
                 from_folder_btn.config(state="normal")
             except Exception:
                 pass
+        # Reserve visible stop/discard buttons first, then let the main action
+        # consume only the remaining width.
+        try:
+            action_btn.pack_forget()
+            action_btn.pack(side="left", fill="x", expand=True)
+        except Exception:
+            pass
 
     def _update_catalog_info(e=None):
         sel = lb.curselection()
@@ -491,17 +503,32 @@ def build_local_page(ctx):
             fg=_c("TEXT_DIM"),
         )
 
+        bridge = state._ui_bridge
+        progress_throttle = ProgressThrottle(max_hz=8)
+        progress_seq = [0]
+        if bridge is not None:
+            bridge.begin()
+
+        def _deliver(callback):
+            if bridge is not None:
+                bridge.post(callback)
+            else:
+                _safe_after(0, callback)
+
+        def _progress(line):
+            progress_seq[0] += 1
+            if progress_throttle.should_emit(progress_seq[0]):
+                _deliver(lambda value=line: action_status_lbl.config(text=value, fg=_c("TEXT_DIM")))
+
         def worker():
             try:
                 entry = local_llm_client.install_catalog_model(
                     m["id"],
-                    progress_cb=lambda line: _safe_after(
-                        0, lambda ln=line: action_status_lbl.config(text=ln, fg=_c("TEXT_DIM"))
-                    ),
+                    progress_cb=_progress,
                     cancelled_flag=download_cancelled,
                     resume=resume,
                 )
-                _safe_after(0, lambda: _finish_download(entry, m))
+                _deliver(lambda: _finish_download(entry, m))
             except InterruptedError:
 
                 def _on_pause():
@@ -522,7 +549,7 @@ def build_local_page(ctx):
                     except Exception:
                         pass
 
-                _safe_after(0, _on_pause)
+                _deliver(_on_pause)
             except Exception as e:
                 err_msg = str(e)
 
@@ -547,7 +574,11 @@ def build_local_page(ctx):
                         except Exception:
                             pass
 
-                _safe_after(0, _on_err)
+                _deliver(_on_err)
+
+            finally:
+                if bridge is not None:
+                    bridge.producer_done()
 
         download_thread[0] = threading.Thread(target=worker, daemon=True)
         download_thread[0].start()
@@ -905,8 +936,13 @@ def build_local_page(ctx):
 
     br = TkFrame(catalog_view, bg=_c("BG_CARD"))
     br.pack(fill="x", pady=(0, 15))
+    primary_actions = TkFrame(br, bg=_c("BG_CARD"))
+    primary_actions.pack(fill="x", pady=(0, 5))
+    secondary_actions = TkFrame(br, bg=_c("BG_CARD"))
+    secondary_actions.pack(fill="x")
+
     from_folder_btn = _make_button(
-        br,
+        secondary_actions,
         t("chat_btn_from_folder"),
         _select_from_folder,
         bg=_c("BG_INPUT"),
@@ -915,10 +951,10 @@ def build_local_page(ctx):
         padx=6,
         pady=3,
     )
-    from_folder_btn.pack(side="right", padx=(0, 4))
+    from_folder_btn.pack(side="left", fill="x", expand=True, padx=(3, 0))
     # Обзор /models/ — видны partial и мусор
     manage_btn = _make_button(
-        br,
+        secondary_actions,
         t("local_models_folder_btn"),
         _browse_models_folder_trash,
         bg=_c("BG_INPUT"),
@@ -927,9 +963,9 @@ def build_local_page(ctx):
         padx=6,
         pady=3,
     )
-    manage_btn.pack(side="right", padx=(0, 4))
+    manage_btn.pack(side="left", fill="x", expand=True, padx=(0, 3))
     action_btn = _make_button(
-        br,
+        primary_actions,
         t("local_model_install_btn"),
         _action_model,
         bg=_c("BG_ACTIVE"),
@@ -938,10 +974,10 @@ def build_local_page(ctx):
         padx=6,
         pady=3,
     )
-    action_btn.pack(side="right")
+    action_btn.pack(side="left", fill="x", expand=True)
     # Стоп — видна только во время загрузки
     stop_btn = _make_button(
-        br,
+        primary_actions,
         t("local_catalog_stop_btn"),
         _stop_download,
         bg="#c0392b",
@@ -952,7 +988,7 @@ def build_local_page(ctx):
     )
     # изначально скрыта
     discard_btn = _make_button(
-        br,
+        primary_actions,
         "🗑 " + t("local_catalog_discard_btn"),
         _discard_cached_download,
         bg=_c("BG_INPUT"),

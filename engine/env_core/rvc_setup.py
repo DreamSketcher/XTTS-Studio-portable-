@@ -21,11 +21,11 @@ def _build_rvc_constraints(frozen_reqs: dict, site_packages: str) -> list:
 
     Каждая зафиксированная в requirements.txt зависимость пинится к ТОЙ
     версии, что реально установлена в целевом site-packages (включая суффикс
-    сборки +cu118 / +cpu). Если пакет ещё не установлен — берётся версия из
+    сборки +cu128 / +cpu). Если пакет ещё не установлен — берётся версия из
     requirements.txt.
 
-    Зачем: раньше requirements.txt жёстко пинил torch==2.2.2+cu118, тогда как
-    в целевом окружении мог уже стоять torch 2.2.2+cpu (или наоборот). Из-за
+    Зачем: раньше requirements.txt жёстко пинил torch==2.11.0+cu128, тогда как
+    в целевом окружении мог уже стоять torch 2.11.0+cpu (или наоборот). Из-за
     этого несовпадения варианта сборки pip считал установленный torch «не
     подходящим» под constraint и перетягивал 2.7 ГБ заново при каждой
     установке RVC. Теперь requirements.txt нейтральный (без суффикса), а
@@ -53,7 +53,7 @@ def _build_rvc_constraints(frozen_reqs: dict, site_packages: str) -> list:
         for name, spec in frozen_reqs.items():
             ver = _installed_ver(name)
             if ver:
-                # Пиним ровно к установленной сборке (с суффиксом +cu118/+cpu).
+                # Пиним ровно к установленной сборке (с суффиксом +cu128/+cpu).
                 lines.append(f"{name}=={ver}")
             else:
                 # Пакет ещё не стоит — оставляем как в requirements.txt,
@@ -65,7 +65,7 @@ def _build_rvc_constraints(frozen_reqs: dict, site_packages: str) -> list:
 
 
 def _detect_installed_torch_variant(site_packages: str):
-    """Возвращает установленную сборку torch ('cu118'/'cpu') или None."""
+    """Возвращает установленную сборку torch ('cu128'/'cpu') или None."""
     import importlib.metadata as ilm
 
     prev = list(sys.path)
@@ -80,7 +80,7 @@ def _detect_installed_torch_variant(site_packages: str):
         sys.path[:] = prev
     if not installed:
         return None
-    return "cu118" if "+cu" in installed else "cpu"
+    return "cu128" if "+cu" in installed else "cpu"
 
 
 def _fallback_cuda_available() -> bool:
@@ -125,7 +125,7 @@ def detect_torch_build(site_packages: str):
     Возвращает (build_tag, index_url) для установки torch, переиспользуя
     ЕДИНУЮ логику выбора сборки из engine.env_core.torch_setup, чтобы RVC-путь
     и базовая установка torch всегда выбирали один и тот же вариант:
-      - если torch уже стоит — берём его сборку (+cu118 / +cpu);
+      - если torch уже стоит — берём его сборку (+cu128 / +cpu);
       - иначе — ту же логику, что у базовой установки (настройка
         torch_device_preference, наличие NVIDIA-GPU и версия CUDA,
         список «битых» вариантов). Это гарантирует адаптивность под
@@ -149,7 +149,7 @@ def detect_torch_build(site_packages: str):
 
     # Запасной вариант, если модули torch_setup недоступны.
     if _fallback_cuda_available():
-        return ("cu118", _TORCH_INDEX_URLS["cu118"])
+        return ("cu128", _TORCH_INDEX_URLS["cu128"])
     return ("cpu", _TORCH_INDEX_URLS["cpu"])
 
 
@@ -358,9 +358,9 @@ def install_rvc(progress_cb=None) -> dict:
         py_ver = f"{sys.version_info.major}.{sys.version_info.minor}"
         # Прекомпилированные стабильные колеса от gdiaz384 для беспроблемной установки без MSVC Build Tools!
         fairseq_wheels = {
-            "3.10": "https://github.com/gdiaz384/fairseq/releases/download/v0.12.2.2024Feb07/fairseq-0.12.2-cp310-cp310-win_amd64.whl",
-            "3.11": "https://github.com/gdiaz384/fairseq/releases/download/v0.12.2.2024Feb07/fairseq-0.12.3.1-cp311-cp311-win_amd64.whl",
-            "3.12": "https://github.com/gdiaz384/fairseq/releases/download/v0.12.2.2024Feb07/fairseq-0.12.3.1-cp312-cp312-win_amd64.whl",
+            "3.10": "https://github.com/gdiaz384/fairseq/releases/download/v0.12.11.0024Feb07/fairseq-0.12.2-cp310-cp310-win_amd64.whl",
+            "3.11": "https://github.com/gdiaz384/fairseq/releases/download/v0.12.11.0024Feb07/fairseq-0.12.3.1-cp311-cp311-win_amd64.whl",
+            "3.12": "https://github.com/gdiaz384/fairseq/releases/download/v0.12.11.0024Feb07/fairseq-0.12.3.1-cp312-cp312-win_amd64.whl",
         }
 
         if py_ver in fairseq_wheels:
@@ -496,7 +496,7 @@ def install_rvc(progress_cb=None) -> dict:
                 # установку, даже голым именем. Голое имя не спасает: команда
                 # ниже идёт с --upgrade, и pip всё равно лезет на индекс проверять
                 # версию для КАЖДОГО пакета в списке, включая уже установленные.
-                # Для torch==2.2.2+cu118 это фатально — такой сборки нет на
+                # Для torch==2.11.0+cu128 это фатально — такой сборки нет на
                 # обычном PyPI (она только на отдельном индексе PyTorch), и без
                 # --extra-index-url pip не находит её и падает тем же
                 # ResolutionImpossible, что мы уже видели на numpy. Раз пакет
@@ -697,7 +697,7 @@ def install_rvc(progress_cb=None) -> dict:
         # ЕДИНУЮ логику engine.env_core.torch_setup — тот же механизм, что у
         # базовой установки torch): берём ту сборку, что уже стоит в
         # окружении, либо авто-детектим CUDA, если torch ещё не установлен.
-        # Соответствующий --extra-index-url (cu118 или cpu) подставляется
+        # Соответствующий --extra-index-url (cu128 или cpu) подставляется
         # всегда и согласован с базовой установкой, чтобы RVC-путь и
         # первичная установка резолвили одну и ту же сборку без ручного
         # переключения.
@@ -706,8 +706,8 @@ def install_rvc(progress_cb=None) -> dict:
             cmd_deps.extend(["--extra-index-url", torch_index])
         # Динамический constraint вместо статического requirements.txt:
         # пиним зафиксированные пакеты к РЕАЛЬНО установленным версиям
-        # (с учётом варианта сборки +cu118/+cpu). requirements.txt теперь
-        # нейтральный (torch==2.2.2 без суффикса), а реальный вариант
+        # (с учётом варианта сборки +cu128/+cpu). requirements.txt теперь
+        # нейтральный (torch==2.11.0 без суффикса), а реальный вариант
         # выбирается кодом — поэтому уже стоящий torch считается
         # удовлетворённым и больше не перетягивается (не будет 2.7 ГБ).
         constraints_path = os.path.join(PORTABLE_TEMP_DIR, "rvc_constraints.txt")

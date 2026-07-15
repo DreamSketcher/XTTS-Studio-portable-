@@ -57,6 +57,7 @@ _left_visible = True
 _current_layout_preset = {}
 # ── NEW: сторона боковой панели ──
 _sidebar_side = "left"  # "left" | "right"
+_sidebar_visual_width = 260
 
 
 def _load_saved_panel_state() -> bool:
@@ -88,33 +89,40 @@ def _save_panel_state() -> None:
 # ── PATCH 2026-07-15: анимированный toggle ──────────────────────
 
 
-def _animate_left_panel_width(target_width: int, duration_ms: int = 250, on_complete=None):
-    """Плавно меняет ширину left_panel через публичный AnimationManager.animate()."""
+def _animate_left_panel_width(target_width: int, duration_ms: int = 190, on_complete=None):
+    """Animate sidebar with quantized geometry commits.
+
+    Tk must reflow the entire right panel whenever packed sidebar width changes.
+    Committing all 60 animation ticks overloads Tcl and looks less smooth than
+    20–30 evenly paced geometry updates.
+    """
+    global _sidebar_visual_width
     try:
         from engine.gui.animation_manager import AnimationManager
 
-        try:
-            left_panel.update_idletasks()
-            start_width = int(left_panel.winfo_width())
-        except Exception:
-            start_width = 1
-        if start_width <= 0:
-            try:
-                start_width = int(left_panel.cget("width"))
-            except Exception:
-                start_width = 1
+        start_width = max(0, int(_sidebar_visual_width))
+        target_width = max(0, int(target_width))
+        last_committed = {"width": None}
+        min_step = max(4, abs(target_width - start_width) // 18)
 
         def _set_width(value):
-            left_panel.configure(width=max(0, int(round(value))))
+            global _sidebar_visual_width
+            width = max(0, int(round(value)))
+            previous = last_committed["width"]
+            if previous is not None and abs(width - previous) < min_step and width != target_width:
+                return
+            last_committed["width"] = width
+            _sidebar_visual_width = width
+            left_panel.configure(width=width)
 
         mgr = AnimationManager.get()
         mgr.animate(
             target=left_panel,
             property_setter=_set_width,
             start=start_width,
-            end=max(0, int(target_width)),
+            end=target_width,
             duration_ms=duration_ms,
-            easing="ease_out",
+            easing="ease_out_cubic",
             on_complete=on_complete,
             animation_id="_sidebar_slide",
         )
@@ -135,7 +143,7 @@ def toggle_left_panel(event=None):
 
     PATCH 2026-07-15: плавная анимация ширины вместо pack_forget/pack.
     """
-    global _left_visible
+    global _left_visible, _sidebar_visual_width
     try:
         preset = _current_layout_preset
         panel_spacing = preset.get("panel_spacing", 2)
@@ -158,12 +166,8 @@ def toggle_left_panel(event=None):
                     left_panel.pack_propagate(False)
                 except Exception:
                     pass
-                try:
-                    main_container.update_idletasks()
-                except Exception:
-                    pass
 
-            _animate_left_panel_width(0, duration_ms=250, on_complete=_after_hide)
+            _animate_left_panel_width(0, duration_ms=190, on_complete=_after_hide)
         else:
             # PATCH 2026-07-15: плавный slide-in
             if _sidebar_side == "right":
@@ -187,8 +191,8 @@ def toggle_left_panel(event=None):
                 left_panel.pack(side="left", fill="y", padx=(0, gutter), before=toggle_strip)
 
             left_panel.configure(width=1)
+            _sidebar_visual_width = 1
             left_panel.pack_propagate(False)
-            left_panel.update_idletasks()
 
             target_w = preset.get("left_panel_width", 260)
 
@@ -197,12 +201,8 @@ def toggle_left_panel(event=None):
                 _left_visible = True
                 _save_panel_state()
                 _update_toggle_arrow()
-                try:
-                    main_container.update_idletasks()
-                except Exception:
-                    pass
 
-            _animate_left_panel_width(target_w, duration_ms=250, on_complete=_after_show)
+            _animate_left_panel_width(target_w, duration_ms=190, on_complete=_after_show)
     except Exception:
         pass
 
@@ -243,7 +243,7 @@ def _get_sidebar_side() -> str:
 
 def apply_sidebar_side(side: str) -> bool:
     """Live-переключение стороны боковой панели. Возвращает True если применилось."""
-    global _sidebar_side, _left_visible
+    global _sidebar_side, _left_visible, _sidebar_visual_width
     side = side if side in ("left", "right") else "left"
     if left_panel is None or right_panel is None or toggle_strip is None or main_container is None:
         # виджеты ещё не построены — просто запоминаем
@@ -289,15 +289,11 @@ def apply_sidebar_side(side: str) -> bool:
         # PATCH 2026-07-15: плавная анимация ширины после repack
         if _left_visible:
             left_panel.configure(width=1)
+            _sidebar_visual_width = 1
             left_panel.pack_propagate(False)
             target_w = preset.get("left_panel_width", 260)
             _animate_left_panel_width(target_w, duration_ms=200)
 
-        # обновляем геометрию
-        try:
-            main_container.update_idletasks()
-        except Exception:
-            pass
         return True
     except Exception as e:
         # print(f"[layout] apply_sidebar_side error: {e}")
@@ -307,6 +303,7 @@ def apply_sidebar_side(side: str) -> bool:
 def build_layout(root, preset: dict | None = None, sidebar_side: str | None = None):
     global main_gradient, main_container, left_panel, right_panel
     global toggle_strip, _toggle_arrow, _toggle_btn, _left_visible, _current_layout_preset, _sidebar_side
+    global _sidebar_visual_width
 
     # Загружаем пресет раскладки
     if preset is None:
@@ -315,6 +312,7 @@ def build_layout(root, preset: dict | None = None, sidebar_side: str | None = No
 
     # Извлекаем геометрию из пресета (Classic = значения по умолчанию, идентичные старому поведению)
     left_panel_width = preset.get("left_panel_width", 260)
+    _sidebar_visual_width = int(left_panel_width)
     padding_main_x = preset.get("padding_main_x", 8)
     padding_main_y = preset.get("padding_main_y", 14)
     # panel_spacing и right_panel_left_pad используются в apply_sidebar_side

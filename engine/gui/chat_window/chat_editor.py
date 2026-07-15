@@ -503,6 +503,16 @@ def open_editor_text_window(event=None):
             except Exception:
                 pass
 
+        bridge = state._ui_bridge
+        if bridge is not None:
+            bridge.begin()
+
+        def _deliver(callback):
+            if bridge is not None:
+                bridge.post(callback)
+            else:
+                _safe_after(0, callback)
+
         def _worker():
             try:
                 import engine.gpt_client as _gpt
@@ -523,7 +533,7 @@ def open_editor_text_window(event=None):
                         except Exception:
                             pass
 
-                _safe_after(0, _apply)
+                _deliver(_apply)
 
             except Exception as e:
                 msg = str(e) or t("chat_unknown_error")
@@ -537,7 +547,11 @@ def open_editor_text_window(event=None):
                             pass
                     messagebox.showerror(t("chat_err_ai_title"), msg, parent=win)
 
-                _safe_after(0, _show_err)
+                _deliver(_show_err)
+
+            finally:
+                if bridge is not None:
+                    bridge.producer_done()
 
         threading.Thread(target=_worker, daemon=True).start()
 

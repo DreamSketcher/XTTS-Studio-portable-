@@ -47,7 +47,8 @@ def _set_dark_titlebar(win):
     try:
         import ctypes
 
-        win.update()
+        # Avoid a nested event loop while the dialog is only partially built.
+        win.update_idletasks()
         hwnd = ctypes.windll.user32.GetParent(win.winfo_id())
         bg_color = win.cget("bg")
         is_dark = 1

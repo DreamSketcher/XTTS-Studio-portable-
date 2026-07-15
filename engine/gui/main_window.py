@@ -254,6 +254,14 @@ def create_main_window(startup_status: str = None):
     except Exception:
         pass
 
+    performance_overlay = None
+    try:
+        from engine.gui.performance_overlay import PerformanceOverlay
+
+        performance_overlay = PerformanceOverlay(root)
+    except Exception:
+        performance_overlay = None
+
     try:
         import os as _os
 
@@ -463,6 +471,11 @@ def create_main_window(startup_status: str = None):
 
     # ── LAUNCH (перенесено из gui.py, секция LAUNCH) ──
     def on_closing():
+        try:
+            if performance_overlay is not None:
+                performance_overlay.destroy()
+        except Exception:
+            pass
         try:
             # PATCH 2026-07-14: AnimationManager destroy
             try:

@@ -320,6 +320,15 @@ class TestZipExtraction:
         dest = tmp_path / "out.pth"
         assert rvc._extract_rvc_from_zip(str(zip_path), str(dest)) is False
 
+    def test_rejects_high_compression_ratio_archive(self, tmp_path):
+        zip_path = tmp_path / "bomb.zip"
+        dest = tmp_path / "out.pth"
+        with zipfile.ZipFile(zip_path, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+            zf.writestr("model.pth", b"0" * (2 * 1024 * 1024))
+
+        assert rvc._extract_rvc_from_zip(str(zip_path), str(dest)) is False
+        assert not dest.exists()
+
     def test_extract_largest_pth(self, tmp_path):
         zip_path = tmp_path / "multi.zip"
         dest = tmp_path / "out.pth"
