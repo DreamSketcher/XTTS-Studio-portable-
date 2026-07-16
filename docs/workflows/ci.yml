@@ -93,12 +93,18 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y xvfb
 
+      - name: Ensure test runner dependencies
+        run: |
+          source .venv/Scripts/activate 2>/dev/null || source .venv/bin/activate
+          python -m pip install --quiet pytest pytest-cov pytest-timeout cryptography==49.0.0
+        shell: bash
+
       - name: Run pytest
         run: |
           source .venv/Scripts/activate 2>/dev/null || source .venv/bin/activate
           if [ "$RUNNER_OS" = "Linux" ]; then
-            xvfb-run --auto-servernum pytest test/ --ignore=test/test_local_llm_client_download.py -v
+            xvfb-run --auto-servernum python -m pytest test/ --ignore=test/test_local_llm_client_download.py -v
           else
-            pytest test/ --ignore=test/test_local_llm_client_download.py -v
+            python -m pytest test/ --ignore=test/test_local_llm_client_download.py -v
           fi
         shell: bash
