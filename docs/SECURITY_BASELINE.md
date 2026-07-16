@@ -6,12 +6,13 @@
 
 ## Required versions
 
-- `torch==2.11.0`
-- `torchaudio==2.11.0`
-- `torchvision==0.26.0`
-- `transformers==5.13.1`
-- `coqui-tts==0.27.5`
-- `nltk==3.10.0`
+- `torch==2.2.2`
+- `torchaudio==2.2.2`
+- `torchvision==0.17.2`
+- `transformers==4.38.2`
+- `TTS==0.22.0`
+- `nltk==3.9.4`
+- `cryptography==49.0.0`
 
 `diskcache` is not a direct runtime dependency and was removed. XTTS Studio does not use its pickle-backed cache API.
 
