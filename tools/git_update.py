@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-git_update.py — Менеджер Git для XTTS Studio.
+git_update.py — Менеджер Git для XTTS Studio AI.
 Разместите в папке tools/ и запускайте через git_update.bat.
 
 Безопасный рабочий процесс: stash локальных изменений → pull/rebase → restore →
@@ -57,6 +57,25 @@ def run_python_script(script_path: Path, args: list) -> int:
         cwd=str(PROJECT_ROOT),
     )
     return r.returncode
+
+
+def _read_current_version() -> str:
+    if not VERSION_JSON_PATH.exists():
+        return "0.0.0"
+    try:
+        with open(VERSION_JSON_PATH, "r", encoding="utf-8") as f:
+            return str(json.load(f).get("version", "0.0.0"))
+    except Exception:
+        return "0.0.0"
+
+
+def _suggest_next_version(version_str: str) -> str:
+    try:
+        parts = [int(x) for x in version_str.strip().split(".")]
+        parts[-1] += 1
+        return ".".join(str(x) for x in parts)
+    except Exception:
+        return ""
 
 
 def _read_current_changelog() -> str:
@@ -135,7 +154,18 @@ def update_version_manifest():
         return None
 
     # Collect all release input before touching version.json.
-    version = input("  Версия для этого релиза (например, 1.1.56): ").strip()
+    current_version = _read_current_version()
+    next_version = _suggest_next_version(current_version)
+    if next_version:
+        version_prompt = (
+            f"  Версия для этого релиза (текущая: {current_version}, Enter={next_version}): "
+        )
+        version_input = input(version_prompt).strip()
+        version = version_input or next_version
+    else:
+        version_prompt = f"  Версия для этого релиза (текущая: {current_version}): "
+        version = input(version_prompt).strip()
+
     if not version:
         print("  [ОШИБКА] Необходимо указать версию. Файлы не изменялись.")
         return None
@@ -711,23 +741,35 @@ def do_update() -> None:
 
     if is_release and version and version != "SKIP":
         tag_name = f"v{version}"
-        print(f"\n[6/6] Создание и отправка тега {tag_name} для запуска экшена GitHub Release...")
-        tag_res = git("tag", "-a", tag_name, "-m", f"Release {version}")
-        if tag_res.returncode == 0:
-            push_tag = git_show("push", "origin", tag_name)
-            if push_tag.returncode == 0:
-                print(
-                    f"  [OK] Тег {tag_name} отправлен! GitHub Actions запустит сборку и опубликует {tag_name} в GitHub Release."
-                )
+        create_tag_confirm = (
+            input(
+                f"\n[6/6] Создать и отправить релизный тег {tag_name} для GitHub Release? (y/n, Enter=y): "
+            )
+            .strip()
+            .lower()
+        )
+        if create_tag_confirm not in ("n", "н", "no", "нет"):
+            print(f"Создание и отправка тега {tag_name}...")
+            tag_res = git("tag", "-a", tag_name, "-m", f"Release {version}")
+            if tag_res.returncode == 0:
+                push_tag = git_show("push", "origin", tag_name)
+                if push_tag.returncode == 0:
+                    print(
+                        f"  [OK] Тег {tag_name} отправлен! GitHub Actions запустит сборку и опубликует {tag_name} в GitHub Release."
+                    )
+                else:
+                    print(
+                        f"  [!] Ошибка отправки тега {tag_name}. Запустите вручную: git push origin {tag_name}"
+                    )
             else:
-                print(
-                    f"  [!] Ошибка отправки тега {tag_name}. Запустите вручную: git push origin {tag_name}"
-                )
+                # Если тег уже был локально — пробуем просто отправить
+                push_tag = git_show("push", "origin", tag_name)
+                if push_tag.returncode == 0:
+                    print(f"  [OK] Тег {tag_name} отправлен на GitHub! Сборка релиза запущена.")
         else:
-            # Если тег уже был локально — пробуем просто отправить
-            push_tag = git_show("push", "origin", tag_name)
-            if push_tag.returncode == 0:
-                print(f"  [OK] Тег {tag_name} отправлен на GitHub! Сборка релиза запущена.")
+            print(
+                f"  [Инфо] Пропущено создание тега {tag_name}. Изменения отправлены в ветку {branch}, но сборка GitHub Release запущенa не будет."
+            )
 
     print("\n" + "=" * 50)
     print(
@@ -1166,7 +1208,7 @@ def do_push_single_file() -> None:
 def menu() -> None:
     print("\n" * 2)
     print("=" * 50)
-    print("       Менеджер Git для XTTS Studio")
+    print("       Менеджер Git для XTTS Studio AI")
     print("=" * 50)
     print(f"\nПроект  : {PROJECT_ROOT}")
     print(f"Ветка   : {get_branch()}")

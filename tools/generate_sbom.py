@@ -46,7 +46,7 @@ def generate(requirements: Path, output: Path):
         "metadata": {
             "component": {
                 "type": "application",
-                "name": "XTTS Studio",
+                "name": "XTTS Studio AI",
                 "bom-ref": "pkg:github/DreamSketcher/XTTS-Studio-AI",
             },
             "tools": {"components": [{"type": "application", "name": "tools/generate_sbom.py"}]},
