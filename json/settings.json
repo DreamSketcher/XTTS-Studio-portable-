@@ -1,7 +1,7 @@
 {
   "language": "auto",
   "quality": "Высокое качество",
-  "ref_path": "C:\\XTTS Studio\\library\\Звук Женского диктора на русском языке (1)\\normalized.wav",
+  "ref_path": "C:\\XTTS Studio\\library\\Диктор Наталья Арсеньева\\normalized.wav",
   "use_gpt": false,
   "word_replacer_enabled": true,
   "lang_split_enabled": true,
@@ -12,21 +12,21 @@
   "quality_params": {
     "Высокое качество": {
       "qc_enabled": true,
-      "temperature": 0.7,
+      "temperature": 0.6,
       "top_p": 0.3,
-      "top_k": 80,
-      "repetition_penalty": 13.0,
-      "prosody_intensity": 0.0,
-      "de_esser_intensity": 1.0,
+      "top_k": 100,
+      "repetition_penalty": 12.0,
+      "prosody_intensity": 0.8,
+      "de_esser_intensity": 0.8,
       "trim_ms": 100,
       "speed": 1.0,
       "trim_mode": "auto",
       "export_format": "wav",
       "use_gpt": false,
       "ai_conductor_enabled": false,
-      "rvc_enable": false,
-      "rvc_model": "Не выбрана",
-      "rvc_index_rate": 0.75,
+      "rvc_enable": true,
+      "rvc_model": "egirl",
+      "rvc_index_rate": 0.5,
       "rvc_pitch_shift": 0,
       "rvc_f0_method": "rmvpe"
     },
@@ -91,7 +91,7 @@
       "rvc_f0_method": "harvest"
     }
   },
-  "ai_conductor_open_count": 16,
+  "ai_conductor_open_count": 17,
   "ai_conductor_warning_dismissed": true,
   "ui_theme": "light",
   "left_panel_visible": true,
@@ -100,5 +100,6 @@
   "open_updates_on_startup": false,
   "install_variant_on_startup": null,
   "auto_check_updates": true,
-  "quality_settings_last_tab": "rvc"
+  "quality_settings_last_tab": "xtts",
+  "ui_motion_profile": "ultra"
 }
