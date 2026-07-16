@@ -64,6 +64,12 @@ jobs:
           python-version: ${{ matrix.python-version }}
           cache: 'pip'
 
+      - name: Install system dependencies (Linux only)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y xvfb ffmpeg libavcodec-dev libavformat-dev libavutil-dev libswscale-dev libswresample-dev libavdevice-dev libavfilter-dev pkg-config
+
       - name: Create venv and install dependencies
         run: |
           python -m venv .venv
@@ -73,12 +79,6 @@ jobs:
           pip install -r requirements.txt
           pip install pytest pytest-cov pytest-timeout cryptography==49.0.0 ruff==0.6.9 black==24.10.0
         shell: bash
-
-      - name: Install system dependencies (Linux only)
-        if: runner.os == 'Linux'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y xvfb ffmpeg libavcodec-dev libavformat-dev libavutil-dev libswscale-dev libswresample-dev
 
       - name: Run pytest
         run: |

@@ -1,5 +1,5 @@
 {
-  "version": "1.1.316",
+  "version": "1.1.317",
   "files": [
     ".gitattributes",
     ".pre-commit-config.yaml",
@@ -147,7 +147,7 @@
     "requirements.txt",
     "update_manifest_public.pem"
   ],
-  "changelog": "- Интерфейс: графический интерфейс (GUI) был почти полностью переработан и глубоко оптимизирован\n- Эффекты и кастомизация: переливающийся неоновый заголовок, гибкие темы оформления и расширенные графические опции\n- Производительность: добавлены адаптивные настройки качества для анимаций и визуальных эффектов (оптимизированы под особенности CustomTkinter)\n- Переименование и репозиторий: проект официально обновлён до XTTS Studio AI (github.com/DreamSketcher/XTTS-Studio-AI)\n- Автообновление: безопасная staged-загрузка архивов релиза с Ed25519 подписью, SHA256-контролем и автооткатом\n- Git Менеджер: показ текущей версии (1.1.305), автоподсказка следующей версии по Enter и интерактивный выбор создания тега v1.1.X перед push\n- Инструменты разработки: скрипт форматирования (tools/format_code.bat) с поддержкой конфигурации исключений (tools/format_exclude.txt)\n- Зависимости: актуализирован requirements.txt под замороженный рантайм (182 компонента) и обновлён CycloneDX 1.5 SBOM\n- Стабильность: исправления CI Pipeline под GitHub Actions для стабильного выполнения тестов без сбоев",
+  "changelog": "- RVC: постобработка голоса после XTTS (на каждый чанк) — index rate, pitch, f0 (rmvpe/harvest/pm/crepe)\n- RVC: установка rvc-python в portable-окружение (Windows: prebuilt fairseq, без ручной компиляции)\n- RVC: каталог моделей — офлайн seed (json/rvc_catalog_seed.json), кэш, поиск/скачивание (HF; best-effort Google Drive)\n- RVC: выпадающий список моделей в настройках пресета (локальные 🗑, загрузка ⬇, отмена ✕, страница 🔗)\n- Настройки пресета: вкладки RVC · Обрезка · Вывод · XTTS (панель вкладок закреплена сверху, не уезжает при скролле)\n- Настройки пресета: ползунок trim вместе с режимом; де-эссер на вкладке «Вывод»; параметры XTTS отдельно\n- Сохранение RVC и параметров пресета между сессиями (quality_params в settings.json); запоминается последняя вкладка\n- Документация: README и DOCUMENTATION на RU/EN; справочник функций (API) на RU/EN\n- Единая сборка вместо CPU/CUDA-версий: CUDA по желанию в Настройках под конкретное железо\n- Самопроверка torch при запуске: кэш или переустановка совместимой версии\n- Диагностика и Устранение ошибок: проверка библиотек, карантин мусора, автопереустановка сломанных пакетов\n- Редизайн UI, конструктор тем, раскладка и панели\n- Автообновление: staged-загрузка, SHA256, бэкап и rollback; min_app_version для полной переустановки\n- Локальные LLM: автоскан окружения, каталог моделей, своя модель из папки\n- Исправления и оптимизация",
   "sha256": {
     ".gitattributes": "1b16e4ef5b117e3c002986dbccebf5190dfd606a10f325e290fdc7808069cc9e",
     ".pre-commit-config.yaml": "eb207f3e22bf3216adebfb371a5428e216a3d93513ee791288642faebe2ed6f5",
@@ -163,7 +163,7 @@
     "docs/SECURITY_BASELINE.RU.md": "773ec13c4413295b007f8a853c8cb8b02d2544e64044ebddaeec7e8c133fa4d4",
     "docs/SECURITY_BASELINE.md": "17e0241ac4ed6f623eeb475ce36e81475bd686b47a31c2c57c67c971345b89cb",
     "docs/demo_video_storyboard_template.html": "896be38470a69d25be6c0214be050ad9127398b6d018820d7ccfbe85712f147d",
-    "docs/workflows/ci.yml": "a39bc4682dc5e0c463c098f4adc3a3fd972f1d3c9a30552088fa1e0f90563353",
+    "docs/workflows/ci.yml": "664956686128e0d1d12fcad5a4042beef34113c1e1ad9ce8a55f9a04f34bb7ae",
     "docs/workflows/release.yml": "e1351332d6e7edfbbacdacfe2f552aa81cec288cf895d1b992ae838a7acce2bd",
     "engine/__init__.py": "12598a2a1b4528477da794e6b51692b6d3a87b0e499e19358d1e3c4591c15fac",
     "engine/ai_conductor.py": "fa9ecad488da650f320cc6f3d6f8eab7348c3214bfac921cf08993c49b8aef5e",
