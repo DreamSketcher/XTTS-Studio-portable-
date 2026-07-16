@@ -203,9 +203,7 @@ def cleanup_stuck_rebase(verbose: bool = True) -> bool:
         or merge_head.exists()
     )
     if not has_stuck:
-        r = subprocess.run(
-            ["git", "status"], cwd=str(PROJECT_ROOT), capture_output=True, text=True
-        )
+        r = subprocess.run(["git", "status"], cwd=str(PROJECT_ROOT), capture_output=True, text=True)
         combined = (r.stdout or "").lower() + (r.stderr or "").lower()
         if (
             "rebase in progress" in combined
@@ -218,12 +216,8 @@ def cleanup_stuck_rebase(verbose: bool = True) -> bool:
         return False
 
     if verbose:
-        print(
-            "\n  [Таблетка] Обнаружено незавершённое/зависшее состояние Git (.git/rebase-merge)."
-        )
-        print(
-            "  [Таблетка] Автоматически отменяем зависший процесс и очищаем блокирующие папки..."
-        )
+        print("\n  [Таблетка] Обнаружено незавершённое/зависшее состояние Git (.git/rebase-merge).")
+        print("  [Таблетка] Автоматически отменяем зависший процесс и очищаем блокирующие папки...")
 
     # 1. Попытка штатно отменить через Git
     subprocess.run(
@@ -256,9 +250,7 @@ def cleanup_stuck_rebase(verbose: bool = True) -> bool:
         merge_head.unlink(missing_ok=True)
 
     if verbose:
-        print(
-            "  [Таблетка] [OK] Зависшее состояние очищено, репозиторий готов к работе."
-        )
+        print("  [Таблетка] [OK] Зависшее состояние очищено, репозиторий готов к работе.")
     return True
 
 
@@ -317,9 +309,7 @@ def git_pull_rebase(branch: str) -> tuple:
 
     # Таблетка: если ошибка вызвана именно старой/зависшей папкой .git/rebase-merge — сразу лечим и повторяем pull
     if r.returncode != 0 and is_stuck_rebase and not is_network_error:
-        print(
-            "\n[Таблетка] Запущена автоочистка блокирующей папки .git/rebase-merge..."
-        )
+        print("\n[Таблетка] Запущена автоочистка блокирующей папки .git/rebase-merge...")
         cleanup_stuck_rebase(verbose=False)
         print("           Повторная попытка pull --rebase после очистки...")
         r = subprocess.run(
@@ -459,14 +449,10 @@ def sync_remote_before_build(branch: str) -> bool:
     stash_created = False
     if _working_tree_dirty():
         label = f"xtts-manager-presync-{int(time.time())}"
-        print(
-            "\n[PRE-SYNC] Временно сохраняем локальные изменения (включая untracked)..."
-        )
+        print("\n[PRE-SYNC] Временно сохраняем локальные изменения (включая untracked)...")
         result = git("stash", "push", "--include-untracked", "-m", label)
         if result.returncode != 0:
-            print(
-                f"  [ОШИБКА] Не удалось создать stash:\n{result.stderr or result.stdout}"
-            )
+            print(f"  [ОШИБКА] Не удалось создать stash:\n{result.stderr or result.stdout}")
             return False
         stash_created = "No local changes" not in (result.stdout or "")
 
@@ -493,23 +479,17 @@ def sync_remote_before_build(branch: str) -> bool:
     if stash_created:
         if _stash_matches_current_tree("stash@{0}"):
             print("[PRE-SYNC] Remote уже содержит идентичные локальные изменения.")
-            print(
-                "           Удаляем дублирующий stash без повторного checkout файлов."
-            )
+            print("           Удаляем дублирующий stash без повторного checkout файлов.")
             dropped = git("stash", "drop", "stash@{0}")
             if dropped.returncode != 0:
-                print(
-                    f"  [ОШИБКА] Не удалось удалить дублирующий stash: {dropped.stderr}"
-                )
+                print(f"  [ОШИБКА] Не удалось удалить дублирующий stash: {dropped.stderr}")
                 return False
         else:
             print("[PRE-SYNC] Возвращаем локальные изменения...")
             restored = git_show("stash", "pop")
             if restored.returncode != 0:
                 print("  [ОШИБКА] Конфликт при восстановлении stash.")
-                print(
-                    "  Stash сохранён. Разрешите конфликт вручную; release ещё не генерировался."
-                )
+                print("  Stash сохранён. Разрешите конфликт вручную; release ещё не генерировался.")
                 return False
     return True
 
@@ -528,9 +508,7 @@ def verify_release_state() -> bool:
         forbidden = {"version.json", "version.json.sig", "checksums.txt"}
         overlap = forbidden.intersection(files)
         if overlap:
-            raise RuntimeError(
-                f"self-generated files попали в payload: {sorted(overlap)}"
-            )
+            raise RuntimeError(f"self-generated files попали в payload: {sorted(overlap)}")
         if len(files) != len(hashes):
             raise RuntimeError(f"files={len(files)}, sha256={len(hashes)}")
         for relative in files:
@@ -583,9 +561,7 @@ def do_update() -> None:
     if is_release:
         print("\n[2/5] Проверка Ed25519 и SHA256 до коммита...")
         if not verify_release_state():
-            print(
-                "\n[БЛОКИРОВКА] Невалидный release не будет закоммичен или отправлен."
-            )
+            print("\n[БЛОКИРОВКА] Невалидный release не будет закоммичен или отправлен.")
             input("\nНажмите Enter для продолжения...")
             return
     else:
@@ -611,9 +587,7 @@ def do_update() -> None:
             return
         print(f"  [OK] Сохранено: {message}")
     else:
-        print(
-            "  Нет новых файлов для коммита; будут отправлены существующие локальные коммиты."
-        )
+        print("  Нет новых файлов для коммита; будут отправлены существующие локальные коммиты.")
 
     # Close the small race between pre-sync and push. At this point the working
     # tree is clean, so a final rebase cannot mix uncommitted generated files.
@@ -627,15 +601,11 @@ def do_update() -> None:
             text=True,
         )
         if network_error:
-            print(
-                "  [ОШИБКА] GitHub недоступен. Коммит сохранён локально; push не выполнялся."
-            )
+            print("  [ОШИБКА] GitHub недоступен. Коммит сохранён локально; push не выполнялся.")
         elif stuck:
             print("  [ОШИБКА] Git заблокирован незавершённым rebase.")
         else:
-            print(
-                "  [ОШИБКА] Remote изменился и возник конфликт. Rebase отменён, push запрещён."
-            )
+            print("  [ОШИБКА] Remote изменился и возник конфликт. Rebase отменён, push запрещён.")
         input("\nНажмите Enter для продолжения...")
         return
 
@@ -678,15 +648,9 @@ def do_rollback() -> None:
     print("\n" + (r.stdout if r.stdout.strip() else "(нет коммитов)"))
 
     print("\n" + "-" * 40)
-    print(
-        "  [1] Мягкий сброс (Soft reset)   — отменить коммит, оставить файлы в индексе (staged)"
-    )
-    print(
-        "  [2] Смешанный сброс (Mixed reset) — отменить коммит, убрать из индекса (по умолчанию)"
-    )
-    print(
-        "  [3] Жёсткий сброс (Hard reset)    — НАВСЕГДА УДАЛИТЬ изменения в файлах !!!"
-    )
+    print("  [1] Мягкий сброс (Soft reset)   — отменить коммит, оставить файлы в индексе (staged)")
+    print("  [2] Смешанный сброс (Mixed reset) — отменить коммит, убрать из индекса (по умолчанию)")
+    print("  [3] Жёсткий сброс (Hard reset)    — НАВСЕГДА УДАЛИТЬ изменения в файлах !!!")
     print("  [0] Отмена")
 
     choice = input("\nВыберите режим (1/2/3, Enter=2): ").strip() or "2"
@@ -750,9 +714,7 @@ def do_untrack_ignored() -> None:
     if confirm in ("n", "н", "no", "нет"):
         return
 
-    print(
-        "\n[1/3] Удаление всех файлов из индекса Git (файлы на диске не затрагиваются)..."
-    )
+    print("\n[1/3] Удаление всех файлов из индекса Git (файлы на диске не затрагиваются)...")
     r = subprocess.run(
         ["git", "rm", "-r", "--cached", "-q", "."],
         cwd=str(PROJECT_ROOT),
@@ -766,9 +728,7 @@ def do_untrack_ignored() -> None:
         return
     print("  [OK] Индекс Git очищен.")
 
-    print(
-        "\n[2/3] Повторное добавление файлов в индекс (с учётом правил .gitignore)..."
-    )
+    print("\n[2/3] Повторное добавление файлов в индекс (с учётом правил .gitignore)...")
     r = git("add", "-A")
     if r.returncode != 0:
         print(f"  [ОШИБКА] {r.stderr}")
@@ -784,18 +744,14 @@ def do_untrack_ignored() -> None:
         return
     print(r.stdout)
 
-    print(
-        "\nОжидаются только строки с буквой 'D' (удалено из индекса) для путей из .gitignore."
-    )
+    print("\nОжидаются только строки с буквой 'D' (удалено из индекса) для путей из .gitignore.")
     print(
         "Если в списке появились неожиданные файлы, исправьте .gitignore и запустите эту операцию снова"
     )
     print("перед коммитом (пока ничего не было сохранено в историю Git).")
 
     confirm2 = (
-        input("\nСоздать коммит с этими изменениями сейчас? (y/n, Enter=y): ")
-        .strip()
-        .lower()
+        input("\nСоздать коммит с этими изменениями сейчас? (y/n, Enter=y): ").strip().lower()
     )
     if confirm2 in ("n", "н", "no", "нет"):
         print(
@@ -818,9 +774,7 @@ def do_untrack_ignored() -> None:
     print(f"  [OK] Сохранено: {msg}")
 
     push = (
-        input(
-            "\nОтправить (push) эти изменения на удалённый сервер сейчас? (y/n, Enter=y): "
-        )
+        input("\nОтправить (push) эти изменения на удалённый сервер сейчас? (y/n, Enter=y): ")
         .strip()
         .lower()
     )
@@ -858,11 +812,21 @@ def do_status_check() -> None:
     git_dir = PROJECT_ROOT / ".git"
     in_progress = [
         name
-        for name in ("rebase-merge", "rebase-apply", "MERGE_HEAD", "REBASE_HEAD", "CHERRY_PICK_HEAD")
+        for name in (
+            "rebase-merge",
+            "rebase-apply",
+            "MERGE_HEAD",
+            "REBASE_HEAD",
+            "CHERRY_PICK_HEAD",
+        )
         if (git_dir / name).exists()
     ]
     print("\n[Git operation]")
-    print(f"  [!] Незавершённое состояние: {', '.join(in_progress)}" if in_progress else "  [OK] Нет rebase/merge/cherry-pick")
+    print(
+        f"  [!] Незавершённое состояние: {', '.join(in_progress)}"
+        if in_progress
+        else "  [OK] Нет rebase/merge/cherry-pick"
+    )
 
     print("\n[Remote]")
     fetched = git("fetch", "--quiet", "origin", branch)
@@ -1021,9 +985,7 @@ def do_push_single_file() -> None:
     release_only = {"version.json", "version.json.sig", "checksums.txt"}
     if target.replace("\\", "/") in release_only:
         print("  [БЛОКИРОВКА] Release metadata нельзя отправлять по одному.")
-        print(
-            "  Используйте [1] Обновление для атомарного manifest/signature/checksums."
-        )
+        print("  Используйте [1] Обновление для атомарного manifest/signature/checksums.")
         input("\nНажмите Enter для продолжения...")
         return
 
@@ -1049,17 +1011,10 @@ def do_push_single_file() -> None:
     if commit_r.returncode != 0:
         # Возможно, файл не изменился относительно HEAD (нечего коммитить).
         combined = (commit_r.stdout or "") + (commit_r.stderr or "")
-        if (
-            "nothing to commit" in combined.lower()
-            or "no changes added" in combined.lower()
-        ):
-            print(
-                "  [ИНФО] Нечего коммитить — файл не отличается от последнего коммита."
-            )
+        if "nothing to commit" in combined.lower() or "no changes added" in combined.lower():
+            print("  [ИНФО] Нечего коммитить — файл не отличается от последнего коммита.")
         else:
-            print(
-                f"  [ОШИБКА] Не удалось выполнить коммит:\n{commit_r.stderr or commit_r.stdout}"
-            )
+            print(f"  [ОШИБКА] Не удалось выполнить коммит:\n{commit_r.stderr or commit_r.stdout}")
             input("\nНажмите Enter для продолжения...")
             return
     else:
@@ -1072,9 +1027,7 @@ def do_push_single_file() -> None:
         if is_network_error:
             print("\n[!] Нет связи с GitHub (сеть/DNS/VPN недоступны). Push отменён.")
         elif is_stuck_rebase:
-            print(
-                "\n[!] Git заблокирован процессом rebase. Выберите [4] Таблетка и повторите."
-            )
+            print("\n[!] Git заблокирован процессом rebase. Выберите [4] Таблетка и повторите.")
         else:
             print(
                 "\n[!] Конфликт при объединении изменений. Запустите [1] Обновление для разрешения."
@@ -1110,34 +1063,19 @@ def menu() -> None:
     rebase_merge = PROJECT_ROOT / ".git" / "rebase-merge"
     rebase_apply = PROJECT_ROOT / ".git" / "rebase-apply"
     if rebase_merge.exists() or rebase_apply.exists():
-        print(
-            "\n[!] ВНИМАНИЕ: Обнаружен незавершённый процесс Git rebase (.git/rebase-merge)."
-        )
-        print(
-            "    Для автоматического сброса выберите пункт [4] или запустите [1] Обновление."
-        )
+        print("\n[!] ВНИМАНИЕ: Обнаружен незавершённый процесс Git rebase (.git/rebase-merge).")
+        print("    Для автоматического сброса выберите пункт [4] или запустите [1] Обновление.")
 
     r = git("status", "--short")
-    print(
-        "\n"
-        + (
-            r.stdout
-            if r.stdout.strip()
-            else "(чистая рабочая директория — нет изменений)"
-        )
-    )
+    print("\n" + (r.stdout if r.stdout.strip() else "(чистая рабочая директория — нет изменений)"))
 
-    print(
-        "\n  [1] Обновление (Update)    — коммит + получение изменений + отправка (pull & push)"
-    )
+    print("\n  [1] Обновление (Update)    — коммит + получение изменений + отправка (pull & push)")
     print("  [2] Откат (Rollback)       — возврат к более раннему коммиту")
     print(
         "  [3] Игнорируемые (Untrack) — удалить файлы из .gitignore из отслеживания (оставив на диске)"
     )
     print("  [4] Таблетка (Сброс)       — сбросить зависший rebase (.git/rebase-merge)")
-    print(
-        "  [5] Один файл (Push file)  — коммит + отправка ТОЛЬКО одного файла (без релиза/SHA)"
-    )
+    print("  [5] Один файл (Push file)  — коммит + отправка ТОЛЬКО одного файла (без релиза/SHA)")
     print("  [6] Проверка статуса        — Git/remote/stash/signature/SHA256 (read-only)")
     print("  [0] Выход (Exit)")
     choice = input("\nВыберите действие: ").strip()

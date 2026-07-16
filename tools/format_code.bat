@@ -55,6 +55,7 @@ if errorlevel 1 (
 
 REM --- Targets: only project code, optional ones added if present ---
 set "TARGETS=engine"
+if exist "%CD%\tools" set "TARGETS=!TARGETS! tools"
 if exist "%CD%\test" set "TARGETS=!TARGETS! test"
 if exist "%CD%\gui.py" set "TARGETS=!TARGETS! gui.py"
 if exist "%CD%\i18n.py" set "TARGETS=!TARGETS! i18n.py"
@@ -77,12 +78,18 @@ echo ==================================================
 "%PY%" -m ruff check !TARGETS! --fix
 echo.
 echo ==================================================
+echo   BLACK - final pass after Ruff fixes
+echo ==================================================
+"%PY%" -m black !TARGETS!
+echo.
+echo ==================================================
 echo   VERIFY
 echo ==================================================
 "%PY%" -m black --check !TARGETS!
 "%PY%" -m ruff check !TARGETS!
 echo.
-echo [DONE] See results above. If no errors, ready to commit.
+echo [DONE] Formatting checks passed.
+echo [NEXT] If source files changed, run Git Manager [1] to regenerate SHA256 and Ed25519 before push.
 goto :end
 
 :checkmode

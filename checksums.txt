@@ -1,4 +1,4 @@
-XTTS Studio — контрольные суммы SHA256 для версии 1.1.301
+XTTS Studio — контрольные суммы SHA256 для версии 1.1.300
 Проверка (Windows PowerShell): certutil -hashfile "имя_файла" SHA256
 Проверка (Linux/macOS): sha256sum имя_файла
 
@@ -134,7 +134,7 @@ cce1a0c70d0f53f7bb54a842876e9a3e0139fc10f7b686781408d7659bc2e180  engine/tts_run
 aec43f0a57e39d257b69690200fe053e0ec6a8bed705059fc633d3c55f264409  engine/validation.py
 bfeb24ef48e43bf23bcee625307a47ae7d93e83e28423ca30996646cabe307ce  engine/voice_manager.py
 448aaa03c5c037981349bb5c2dc0abc3d82f0194ce5b9704f76314c943d02efb  engine/word_replacer.py
-21f0167bf167639b884c4aceb332ae1ebe97be03e65694e53b8bc5f287152d06  generate_version_manifest.py
+39a27f91942834c8d62b1a13188f8d020941d8d94cc2a8f1196a85f626e11849  generate_version_manifest.py
 a69254375c16694f5b5c33e880ebfe946722eef3a204e934fabbe467f90596df  gui.py
 ed1ea5ee65452202303cfe2e14fade4c37313b2e3b863b867732808444b021c8  i18n.py
 bec10a0686e29f80c928aa7bf2ab8b035f461efbd388a41189c15712b3c63235  json/rvc_catalog_seed.json
