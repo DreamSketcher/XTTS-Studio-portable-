@@ -63,9 +63,7 @@ def main():
     data = json.loads(MANIFEST.read_text(encoding="utf-8"))
     old = list(data.get("files", []))
     files = sorted(
-        path
-        for path in git_paths()
-        if included(path) and (ROOT / Path(*path.split("/"))).is_file()
+        path for path in git_paths() if included(path) and (ROOT / Path(*path.split("/"))).is_file()
     )
     data["files"] = files
     MANIFEST.write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")

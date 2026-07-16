@@ -48,9 +48,24 @@ SELF_GENERATED_FILES = {"version.json", "version.json.sig", "checksums.txt"}
 
 
 _TEXT_SUFFIXES = {
-    ".py", ".pyi", ".md", ".txt", ".json", ".toml", ".yaml", ".yml",
-    ".ini", ".cfg", ".bat", ".cmd", ".ps1", ".html", ".htm", ".css",
-    ".js", ".svg",
+    ".py",
+    ".pyi",
+    ".md",
+    ".txt",
+    ".json",
+    ".toml",
+    ".yaml",
+    ".yml",
+    ".ini",
+    ".cfg",
+    ".bat",
+    ".cmd",
+    ".ps1",
+    ".html",
+    ".htm",
+    ".css",
+    ".js",
+    ".svg",
 }
 _TEXT_NAMES = {".gitignore", ".gitattributes", ".pre-commit-config.yaml", "requirements.txt"}
 
