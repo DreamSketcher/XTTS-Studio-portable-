@@ -101,27 +101,31 @@ def inject(
         lines.append(f"{digest}  {rel}")
     checksums_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
-    if signing_key:
-        try:
-            key = _load_private_key(signing_key)
-            signature = key.sign(canonical_manifest_bytes(manifest_path.read_bytes()))
-            signature_path.write_bytes(base64.b64encode(signature) + b"\n")
-            verify_manifest_signature(manifest_path.read_bytes(), signature_path.read_bytes())
-            print(
-                f"Injected archive_sha256={archive_sha} archive_size={archive_size}; "
-                "version.json re-signed and verified successfully."
-            )
-        except Exception as exc:
-            print(f"[!] Warning: Could not re-sign version.json with provided key: {exc}")
-    else:
-        print(
-            f"Injected archive_sha256={archive_sha} archive_size={archive_size} into version.json and checksums.txt."
+    # Манифест выше уже переписан новыми archive_sha256/url/size — старая подпись
+    # (json/version.json.sig) больше не соответствует его содержимому. Значит,
+    # переподписание обязательно: без ключа или при сбое подписания нельзя
+    # молча продолжать сборку с рассинхронизированными манифестом и подписью.
+    if not signing_key:
+        raise RuntimeError(
+            "XTTS_UPDATE_SIGNING_KEY не задан в GitHub Repository Secrets, а манифест "
+            "уже изменён (archive_sha256/url/size) — старая подпись version.json.sig "
+            "теперь не соответствует содержимому. Добавьте секрет: "
+            "GitHub Repo -> Settings -> Secrets and variables -> Actions -> "
+            "Secret name: XTTS_UPDATE_SIGNING_KEY"
         )
-        print(
-            "[!] Notice: XTTS_UPDATE_SIGNING_KEY secret is not set in GitHub Repository Secrets.\n"
-            "    To enable post-build Ed25519 re-signing on GitHub Actions, add your PEM key to:\n"
-            "    GitHub Repo -> Settings -> Secrets and variables -> Actions -> Secret name: XTTS_UPDATE_SIGNING_KEY"
-        )
+
+    try:
+        key = _load_private_key(signing_key)
+        signature = key.sign(canonical_manifest_bytes(manifest_path.read_bytes()))
+        signature_path.write_bytes(base64.b64encode(signature) + b"\n")
+        verify_manifest_signature(manifest_path.read_bytes(), signature_path.read_bytes())
+    except Exception as exc:
+        raise RuntimeError(f"не удалось переподписать version.json: {exc}") from exc
+
+    print(
+        f"Injected archive_sha256={archive_sha} archive_size={archive_size}; "
+        "version.json re-signed and verified successfully."
+    )
 
     return archive_sha
 
