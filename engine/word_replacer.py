@@ -6,7 +6,6 @@ import shutil
 from datetime import datetime
 from typing import Optional
 
-
 # Приоритет категорий при сборке flat_rules: позже = выше приоритет.
 # builtin — исторические записи из ранних версий словаря (низший приоритет)
 # auto — слова, добавленные эвристическим автодетектором

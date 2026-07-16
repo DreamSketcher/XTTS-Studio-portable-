@@ -45,7 +45,9 @@ def atomic_write_text(path: str | os.PathLike, text: str, encoding: str = "utf-8
         raise
 
 
-def atomic_write_json(path: str | os.PathLike, data: Any, ensure_ascii: bool = False, indent: int = 2) -> None:
+def atomic_write_json(
+    path: str | os.PathLike, data: Any, ensure_ascii: bool = False, indent: int = 2
+) -> None:
     """Write JSON atomically."""
     path = Path(path)
     directory = str(path.parent) if str(path.parent) else "."
@@ -66,6 +68,7 @@ def atomic_write_json(path: str | os.PathLike, data: Any, ensure_ascii: bool = F
         except OSError:
             pass
         raise
+
 
 def atomic_write_bytes(path: str | os.PathLike, data: bytes) -> None:
     """Write bytes atomically."""

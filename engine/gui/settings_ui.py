@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 """engine/gui/settings_ui.py — сохранение и применение настроек GUI
 (перенесено из gui.py: save_settings, apply_settings)."""
+
 import json
 import os
 import tkinter as tk
@@ -8,6 +9,7 @@ import tkinter as tk
 from i18n import LANGUAGES, set_language
 
 from engine.settings_store import SETTINGS_PATH
+from engine.atomic_write import atomic_write_json
 from engine.gui.colors import Colors
 
 # Внедряются из main_window: lang_var, quality_var, ref_var, use_gpt,
