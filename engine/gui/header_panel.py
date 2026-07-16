@@ -3,7 +3,7 @@
 Обновить / AI статус / RU-EN) (перенесено из gui.py: секция LEFT PANEL header,
 _switch_ui_lang).
 
-PATCH 2026-07-09: радужный анимированный заголовок XTTS Studio
+PATCH 2026-07-09: радужный анимированный заголовок XTTS Studio AI
 PATCH 2026-07-09b: кастомизация (speed/sat/bri/hue/spread)
 PATCH 2026-07-09c: custom colors + отдельный rainbow для «by EXIZ10TION»
 PATCH 2026-07-09d: неоновый glow (neon) вместо плоской радуги
@@ -40,7 +40,7 @@ _rainbow_frames = []  # list[PhotoImage] – держим ссылки, инач
 _rainbow_timer = None
 _rainbow_index = 0
 _rainbow_enabled = False
-_rainbow_text = "XTTS Studio"
+_rainbow_text = "XTTS Studio AI"
 _rainbow_font_size = 16
 _rainbow_last_scale = None
 _rainbow_style = {

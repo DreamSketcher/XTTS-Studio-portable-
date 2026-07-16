@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""gui.py — точка входа XTTS Studio.
+"""gui.py — точка входа XTTS Studio AI.
 
 Только запуск интерфейса: подготовка окружения, импорт GUI-модулей,
 создание главного окна и mainloop(). Вся логика вынесена в engine/ (техника)
@@ -121,7 +121,7 @@ def _show_already_running_error():
         root = tk.Tk()
         root.withdraw()
         messagebox.showerror(
-            "XTTS Studio — уже запущено",
+            "XTTS Studio AI — уже запущено",
             "Приложение уже запущено.\n\n"
             "Если окно не видно, проверьте область уведомлений (трей) или диспетчер задач.\n"
             "Можно также попробовать закрыть через диспетчер задач и запустить снова.",
@@ -129,7 +129,7 @@ def _show_already_running_error():
         root.destroy()
     except Exception:
         # Если GUI не доступен, печатаем в консоль
-        print("ERROR: XTTS Studio is already running.", file=sys.stderr)
+        print("ERROR: XTTS Studio AI is already running.", file=sys.stderr)
 
 
 # Захватываем лок ПЕРВЫМ ДЕЛОМ, до любых других инициализаций
@@ -498,7 +498,7 @@ def _show_startup_recovery_window(broken_packages):
 
 
 def _run_scan_with_splash(diagnostics_fn):
-    """Показывает переливающийся сплэш-экран ("XTTS Studio"), пока в фоновом
+    """Показывает переливающийся сплэш-экран ("XTTS Studio AI"), пока в фоновом
     потоке выполняется diagnostics_fn() — САМА диагностика не меняется ни
     на йоту, это чистая визуальная обёртка поверх честного скана.
 
@@ -513,7 +513,7 @@ def _run_scan_with_splash(diagnostics_fn):
     import tkinter as tk
     import webbrowser
 
-    GITHUB_URL = "https://github.com/DreamSketcher/XTTS-Studio"
+    GITHUB_URL = "https://github.com/DreamSketcher/XTTS-Studio-AI"
     result = {}
 
     try:
@@ -527,7 +527,7 @@ def _run_scan_with_splash(diagnostics_fn):
 
         title_lbl = tk.Label(
             splash,
-            text="XTTS Studio",
+            text="XTTS Studio AI",
             font=("Segoe UI", 20, "bold"),
             bg="#0d1117",
             fg="#58a6ff",

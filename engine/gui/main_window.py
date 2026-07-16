@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""engine/gui/main_window.py — сборка главного окна XTTS Studio.
+"""engine/gui/main_window.py — сборка главного окна XTTS Studio AI.
 
 Оркестратор: создаёт root-окно, глобальное состояние (tk-переменные),
 внедряет зависимости в GUI-модули и строит интерфейс в том же порядке,
@@ -269,7 +269,7 @@ def create_main_window(startup_status: str = None):
             root.iconbitmap(default=ICON_PATH)
     except Exception as e:
         print(f"[ICON ERROR] {e}")
-    root.title("XTTS Studio")
+    root.title("XTTS Studio AI")
     root.geometry("1160x820")
     root.minsize(920, 680)
     root.configure(bg=Colors.BG_DARK)

@@ -1,5 +1,5 @@
 """
-engine/gpt_client.py — AI client for XTTS Studio (Groq + OpenRouter + российский OpenAI-совместимый прокси)
+engine/gpt_client.py — AI client for XTTS Studio AI (Groq + OpenRouter + российский OpenAI-совместимый прокси)
 
 Provides:
   - chat(prompt, history)          — free chat with conversation history
@@ -165,7 +165,7 @@ PROVIDER_CATALOGUE = [
         "url": "https://openrouter.ai/api/v1/chat/completions",
         "models_url": "https://openrouter.ai/api/v1/models",
         "key_hint": "https://openrouter.ai/keys",
-        "extra_headers": {"HTTP-Referer": "https://xtts-studio.local", "X-Title": "XTTS Studio"},
+        "extra_headers": {"HTTP-Referer": "https://xtts-studio.local", "X-Title": "XTTS Studio AI"},
         "notes": _t("cat_openrouter_notes"),
         "models": [
             "meta-llama/llama-3.3-70b-instruct:free",
@@ -689,7 +689,7 @@ def _call_api(
     # приложения в их статистике/рейтингах) передавать эти два заголовка.
     if provider == "openrouter":
         headers["HTTP-Referer"] = "https://xtts-studio.local"
-        headers["X-Title"] = "XTTS Studio"
+        headers["X-Title"] = "XTTS Studio AI"
 
     extra = info.get("extra_headers", {})
     if extra and isinstance(extra, dict):

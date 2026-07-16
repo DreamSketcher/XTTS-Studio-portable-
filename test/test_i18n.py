@@ -84,7 +84,7 @@ class TestTFunction:
         # дымовой тест на важные ключи
         for lang in LANGUAGES:
             set_language(lang)
-            assert t("app_title") == "XTTS Studio"
+            assert t("app_title") == "XTTS Studio AI"
             assert t("btn_generate")  # не пусто
 
 

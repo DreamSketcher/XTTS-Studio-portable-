@@ -389,7 +389,7 @@ pytest test/test_chunker.py test/test_history_store.py test/test_ai_conductor.py
 ### Решение
 
 1. **Каналы:** `main` = dev (пуши без подписи ок), `release` = stable. Клиенты читают только GitHub Release assets:
-   - `RELEASE_BASE = https://github.com/DreamSketcher/XTTS-Studio/releases/latest/download`
+   - `RELEASE_BASE = https://github.com/DreamSketcher/XTTS-Studio-AI/releases/latest/download`
    - `VERSION_URL = {RELEASE_BASE}/version.json` (+ `.sig`)
 2. **Релиз:** git tag `vX.Y.Z` с ветки `release` → workflow `on: push: tags: v*`.
 3. **`release.yml`:** pre-build verify signature → (optional Authenticode) → dual `build_reproducible_release.py` → `tools/inject_archive_metadata.py` (archive_sha256/url/size + re-sign via `secrets.XTTS_UPDATE_SIGNING_KEY`) → post-inject verify → `softprops/action-gh-release@v2` с `XTTS-Studio-portable.zip`, `version.json`, `version.json.sig`, `checksums.txt`, `sbom.cdx.json`.
@@ -412,7 +412,35 @@ python -c "from engine.update_signing import verify_manifest_signature; ..."
 
 ---
 
-## 11. Вывод
+## 12. Дополнительные рефакторинги структуризации и локализации (2026-07-16)
+
+1. **Перенос конфигурационных JSON-файлов в подпапку `json/`**:
+   - Все глобальные и динамические пользовательские конфигурации вынесены из корня проекта в директорию `json/`:
+     - `settings.json` → `json/settings.json`
+     - `theme_settings.json` → `json/theme_settings.json`
+     - `sbom.cdx.json` → `json/sbom.cdx.json`
+     - `version.json` → `json/version.json`
+     - `version.json.sig` → `json/version.json.sig`
+     - `gpt_settings.json` → `json/gpt_settings.json`
+     - `word_rules.json` → `json/word_rules.json`
+     - `history.json` → `json/history.json`
+     - `chat_history.json` → `json/chat_history.json`
+   - Все абсолютные и относительные пути в `engine/paths.py`, `settings_store.py`, `history_store.py`, `gpt_client.py`, `local_llm_client.py`, `theme_manager.py`, `updater.py`, `i18n.py`, скриптах сборки и юнит-тестах обновлены.
+
+2. **Перевод документации безопасности и приватности на русский язык**:
+   - Созданы русскоязычные версии документов:
+     - `docs/PRIVACY.RU.md` — политика конфиденциальности и локальной обработки данных.
+     - `docs/SECURITY.RU.md` — политика безопасности, информирование об уязвимостях и Ed25519-подпись.
+     - `docs/SECURITY_BASELINE.RU.md` — зафиксированный базовый уровень версий библиотек и аудит уязвимостей.
+   - Обновлены ссылки в `README.md` и `README.ru.md`.
+
+3. **Отслеживание и обновление лаунчера `XTTS Studio.exe`**:
+   - Лаунчер `XTTS Studio.exe` (компактный бинарный обертка-батник с иконкой) разблокирован в `.gitignore` (`!XTTS Studio.exe`).
+   - Включен в отслеживаемые файлы Git и в манифест обновлений (`json/version.json`). Это гарантирует, что если в будущих релизах изменятся пути к интерпретатору или параметрам запуска, лаунчер на устройствах пользователей будет автоматически обновлен через встроенный автоапдейтер.
+
+---
+
+## 13. Вывод
 
 Рефакторинг достиг целей без изменения поведения:
 

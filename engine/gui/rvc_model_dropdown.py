@@ -419,7 +419,7 @@ class RVCModelDropdown:
                 tip_keys = {
                     "curated": (
                         "tip_rvc_catalog_curated",
-                        "Стабильная офлайн-подборка XTTS Studio",
+                        "Стабильная офлайн-подборка XTTS Studio AI",
                     ),
                     "new": (
                         "tip_rvc_catalog_new",
@@ -486,7 +486,7 @@ class RVCModelDropdown:
                 self._set_search_status(
                     self._tr(
                         "status_rvc_catalog_curated",
-                        default="Офлайн-подборка XTTS Studio",
+                        default="Офлайн-подборка XTTS Studio AI",
                     )
                 )
             elif self._catalog_results:
@@ -670,7 +670,7 @@ class RVCModelDropdown:
             self._set_search_status(
                 self._tr(
                     "status_rvc_catalog_curated",
-                    default="Офлайн-подборка XTTS Studio",
+                    default="Офлайн-подборка XTTS Studio AI",
                 )
             )
             self._render_rows(reset_scroll=True)
@@ -764,7 +764,7 @@ class RVCModelDropdown:
             if self._catalog_mode == "curated":
                 status = self._tr(
                     "status_rvc_catalog_curated",
-                    default="Офлайн-подборка XTTS Studio",
+                    default="Офлайн-подборка XTTS Studio AI",
                 )
             elif self._catalog_loading:
                 label = self._catalog_title(self._catalog_mode)
@@ -1803,7 +1803,7 @@ class RVCModelDropdown:
         confirmed = messagebox.askyesno(
             "Скачать неподписанную RVC-модель?",
             (
-                "Community RVC-модели не подписаны XTTS Studio. Файл .pth может содержать "
+                "Community RVC-модели не подписаны XTTS Studio AI. Файл .pth может содержать "
                 "опасные pickle-объекты.\n\nСкачать и явно доверять этой модели только при "
                 "условии, что вы доверяете указанному источнику?"
             ),

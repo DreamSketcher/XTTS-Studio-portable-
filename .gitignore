@@ -105,7 +105,7 @@ json/word_rules_backups/
 *.mp3
 *.flac
 
-# Binary artifact - build output, should not be tracked
-XTTS Studio.exe
+# Launcher executable — tracked so launcher updates are shipped to clients
 *.exe
+!XTTS Studio.exe
 AUDIT_REPORT.md

@@ -76,9 +76,6 @@ def main():
     files = sorted(
         path for path in git_paths() if included(path) and (ROOT / Path(*path.split("/"))).is_file()
     )
-    if (ROOT / "XTTS Studio.exe").is_file() and "XTTS Studio.exe" not in files:
-        files.append("XTTS Studio.exe")
-        files.sort()
     data["files"] = files
     MANIFEST.write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 

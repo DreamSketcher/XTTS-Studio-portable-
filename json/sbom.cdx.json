@@ -6,8 +6,8 @@
   "metadata": {
     "component": {
       "type": "application",
-      "name": "XTTS Studio",
-      "bom-ref": "pkg:github/DreamSketcher/XTTS-Studio"
+      "name": "XTTS Studio AI",
+      "bom-ref": "pkg:github/DreamSketcher/XTTS-Studio-AI"
     },
     "tools": {
       "components": [
@@ -1121,7 +1121,7 @@
   ],
   "dependencies": [
     {
-      "ref": "pkg:github/DreamSketcher/XTTS-Studio",
+      "ref": "pkg:github/DreamSketcher/XTTS-Studio-AI",
       "dependsOn": [
         "pkg:pypi/absl-py@2.4.0",
         "pkg:pypi/aiohappyeyeballs@2.6.2",

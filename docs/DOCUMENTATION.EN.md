@@ -5,7 +5,7 @@
 This guide explains how to use XTTS Studio, what actually affects the result, and where to look when something goes wrong.
 
 > Quick overview: **[README.EN.md](./README.md)** · **[README.RU.md](./README.ru.md)**  
-> Source code: **[github.com/DreamSketcher/XTTS-Studio](https://github.com/DreamSketcher/XTTS-Studio)**
+> Source code: **[github.com/DreamSketcher/XTTS-Studio-AI](https://github.com/DreamSketcher/XTTS-Studio-AI)**
 
 ---
 
@@ -74,9 +74,9 @@ The application does not always need an internet connection. Internet access is 
 
 ### What `XTTS Studio.exe` is
 
-`XTTS Studio.exe` is not another copy of the speech engine and it does not contain the full application. It is a small launcher converted from the startup BAT file. It contains only the launch paths for the bundled Python runtime, the path to `gui.py`, and the application icon.
+`XTTS Studio.exe` is a lightweight launcher wrapper converted from the startup batch script and packaged with the application icon for convenience. It does not contain heavy AI models or core source logic; it stores the runtime launch environment configuration, paths to `python\runtime\python.exe` and `gui.py`, and startup parameters.
 
-The launcher is included in updates because the paths to the runtime or portable environment may need to change when the folder layout changes. Models, settings, and user data are not stored inside the `.exe`.
+The launcher is tracked in Git (`!XTTS Studio.exe` in `.gitignore`) and included in release update payloads (`json/version.json`). If the portable folder layout or runtime paths ever change in future updates, the launcher executable is automatically updated on client installations. All application configurations and release manifests reside under the `json/` directory.
 
 ### How release updates work
 
@@ -765,13 +765,15 @@ Do not delete a checkpoint file during an active installation: it is needed for 
 
 | Path | Purpose | Safe to delete manually? |
 |------|---------|--------------------------|
-| `XTTS Studio.exe` | small launcher: bundled-Python path, `gui.py` path, and icon | no, if this is how you start the application |
-| `version.json`, `checksums.txt` | installed version, update manifest, and file verification | not recommended |
-| `settings.json` | GUI settings and all quality presets | yes, but settings reset |
-| `theme_settings.json` | theme, layout, neon, UI presets | yes, but theme settings reset |
-| `gpt_settings.json` | AI providers, models, and keys | only if you are ready to configure them again |
-| `word_rules.json` | pronunciation dictionary | avoid without a backup |
-| `history.json` | last 100 generations | yes; history is cleared |
+| `XTTS Studio.exe` | launcher executable wrapper; launches `python\runtime\python.exe gui.py` with custom icon | no, if this is how you start the application |
+| `json/version.json`, `checksums.txt` | installed version, update manifest (`json/version.json.sig`), and file verification | not recommended |
+| `json/settings.json` | GUI settings and all quality presets | yes, but settings reset |
+| `json/theme_settings.json` | theme, layout, neon, UI presets | yes, but theme settings reset |
+| `json/gpt_settings.json` | AI providers, models, and encrypted API keys | only if you are ready to configure them again |
+| `json/word_rules.json` | pronunciation dictionary | avoid without a backup |
+| `json/history.json` | last 100 generations | yes; history is cleared |
+| `json/chat_history.json` | AI chat session history | yes; chat history is cleared |
+| `json/sbom.cdx.json` | CycloneDX Software Bill of Materials | no |
 | `library/<voice>/` | `normalized.wav`, converted audio, and embedding cache; the source file may remain at its original path | use the UI when possible |
 | `outputs/` | finished audio | yes, after saving needed files elsewhere |
 | `outputs/_cache/` | chunk cache | yes; repeated generation becomes slower |
@@ -1011,4 +1013,4 @@ When refactoring GUI code, keep public facades stable. For example, `chat_settin
 
 ---
 
-**XTTS Studio** · by EXIZ10TION · [GitHub](https://github.com/DreamSketcher/XTTS-Studio) · [README EN](./README.md) · [README RU](./README.ru.md) · [License](./LICENSE.md)
+**XTTS Studio** · by EXIZ10TION · [GitHub](https://github.com/DreamSketcher/XTTS-Studio-AI) · [README EN](./README.md) · [README RU](./README.ru.md) · [License](./LICENSE.md)

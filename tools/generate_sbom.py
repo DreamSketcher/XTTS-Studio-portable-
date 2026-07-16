@@ -47,14 +47,14 @@ def generate(requirements: Path, output: Path):
             "component": {
                 "type": "application",
                 "name": "XTTS Studio",
-                "bom-ref": "pkg:github/DreamSketcher/XTTS-Studio",
+                "bom-ref": "pkg:github/DreamSketcher/XTTS-Studio-AI",
             },
             "tools": {"components": [{"type": "application", "name": "tools/generate_sbom.py"}]},
         },
         "components": components,
         "dependencies": [
             {
-                "ref": "pkg:github/DreamSketcher/XTTS-Studio",
+                "ref": "pkg:github/DreamSketcher/XTTS-Studio-AI",
                 "dependsOn": [item["bom-ref"] for item in components],
             }
         ],

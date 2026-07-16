@@ -17,7 +17,7 @@ try:
 except ImportError:
     _SSL_CONTEXT = None  # если certifi не установлен — используем системное по умолчанию
 
-REPO = "DreamSketcher/XTTS-Studio"
+REPO = "DreamSketcher/XTTS-Studio-AI"
 BRANCH = "main"
 
 # Primary release channel: GitHub Release assets (stable). Clients never read
@@ -86,7 +86,7 @@ def _urlopen_with_retry(url: str, timeout: int = 15, max_retries: int = MAX_RETR
     raw.githubusercontent.com / github.com releases его не требуют, но
     лишним не будет.
     """
-    req = urllib.request.Request(url, headers={"User-Agent": "XTTS-Studio-Updater"})
+    req = urllib.request.Request(url, headers={"User-Agent": "XTTS-Studio-AI-Updater"})
     last_err = None
     for attempt in range(1, max_retries + 1):
         try:

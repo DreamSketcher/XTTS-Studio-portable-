@@ -52,7 +52,7 @@ class TestMainWindowSmoke:
 
         assert root is not None
         assert root.winfo_exists()
-        assert root.title() == "XTTS Studio"
+        assert root.title() == "XTTS Studio AI"
 
         # Точечные проверки, что ключевые подмодули реально собрались,
         # а не просто "функция не упала на первой строке"

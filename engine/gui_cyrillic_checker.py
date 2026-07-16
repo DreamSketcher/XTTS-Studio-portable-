@@ -34,13 +34,13 @@ def check_project_path():
         problematic_paths.append(f"Python executable: '{python_exe}'")
 
     if problematic_paths:
-        title = "XTTS Studio - Path Validation Warning"
+        title = "XTTS Studio AI - Path Validation Warning"
         message = (
             "⚠️ CRITICAL PATH WARNING ⚠️\n\n"
             "Cyrillic (Russian) characters were detected in your installation paths:\n"
             + "\n".join(f"• {path}" for path in problematic_paths)
             + "\n\n"
-            "XTTS Studio, PyTorch, and CUDA dependencies are highly sensitive to non-ASCII paths. "
+            "XTTS Studio AI, PyTorch, and CUDA dependencies are highly sensitive to non-ASCII paths. "
             "Running from folders containing spaces, Cyrillic, or special characters frequently causes: \n"
             "  1. Silent crashes during model loading\n"
             "  2. Failed audio generation with obscure C++ file-access errors\n"

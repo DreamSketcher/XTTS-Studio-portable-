@@ -228,7 +228,7 @@ THEME_UI_FALLBACKS_RU = {
         "Если порядок требует смены ряда — может понадобиться перезапуск."
     ),
     "theme_header_effects_label": "Неоновые эффекты:",
-    "theme_header_rainbow": "Неоновый заголовок «XTTS Studio»",
+    "theme_header_rainbow": "Неоновый заголовок «XTTS Studio AI»",
     "theme_header_rainbow_desc": (
         "Неоновое свечение и перелив цвета на тексте заголовка.\n"
         "Кадры предгенерированы — нагрузка на CPU минимальна."
@@ -248,7 +248,7 @@ THEME_UI_FALLBACKS_RU = {
     ),
     "theme_header_rainbow_cfg_btn": "⚙",
     "theme_header_rainbow_panel_title": "Настройки неона",
-    "theme_header_rainbow_target_title": "Заголовок «XTTS Studio»",
+    "theme_header_rainbow_target_title": "Заголовок «XTTS Studio AI»",
     "theme_header_rainbow_target_author": "Подпись «by EXIZ10TION»",
     "theme_header_author_rainbow": "Неоновая подпись «by EXIZ10TION»",
     "theme_header_rainbow_mode": "Режим цвета:",

@@ -20,7 +20,7 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 DEFAULT_ARCHIVE_URL = (
-    "https://github.com/DreamSketcher/XTTS-Studio/releases/latest/download/"
+    "https://github.com/DreamSketcher/XTTS-Studio-AI/releases/latest/download/"
     "XTTS-Studio-portable.zip"
 )
 

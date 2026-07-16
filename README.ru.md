@@ -10,16 +10,16 @@
 
 <br/>
 
-[![CI](https://github.com/DreamSketcher/XTTS-Studio/actions/workflows/ci.yml/badge.svg)](https://github.com/DreamSketcher/XTTS-Studio/actions/workflows/ci.yml)
-[![Windows](https://img.shields.io/badge/Windows-10%2F11%20x64-0078D6?logo=windows&logoColor=white)](https://github.com/DreamSketcher/XTTS-Studio/releases)
-[![Core Offline](https://img.shields.io/badge/Core-Offline-2da44e)](https://github.com/DreamSketcher/XTTS-Studio)
-[![Portable](https://img.shields.io/badge/Portable-no%20install-orange)](https://github.com/DreamSketcher/XTTS-Studio/releases)
-[![RU/EN](https://img.shields.io/badge/UI-RU%20%2F%20EN-58a6ff)](https://github.com/DreamSketcher/XTTS-Studio)
-[![RVC](https://img.shields.io/badge/RVC-voice%20conversion-e11d48)](https://github.com/DreamSketcher/XTTS-Studio)
+[![CI](https://github.com/DreamSketcher/XTTS-Studio-AI/actions/workflows/ci.yml/badge.svg)](https://github.com/DreamSketcher/XTTS-Studio-AI/actions/workflows/ci.yml)
+[![Windows](https://img.shields.io/badge/Windows-10%2F11%20x64-0078D6?logo=windows&logoColor=white)](https://github.com/DreamSketcher/XTTS-Studio-AI/releases)
+[![Core Offline](https://img.shields.io/badge/Core-Offline-2da44e)](https://github.com/DreamSketcher/XTTS-Studio-AI)
+[![Portable](https://img.shields.io/badge/Portable-no%20install-orange)](https://github.com/DreamSketcher/XTTS-Studio-AI/releases)
+[![RU/EN](https://img.shields.io/badge/UI-RU%20%2F%20EN-58a6ff)](https://github.com/DreamSketcher/XTTS-Studio-AI)
+[![RVC](https://img.shields.io/badge/RVC-voice%20conversion-e11d48)](https://github.com/DreamSketcher/XTTS-Studio-AI)
 
 <br/>
 
-**[📥 Скачать](https://github.com/DreamSketcher/XTTS-Studio/releases)** · **[📖 Документация RU](./docs/DOCUMENTATION.RU.md)** · **[📖 Documentation EN](./docs/DOCUMENTATION.EN.md)** · **[📜 Лицензия](./LICENSE.md)**
+**[📥 Скачать](https://github.com/DreamSketcher/XTTS-Studio-AI/releases)** · **[📖 Документация RU](./docs/DOCUMENTATION.RU.md)** · **[📖 Documentation EN](./docs/DOCUMENTATION.EN.md)** · **[📜 Лицензия](./LICENSE.md)**
 
 </div>
 
@@ -149,7 +149,7 @@ XTTS Studio запускает XTTS v2 локально и собирает во
 - неподписанные RVC `.pth` требуют явного подтверждения доверия, привязанного к SHA-256;
 - проект публикует CycloneDX SBOM и security/privacy policy.
 
-Подробнее: **[безопасность](./docs/SECURITY.md)** · **[приватность](./docs/PRIVACY.md)** · **[dependency baseline](./docs/SECURITY_BASELINE.md)**.
+Подробнее: **[безопасность](./docs/SECURITY.RU.md)** (**[EN](./docs/SECURITY.md)**) · **[приватность](./docs/PRIVACY.RU.md)** (**[EN](./docs/PRIVACY.md)**) · **[dependency baseline](./docs/SECURITY_BASELINE.RU.md)** (**[EN](./docs/SECURITY_BASELINE.md)**).
 
 ### Скриншоты
 
@@ -195,7 +195,7 @@ XTTS Studio запускает XTTS v2 локально и собирает во
 
 ## Установка
 
-1. Скачайте portable-архив в [GitHub Releases](https://github.com/DreamSketcher/XTTS-Studio/releases).
+1. Скачайте portable-архив в [GitHub Releases](https://github.com/DreamSketcher/XTTS-Studio-AI/releases).
 2. Распакуйте его в путь без кириллицы.
 3. Запустите `XTTS Studio.exe`.
 4. Выберите референс и короткую тестовую фразу.
@@ -215,9 +215,9 @@ XTTS Studio запускает XTTS v2 локально и собирает во
 
 ## Что такое `XTTS Studio.exe`
 
-`XTTS Studio.exe` — небольшой лаунчер, преобразованный из стартового BAT-файла. В нём нет XTTS-модели, пользовательских настроек или исходного кода приложения. Он хранит только пути запуска bundled Python, путь к `gui.py` и иконку.
+`XTTS Studio.exe` — небольшой удобный лаунчер, преобразованный из стартового BAT-файла и оформленный с иконкой приложения. В нём нет моделей, пользовательских настроек или тяжелого исходного кода. Он хранит только пути запуска bundled Python (`python\runtime\python.exe`), путь к `gui.py` и параметры вызова.
 
-Лаунчер включён в систему обновлений. Если структура portable-сборки изменится и пути к runtime или окружению придётся переписать, updater заменит `.exe` вместе с остальными изменёнными файлами.
+Лаунчер зафиксирован в Git (`!XTTS Studio.exe` в `.gitignore`) и включён в систему релизов и обновлений (`json/version.json`). Если структура portable-сборки или пути к окружению изменятся в будущих версиях, автоапдейтер автоматически заменит `.exe` на актуальный вместе с остальными изменёнными файлами. Все пользовательские конфиги, темы и манифесты версий хранятся в подпапке `json/`.
 
 ---
 
@@ -258,7 +258,7 @@ CPU работает сразу, но XTTS, RVC и local LLM могут быть
 - [Полная документация на русском](./docs/DOCUMENTATION.RU.md)
 - [Full documentation in English](./docs/DOCUMENTATION.EN.md)
 - [Лицензия](./LICENSE.md)
-- [Issues](https://github.com/DreamSketcher/XTTS-Studio/issues)
+- [Issues](https://github.com/DreamSketcher/XTTS-Studio-AI/issues)
 
 Если результат звучит плохо, начните не с ползунков, а с референса: отключите RVC, проверьте базовый XTTS на короткой фразе и только потом добавляйте RVC и AI.
 
@@ -284,6 +284,6 @@ CPU работает сразу, но XTTS, RVC и local LLM могут быть
 
 **XTTS Studio** · by EXIZ10TION · Made with ❤️
 
-[Скачать](https://github.com/DreamSketcher/XTTS-Studio/releases) · [Документация](./docs/DOCUMENTATION.RU.md) · [License](./LICENSE.md)
+[Скачать](https://github.com/DreamSketcher/XTTS-Studio-AI/releases) · [Документация](./docs/DOCUMENTATION.RU.md) · [License](./LICENSE.md)
 
 </div>

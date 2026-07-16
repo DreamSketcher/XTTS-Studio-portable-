@@ -5,7 +5,7 @@
 Здесь описано, как пользоваться XTTS Studio, что действительно влияет на результат и где искать причину, если что-то пошло не так.
 
 > Краткий обзор: **[README.RU.md](./README.ru.md)** · **[README.EN.md](./README.md)**  
-> Исходный код: **[github.com/DreamSketcher/XTTS-Studio](https://github.com/DreamSketcher/XTTS-Studio)**
+> Исходный код: **[github.com/DreamSketcher/XTTS-Studio-AI](https://github.com/DreamSketcher/XTTS-Studio-AI)**
 
 ---
 
@@ -74,9 +74,9 @@
 
 ### Что такое `XTTS Studio.exe`
 
-`XTTS Studio.exe` — не отдельная копия движка и не монолитная сборка программы. Это небольшой лаунчер, сделанный из стартового BAT-файла: внутри находятся только пути запуска bundled Python, ссылка на `gui.py` и иконка приложения.
+`XTTS Studio.exe` — компактная удобная оболочка-лаунчер, преобразованная из стартового BAT-файла и снабженная иконкой приложения. В ней не содержатся тяжёлые ML-модели или исходный код приложения; она хранит конфигурацию запуска bundled Python (`python\runtime\python.exe`), путь к `gui.py` и параметры вызова.
 
-Лаунчер включается в обновления, потому что при изменении структуры portable-сборки может понадобиться переписать пути к runtime или окружению. Модели, настройки и пользовательские данные внутри `.exe` не хранятся.
+Лаунчер зафиксирован в Git (`!XTTS Studio.exe` в `.gitignore`) и включён в систему релизов и обновлений (`json/version.json`). Если структура portable-сборки или пути к рантайму изменятся в будущем, автоапдейтер автоматически обновит `.exe` на устройствах клиентов. Все настройки и файлы манифеста релиза располагаются в подпапке `json/`.
 
 ### Как обновляется релизная версия
 
@@ -765,13 +765,15 @@ Optional-компонент может быть просто не установ
 
 | Путь | Назначение | Можно удалить вручную? |
 |------|------------|------------------------|
-| `XTTS Studio.exe` | компактный лаунчер: пути bundled Python, `gui.py` и иконка | нет, если запускаете приложение через него |
-| `version.json`, `checksums.txt` | версия, manifest и проверка файлов updater | не рекомендуется |
-| `settings.json` | настройки GUI и все quality presets | можно, но настройки сбросятся |
-| `theme_settings.json` | тема, layout, neon и UI-пресеты | можно, тема сбросится |
-| `gpt_settings.json` | AI-провайдеры, модели и ключи | только если готовы настроить заново |
-| `word_rules.json` | словарь произношений | нежелательно без резервной копии |
-| `history.json` | последние 100 генераций | можно, очистится история |
+| `XTTS Studio.exe` | удобная оболочка-лаунчер с иконкой для запуска `python\runtime\python.exe gui.py` | нет, если запускаете приложение через него |
+| `json/version.json`, `checksums.txt` | версия, manifest обновления (`json/version.json.sig`) и проверка файлов | не рекомендуется |
+| `json/settings.json` | настройки GUI и все пресеты качества | можно, но настройки сбросятся |
+| `json/theme_settings.json` | тема, layout, neon и UI-пресеты | можно, тема сбросится |
+| `json/gpt_settings.json` | AI-провайдеры, модели и зашифрованные ключи | только если готовы настроить заново |
+| `json/word_rules.json` | словарь произношений | нежелательно без резервной копии |
+| `json/history.json` | последние 100 генераций | можно, очистится история |
+| `json/chat_history.json` | история сообщений AI-чата | можно, очистится история чатов |
+| `json/sbom.cdx.json` | CycloneDX SBOM манифест зависимостей | не рекомендуется |
 | `library/<voice>/` | `normalized.wav`, converted-файл и embedding cache; исходник может остаться на прежнем месте | удаляйте через UI, если голос больше не нужен |
 | `outputs/` | готовые файлы | да, если они сохранены в другом месте |
 | `outputs/_cache/` | кэш чанков | да; повторная генерация станет дольше |
@@ -1011,4 +1013,4 @@ pytest test
 
 ---
 
-**XTTS Studio** · by EXIZ10TION · [GitHub](https://github.com/DreamSketcher/XTTS-Studio) · [README RU](./README.ru.md) · [README EN](./README.md) · [Лицензия](./LICENSE.md)
+**XTTS Studio** · by EXIZ10TION · [GitHub](https://github.com/DreamSketcher/XTTS-Studio-AI) · [README RU](./README.ru.md) · [README EN](./README.md) · [Лицензия](./LICENSE.md)

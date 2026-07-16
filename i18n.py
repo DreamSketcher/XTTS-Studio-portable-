@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 
 """
-i18n.py — Internationalization module for XTTS Studio.
+i18n.py — Internationalization module for XTTS Studio AI.
 """
 
 import json
@@ -12,7 +12,7 @@ _current_lang = "ru"
 LANGUAGES = {
     "ru": {
         # ── Header / Left Panel ──
-        "app_title": "XTTS Studio",
+        "app_title": "XTTS Studio AI",
         "app_author": " by EXIZ10TION",
         "btn_update": "⚙ Настройки",
         "btn_ai_status": "🔌 AI статус",
@@ -251,7 +251,7 @@ LANGUAGES = {
         "time_format_m_s": "{}м {}с",
         "time_format_s": "{}с",
         # ── AI Chat Window ──
-        "chat_win_title": "💬 AI Чат — XTTS Studio",
+        "chat_win_title": "💬 AI Чат — XTTS Studio AI",
         "chat_header": "AI Чат",
         "chat_btn_new_chat": "＋ Новый чат",
         "chat_btn_delete_chat": "🗑 Удалить чат",
@@ -637,9 +637,9 @@ LANGUAGES = {
         "theme_toolbar_move_down": "▼ Дниз",
         "theme_toolbar_reset_order": "↺ Сброс",
         "theme_toolbar_order_hint": "Перетащите порядок стрелками. Изменения применятся после сохранения.\nЕсли порядок требует смены ряда — может понадобиться перезапуск.",
-        # ── Эффекты заголовка (радужный XTTS Studio) ──
+        # ── Эффекты заголовка (радужный XTTS Studio AI) ──
         "theme_header_effects_label": "Неоновые эффекты:",
-        "theme_header_rainbow": "Неоновый заголовок «XTTS Studio»",
+        "theme_header_rainbow": "Неоновый заголовок «XTTS Studio AI»",
         "theme_header_rainbow_desc": "Неоновое свечение и перелив цвета на тексте заголовка.\nКадры предгенерированы — нагрузка на CPU минимальна.",
         # ── Кастомизация радужного заголовка ──
         "theme_header_rainbow_speed": "Скорость анимации:",
@@ -654,7 +654,7 @@ LANGUAGES = {
         "theme_header_rainbow_style_hint": "Параметры применяются после «Сохранить»\n(неоновый заголовок пересоберётся с новыми настройками).",
         "theme_header_rainbow_cfg_btn": "⚙",
         "theme_header_rainbow_panel_title": "Настройки неона",
-        "theme_header_rainbow_target_title": "Заголовок «XTTS Studio»",
+        "theme_header_rainbow_target_title": "Заголовок «XTTS Studio AI»",
         "theme_header_rainbow_target_author": "Подпись «by EXIZ10TION»",
         "theme_header_author_rainbow": "Неоновая подпись «by EXIZ10TION»",
         "theme_header_rainbow_mode": "Режим цвета:",
@@ -738,10 +738,10 @@ LANGUAGES = {
         "rvc_catalog_curated": "★ Подборка",
         "rvc_catalog_new": "🆕 Новые",
         "rvc_catalog_top": "🔥 Топ",
-        "tip_rvc_catalog_curated": "Стабильная офлайн-подборка XTTS Studio",
+        "tip_rvc_catalog_curated": "Стабильная офлайн-подборка XTTS Studio AI",
         "tip_rvc_catalog_new": "Последние добавленные модели voice-models.com",
         "tip_rvc_catalog_top": "Популярные модели voice-models.com",
-        "status_rvc_catalog_curated": "Офлайн-подборка XTTS Studio",
+        "status_rvc_catalog_curated": "Офлайн-подборка XTTS Studio AI",
         "status_rvc_catalog_loading": "Загружаю каталог «{}»…",
         "status_rvc_catalog_count": "Каталог «{}»: {} моделей",
         "status_rvc_catalog_unavailable": "Каталог «{}» временно недоступен",
@@ -778,7 +778,7 @@ LANGUAGES = {
     },
     "en": {
         # ── Header / Left Panel ──
-        "app_title": "XTTS Studio",
+        "app_title": "XTTS Studio AI",
         "app_author": "  by EXIZ10TION",
         "btn_update": "⚙ Settings",
         "btn_ai_status": "🔌 AI Status",
@@ -1017,7 +1017,7 @@ LANGUAGES = {
         "time_format_m_s": "{}м {}с",
         "time_format_s": "{}с",
         # ── AI Chat Window ──
-        "chat_win_title": "💬 AI Chat — XTTS Studio",
+        "chat_win_title": "💬 AI Chat — XTTS Studio AI",
         "chat_header": "AI Chat",
         "chat_btn_new_chat": "＋ New chat",
         "chat_btn_delete_chat": "🗑 Delete chat",
@@ -1403,9 +1403,9 @@ LANGUAGES = {
         "theme_toolbar_move_down": "▼ Down",
         "theme_toolbar_reset_order": "↺ Reset",
         "theme_toolbar_order_hint": "Reorder with the arrows. Changes apply after saving.\nIf the order requires a row change — a restart may be needed.",
-        # ── Header effects (rainbow XTTS Studio) ──
+        # ── Header effects (rainbow XTTS Studio AI) ──
         "theme_header_effects_label": "Neon effects:",
-        "theme_header_rainbow": "Neon title «XTTS Studio»",
+        "theme_header_rainbow": "Neon title «XTTS Studio AI»",
         "theme_header_rainbow_desc": "Neon glow and color shimmer on the title text.\nFrames are pre-generated — CPU load is minimal.",
         # ── Rainbow title customization ──
         "theme_header_rainbow_speed": "Animation speed:",
@@ -1420,7 +1420,7 @@ LANGUAGES = {
         "theme_header_rainbow_style_hint": 'Parameters apply after "Save"\n(the neon title will rebuild with the new settings).',
         "theme_header_rainbow_cfg_btn": "⚙",
         "theme_header_rainbow_panel_title": "Neon settings",
-        "theme_header_rainbow_target_title": "Title «XTTS Studio»",
+        "theme_header_rainbow_target_title": "Title «XTTS Studio AI»",
         "theme_header_rainbow_target_author": "Credit «by EXIZ10TION»",
         "theme_header_author_rainbow": "Neon credit «by EXIZ10TION»",
         "theme_header_rainbow_mode": "Color mode:",
@@ -1504,10 +1504,10 @@ LANGUAGES = {
         "rvc_catalog_curated": "★ Curated",
         "rvc_catalog_new": "🆕 New",
         "rvc_catalog_top": "🔥 Top",
-        "tip_rvc_catalog_curated": "Stable XTTS Studio offline selection",
+        "tip_rvc_catalog_curated": "Stable XTTS Studio AI offline selection",
         "tip_rvc_catalog_new": "Latest models added to voice-models.com",
         "tip_rvc_catalog_top": "Popular models from voice-models.com",
-        "status_rvc_catalog_curated": "XTTS Studio offline selection",
+        "status_rvc_catalog_curated": "XTTS Studio AI offline selection",
         "status_rvc_catalog_loading": "Loading “{}” catalog…",
         "status_rvc_catalog_count": "“{}” catalog: {} models",
         "status_rvc_catalog_unavailable": "“{}” catalog is temporarily unavailable",

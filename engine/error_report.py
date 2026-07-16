@@ -15,7 +15,7 @@ from urllib.parse import quote
 
 # ==== НАСТРОЙ ПОД СЕБЯ ====
 GITHUB_OWNER = "DreamSketcher"
-GITHUB_REPO = "XTTS-Studio-portable-"
+GITHUB_REPO = "XTTS-Studio-AI"
 ISSUE_LABELS = "bug,auto-report"  # необязательно, можно убрать
 # ===========================
 
