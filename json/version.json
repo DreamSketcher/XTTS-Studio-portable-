@@ -1,5 +1,5 @@
 {
-  "version": "1.1.315",
+  "version": "1.1.316",
   "files": [
     ".gitattributes",
     ".pre-commit-config.yaml",
@@ -163,7 +163,7 @@
     "docs/SECURITY_BASELINE.RU.md": "773ec13c4413295b007f8a853c8cb8b02d2544e64044ebddaeec7e8c133fa4d4",
     "docs/SECURITY_BASELINE.md": "17e0241ac4ed6f623eeb475ce36e81475bd686b47a31c2c57c67c971345b89cb",
     "docs/demo_video_storyboard_template.html": "896be38470a69d25be6c0214be050ad9127398b6d018820d7ccfbe85712f147d",
-    "docs/workflows/ci.yml": "89297b830d5295ba33c926383232991599e52d0a706dc61e4c9acbad428d6c7f",
+    "docs/workflows/ci.yml": "a39bc4682dc5e0c463c098f4adc3a3fd972f1d3c9a30552088fa1e0f90563353",
     "docs/workflows/release.yml": "e1351332d6e7edfbbacdacfe2f552aa81cec288cf895d1b992ae838a7acce2bd",
     "engine/__init__.py": "12598a2a1b4528477da794e6b51692b6d3a87b0e499e19358d1e3c4591c15fac",
     "engine/ai_conductor.py": "fa9ecad488da650f320cc6f3d6f8eab7348c3214bfac921cf08993c49b8aef5e",
@@ -292,7 +292,7 @@
     "json/settings.json": "052577ca2b8231d16f9c39b671974fc51f95d5a9535502f6ca3f4318b8cd862d",
     "json/theme_settings.json": "f6f8dc0db715dc3417e9fe84c3f98227b75bfda8cb7658aa9b456ea9406fe5a9",
     "pyproject.toml": "0d0733a3de8858902a57510c8c6ec463b61db21b767246ed3a65303fd7207a92",
-    "requirements.txt": "f5d0fad57d83247fe9ade7241e931e9a1f668f5fb67374a5ab346311dc6f7cad",
+    "requirements.txt": "f2bbe70ab46358a4add2e78a3e0661a37e2dfe91486ac64f7491c799bd2647ef",
     "update_manifest_public.pem": "051a740b793d2e147217c365a1c0b85e13131cc330904289f43969f17618f587"
   },
   "removed_files": [

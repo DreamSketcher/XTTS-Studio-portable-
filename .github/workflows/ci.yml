@@ -69,16 +69,16 @@ jobs:
           python -m venv .venv
           source .venv/Scripts/activate 2>/dev/null || source .venv/bin/activate
           python -m pip install --upgrade pip
-          pip install torch==2.11.0 torchaudio==2.11.0 torchvision==0.26.0 --index-url https://download.pytorch.org/whl/cpu
+          pip install torch==2.2.2 torchaudio==2.2.2 torchvision==0.17.2 --index-url https://download.pytorch.org/whl/cpu
           pip install -r requirements.txt
           pip install pytest pytest-cov pytest-timeout cryptography==49.0.0 ruff==0.6.9 black==24.10.0
         shell: bash
 
-      - name: Install virtual display (Linux only)
+      - name: Install system dependencies (Linux only)
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y xvfb
+          sudo apt-get install -y xvfb ffmpeg libavcodec-dev libavformat-dev libavutil-dev libswscale-dev libswresample-dev
 
       - name: Run pytest
         run: |

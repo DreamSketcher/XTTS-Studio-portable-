@@ -17,10 +17,14 @@ def normalized_name(name: str) -> str:
 
 def load_components(requirements: Path) -> list[dict]:
     components = []
+    seen_names = set()
     for raw in requirements.read_text(encoding="utf-8").splitlines():
         line = raw.strip()
         if not line or line.startswith("#"):
             continue
+        if ";" in line:
+            line = line.split(";", 1)[0].strip()
+
         match_pin = PIN_RE.match(line)
         if match_pin:
             name, version = match_pin.groups()
@@ -32,7 +36,12 @@ def load_components(requirements: Path) -> list[dict]:
                 version = match_ver.group(2) if match_ver else "0.0.0"
             else:
                 raise ValueError(f"Unpinned or unsupported requirement: {line}")
+
         canonical = normalized_name(name)
+        if canonical in seen_names:
+            continue
+        seen_names.add(canonical)
+
         components.append(
             {
                 "type": "library",
