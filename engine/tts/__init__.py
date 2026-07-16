@@ -73,7 +73,7 @@ normalizer = TextNormalizer()
 chunker = TextChunker()
 pause_engine = SmartPauseEngine()
 ref_processor = ReferenceProcessor(backup_dir=path("library"))
-word_replacer = WordReplacer(rules_path=path("word_rules.json"))
+word_replacer = WordReplacer(rules_path=path("json/word_rules.json"))
 
 # =========================
 # MODEL

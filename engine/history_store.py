@@ -5,10 +5,8 @@ import json
 import os
 from datetime import datetime
 
-from engine.paths import BASE_DIR
+from engine.paths import HISTORY_PATH
 from engine.atomic_write import atomic_write_json
-
-HISTORY_PATH = os.path.join(BASE_DIR, "history.json")
 
 
 def _save_history(task):

@@ -65,7 +65,7 @@ def generate(requirements: Path, output: Path):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--requirements", type=Path, default=ROOT / "requirements.txt")
-    parser.add_argument("--output", type=Path, default=ROOT / "sbom.cdx.json")
+    parser.add_argument("--output", type=Path, default=ROOT / "json" / "sbom.cdx.json")
     args = parser.parse_args()
     generate(args.requirements, args.output)
 

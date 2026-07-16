@@ -10,7 +10,7 @@ import subprocess
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-MANIFEST = ROOT / "version.json"
+MANIFEST = ROOT / "json" / "version.json"
 
 ROOT_FILES = {
     ".gitattributes",
@@ -21,7 +21,6 @@ ROOT_FILES = {
     "i18n.py",
     "pyproject.toml",
     "requirements.txt",
-    "sbom.cdx.json",
     "update_manifest_public.pem",
 }
 # Documentation lives under docs/ after the structure refactor. Keep the old
@@ -34,7 +33,13 @@ DOCS_ROOT_LEGACY = {
     "SECURITY_BASELINE.md",
     "demo_video_storyboard_template.html",
 }
-SELF_GENERATED = {"version.json", "version.json.sig", "checksums.txt"}
+SELF_GENERATED = {
+    "version.json",
+    "version.json.sig",
+    "json/version.json",
+    "json/version.json.sig",
+    "checksums.txt",
+}
 
 
 def git_paths() -> list[str]:

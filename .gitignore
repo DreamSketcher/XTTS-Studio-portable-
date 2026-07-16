@@ -10,11 +10,13 @@ build/
 dist/
 release/
 history.json
+json/history.json
 env_cache.cfg
 icon.ico
 .known_safe_files.json
 icon.png
 word_rules.json
+json/word_rules.json
 ProjectAnalyzer.ps1
 /generate_version_files.py
 version_ignore.txt
@@ -24,6 +26,8 @@ update_version_files.bat
 git_update.bat
 .llama_broken_backends.json
 gpt_settings.json
+json/gpt_settings.json
+
 # =========================
 # PYTHON
 # =========================
@@ -46,17 +50,23 @@ python/
 *.swp
 
 # =========================
-# SYSTEM
+# SYSTEM & LOGS
 # =========================
 .DS_Store
 Thumbs.db
+.cache/
+.fonts/
+test/result/
+*.log
 
 # =========================
 # SECRETS / KEYS (ОБЯЗАТЕЛЬНО)
 # =========================
 secrets.json
+json/secrets.json
 keys/
 api_keys.json
+json/api_keys.json
 *-signing-private.pem
 *.pfx
 *.p12
@@ -66,8 +76,11 @@ update_github.bat
 # AI SETTINGS / HISTORY
 # =========================
 gpt_settings.json
+json/gpt_settings.json
 chat_history.json
+json/chat_history.json
 history.json
+json/history.json
 
 # =========================
 # ALL RUNTIME DATA (portable bundle excluded from Git)
@@ -83,6 +96,7 @@ temp/
 tmp/
 cache/
 word_rules_backups/
+json/word_rules_backups/
 
 # =========================
 # AUDIO

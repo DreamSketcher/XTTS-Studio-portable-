@@ -45,13 +45,14 @@ def isolated_project(tmp_path, monkeypatch):
     """Подменяет все пути updater.py на временную директорию (как в test_updater.py)."""
     base = tmp_path / "project"
     base.mkdir()
+    (base / "json").mkdir(exist_ok=True)
     monkeypatch.setattr(updater, "BASE_DIR", str(base))
-    monkeypatch.setattr(updater, "LOCAL_VERSION_PATH", str(base / "version.json"))
+    monkeypatch.setattr(updater, "LOCAL_VERSION_PATH", str(base / "json" / "version.json"))
     monkeypatch.setattr(updater, "STAGING_DIR", str(base / "_update_staging"))
     monkeypatch.setattr(updater, "BACKUP_DIR", str(base / "_update_backup"))
     monkeypatch.setattr(updater, "ROLLBACK_MARKER", str(base / "_update_pending.json"))
 
-    (base / "version.json").write_text(
+    (base / "json" / "version.json").write_text(
         json.dumps({"version": "1.0.0", "files": []}, ensure_ascii=False),
         encoding="utf-8",
     )

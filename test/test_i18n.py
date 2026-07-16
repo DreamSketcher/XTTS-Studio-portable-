@@ -90,10 +90,9 @@ class TestTFunction:
 
 class TestLoadSavedLanguage:
     def test_load_saved_language_respects_file(self, tmp_path: Path, monkeypatch):
-        # i18n._load_saved_language читает settings.json рядом с i18n.py
-        # Подменим __file__ расположение через monkeypatch на tmp dir? Проще — напрямую протестировать логику.
-        # Создаем временный settings.json
-        settings_path = tmp_path / "settings.json"
+        # i18n._load_saved_language читает settings.json
+        (tmp_path / "json").mkdir(exist_ok=True)
+        settings_path = tmp_path / "json" / "settings.json"
         settings_path.write_text(json.dumps({"ui_language": "en"}), encoding="utf-8")
 
         # имитируем загрузку

@@ -48,7 +48,7 @@ except Exception:
 
 # ── Paths ──────────────────────────────────────────────────────────────────────
 _BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-_SETTINGS_PATH = os.path.join(_BASE_DIR, "gpt_settings.json")
+_SETTINGS_PATH = os.path.join(_BASE_DIR, "json", "gpt_settings.json")
 MODELS_DIR = os.path.join(_BASE_DIR, "models")
 
 os.makedirs(MODELS_DIR, exist_ok=True)

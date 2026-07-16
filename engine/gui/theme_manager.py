@@ -13,15 +13,15 @@ from engine.atomic_write import atomic_write_json
 
 # ВАЖНОЕ ПРАВИЛО ПРОЕКТА: любое обращение к путям — ТОЛЬКО через BASE_DIR из engine.paths
 try:
-    from engine.paths import BASE_DIR
+    from engine.paths import THEME_SETTINGS_PATH
 
-    THEME_FILE = os.path.join(str(BASE_DIR), "theme_settings.json")
+    THEME_FILE = THEME_SETTINGS_PATH
 except Exception:
     # Fallback для обратной совместимости, если engine.paths ещё не подключен
     _BASE_DIR = os.path.dirname(
         os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
     )
-    THEME_FILE = os.path.join(_BASE_DIR, "theme_settings.json")
+    THEME_FILE = os.path.join(_BASE_DIR, "json", "theme_settings.json")
 
 DEFAULT_LAYOUT_PRESETS = {
     "classic": {

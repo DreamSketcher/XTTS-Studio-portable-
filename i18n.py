@@ -1565,7 +1565,14 @@ def set_language(lang: str) -> None:
 
 def _load_saved_language() -> None:
     try:
-        settings_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "settings.json")
+        try:
+            from engine.paths import SETTINGS_PATH
+
+            settings_path = SETTINGS_PATH
+        except Exception:
+            settings_path = os.path.join(
+                os.path.dirname(os.path.abspath(__file__)), "json", "settings.json"
+            )
         with open(settings_path, "r", encoding="utf-8") as f:
             data = json.load(f)
         lang = data.get("ui_language")

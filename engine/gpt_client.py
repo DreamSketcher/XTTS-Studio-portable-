@@ -50,7 +50,7 @@ class GroqNetworkError(RuntimeError):
 
 # ── paths ──────────────────────────────────────────────────────────────────────
 _BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-_SETTINGS_PATH = os.path.join(_BASE_DIR, "gpt_settings.json")
+_SETTINGS_PATH = os.path.join(_BASE_DIR, "json", "gpt_settings.json")
 
 # ── providers ──────────────────────────────────────────────────────────────────
 # Любой OpenAI-совместимый эндпоинт подходит для "proxy" — просто поменяйте

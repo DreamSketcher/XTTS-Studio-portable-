@@ -14,9 +14,10 @@ import engine.updater as upd
 def tmp_base_dir(tmp_path: Path, monkeypatch):
     base = tmp_path / "base"
     base.mkdir()
+    (base / "json").mkdir(exist_ok=True)
     # Патчим все пути, которые зависят от BASE_DIR
     monkeypatch.setattr(upd, "BASE_DIR", str(base))
-    monkeypatch.setattr(upd, "LOCAL_VERSION_PATH", str(base / "version.json"))
+    monkeypatch.setattr(upd, "LOCAL_VERSION_PATH", str(base / "json" / "version.json"))
     monkeypatch.setattr(upd, "STAGING_DIR", str(base / "_update_staging"))
     monkeypatch.setattr(upd, "BACKUP_DIR", str(base / "_update_backup"))
     monkeypatch.setattr(upd, "ROLLBACK_MARKER", str(base / "_update_pending.json"))
@@ -39,7 +40,7 @@ class TestVersionParsing:
         assert upd.get_local_version() == "0.0.0"
 
     def test_get_local_version_exists(self, tmp_base_dir):
-        (tmp_base_dir / "version.json").write_text(
+        (tmp_base_dir / "json" / "version.json").write_text(
             json.dumps({"version": "2.3.4"}), encoding="utf-8"
         )
         assert upd.get_local_version() == "2.3.4"
@@ -103,7 +104,7 @@ class TestUrlopenRetry:
 class TestCheckUpdate:
     def test_available(self, tmp_base_dir, monkeypatch):
         # local 1.0.0, remote 1.0.1
-        (tmp_base_dir / "version.json").write_text(
+        (tmp_base_dir / "json" / "version.json").write_text(
             json.dumps({"version": "1.0.0"}), encoding="utf-8"
         )
         monkeypatch.setattr(
@@ -127,7 +128,7 @@ class TestCheckUpdate:
         assert result["archive_url"] == "https://example.com/a.zip"
 
     def test_not_available(self, tmp_base_dir, monkeypatch):
-        (tmp_base_dir / "version.json").write_text(
+        (tmp_base_dir / "json" / "version.json").write_text(
             json.dumps({"version": "2.0.0"}), encoding="utf-8"
         )
         monkeypatch.setattr(
@@ -138,7 +139,7 @@ class TestCheckUpdate:
         assert result["available"] is False
 
     def test_needs_manual_reinstall(self, tmp_base_dir, monkeypatch):
-        (tmp_base_dir / "version.json").write_text(
+        (tmp_base_dir / "json" / "version.json").write_text(
             json.dumps({"version": "1.0.0"}), encoding="utf-8"
         )
         monkeypatch.setattr(
@@ -335,13 +336,15 @@ class TestBackupAndMove:
         # создаём рабочие файлы
         (base / "module").mkdir()
         (base / "module" / "a.py").write_text("old", encoding="utf-8")
-        (base / "version.json").write_text(json.dumps({"version": "1.0.0"}), encoding="utf-8")
+        (base / "json" / "version.json").write_text(
+            json.dumps({"version": "1.0.0"}), encoding="utf-8"
+        )
 
         upd._backup_current_files(["module/a.py"])
 
         backup_dir = base / "_update_backup"
         assert (backup_dir / "module" / "a.py").exists()
-        assert (backup_dir / "version.json").exists()
+        assert (backup_dir / "json" / "version.json").exists()
 
         # создаём staged файлы
         staging = base / "_update_staging"
@@ -365,9 +368,9 @@ class TestBackupAndMove:
     def test_rollback(self, tmp_base_dir):
         base = Path(tmp_base_dir)
         (base / "file.py").write_text("new version", encoding="utf-8")
-        (base / "_update_backup").mkdir()
+        (base / "_update_backup" / "json").mkdir(parents=True, exist_ok=True)
         (base / "_update_backup" / "file.py").write_text("old version", encoding="utf-8")
-        (base / "_update_backup" / "version.json").write_text(
+        (base / "_update_backup" / "json" / "version.json").write_text(
             json.dumps({"version": "1.0.0"}), encoding="utf-8"
         )
         marker = {
@@ -418,7 +421,9 @@ class TestBackupAndMove:
 
     def test_collect_diagnostics(self, tmp_base_dir):
         base = Path(tmp_base_dir)
-        (base / "version.json").write_text(json.dumps({"version": "1.2.3"}), encoding="utf-8")
+        (base / "json" / "version.json").write_text(
+            json.dumps({"version": "1.2.3"}), encoding="utf-8"
+        )
         diag = upd.collect_update_diagnostics({"available": False})
         assert "local_version" in diag
         assert "1.2.3" in diag
@@ -428,7 +433,9 @@ class TestApplyUpdateIntegration:
     def test_apply_update_success(self, tmp_base_dir, monkeypatch):
         base = Path(tmp_base_dir)
         # local version
-        (base / "version.json").write_text(json.dumps({"version": "1.0.0"}), encoding="utf-8")
+        (base / "json" / "version.json").write_text(
+            json.dumps({"version": "1.0.0"}), encoding="utf-8"
+        )
         # existing file to be backed up
         (base / "mod").mkdir()
         (base / "mod" / "a.py").write_text("old", encoding="utf-8")
@@ -472,7 +479,9 @@ class TestApplyUpdateIntegration:
 
     def test_apply_update_cancelled(self, tmp_base_dir, monkeypatch):
         base = Path(tmp_base_dir)
-        (base / "version.json").write_text(json.dumps({"version": "1.0.0"}), encoding="utf-8")
+        (base / "json" / "version.json").write_text(
+            json.dumps({"version": "1.0.0"}), encoding="utf-8"
+        )
 
         monkeypatch.setattr(upd.time, "sleep", lambda x: None)
         cancelled = {"cancelled": True}
@@ -519,7 +528,9 @@ class TestArchiveUpdate:
 
     def test_apply_update_from_archive_success(self, tmp_base_dir, monkeypatch, tmp_path):
         base = Path(tmp_base_dir)
-        (base / "version.json").write_text(json.dumps({"version": "1.0.0"}), encoding="utf-8")
+        (base / "json" / "version.json").write_text(
+            json.dumps({"version": "1.0.0"}), encoding="utf-8"
+        )
         (base / "mod").mkdir()
         (base / "mod" / "a.py").write_text("old", encoding="utf-8")
 
@@ -575,12 +586,14 @@ class TestArchiveUpdate:
         assert result is True
         assert (base / "mod" / "a.py").read_bytes() == content_new
         assert (base / "_update_pending.json").exists()
-        local = json.loads((base / "version.json").read_text(encoding="utf-8"))
+        local = json.loads((base / "json" / "version.json").read_text(encoding="utf-8"))
         assert local["version"] == "1.0.1"
 
     def test_apply_update_archive_bad_hash(self, tmp_base_dir, monkeypatch, tmp_path):
         base = Path(tmp_base_dir)
-        (base / "version.json").write_text(json.dumps({"version": "1.0.0"}), encoding="utf-8")
+        (base / "json" / "version.json").write_text(
+            json.dumps({"version": "1.0.0"}), encoding="utf-8"
+        )
         archive, _ = self._make_zip(tmp_path, {"mod/a.py": b"new"})
         payload = archive.read_bytes()
 

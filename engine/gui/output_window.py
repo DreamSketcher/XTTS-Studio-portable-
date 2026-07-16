@@ -134,7 +134,7 @@ def _load_repeat_saved() -> bool:
         pass
     # 3. прямой чтение theme_settings.json
     try:
-        tf = os.path.join(str(BASE_DIR), "theme_settings.json")
+        tf = os.path.join(str(BASE_DIR), "json", "theme_settings.json")
         if os.path.isfile(tf):
             with open(tf, "r", encoding="utf-8") as f:
                 d = json.load(f)
@@ -165,7 +165,7 @@ def _save_repeat_state(val: bool):
         pass
     # fallback в theme_settings.json напрямую
     try:
-        tf = os.path.join(str(BASE_DIR), "theme_settings.json")
+        tf = os.path.join(str(BASE_DIR), "json", "theme_settings.json")
         data = {}
         if os.path.isfile(tf):
             try:

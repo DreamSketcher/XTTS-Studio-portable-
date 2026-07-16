@@ -19,10 +19,17 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 GENERATE_FILES_SCRIPT = PROJECT_ROOT / "tools" / "rebuild_release_files.py"
 GENERATE_MANIFEST_SCRIPT = PROJECT_ROOT / "generate_version_manifest.py"
-VERSION_JSON_PATH = PROJECT_ROOT / "version.json"
-SIGNATURE_PATH = PROJECT_ROOT / "version.json.sig"
-DEFAULT_SIGNING_KEY = Path(r"C:\XTTS Signing Keys\XTTS-Studio-signing-private.pem")
-REGENERATED_RELEASE_FILES = {"version.json", "version.json.sig", "checksums.txt"}
+VERSION_JSON_PATH = PROJECT_ROOT / "json" / "version.json"
+SIGNATURE_PATH = PROJECT_ROOT / "json" / "version.json.sig"
+DEFAULT_SIGNING_KEY = PROJECT_ROOT / "keys" / "XTTS-Studio-signing-private.pem"
+FALLBACK_SIGNING_KEY = Path(r"C:\XTTS Signing Keys\XTTS-Studio-signing-private.pem")
+REGENERATED_RELEASE_FILES = {
+    "version.json",
+    "version.json.sig",
+    "json/version.json",
+    "json/version.json.sig",
+    "checksums.txt",
+}
 BUNDLED_SITE_PACKAGES = PROJECT_ROOT / "python" / "xtts_env" / "Lib" / "site-packages"
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
@@ -32,8 +39,15 @@ if BUNDLED_SITE_PACKAGES.is_dir() and str(BUNDLED_SITE_PACKAGES) not in sys.path
 
 def get_signing_key() -> Path | None:
     configured = os.environ.get("XTTS_UPDATE_SIGNING_KEY", "").strip()
-    candidate = Path(configured) if configured else DEFAULT_SIGNING_KEY
-    return candidate if candidate.is_file() else None
+    if configured:
+        p = Path(configured)
+        if p.is_file():
+            return p
+    if DEFAULT_SIGNING_KEY.is_file():
+        return DEFAULT_SIGNING_KEY
+    if FALLBACK_SIGNING_KEY.is_file():
+        return FALLBACK_SIGNING_KEY
+    return None
 
 
 def run_python_script(script_path: Path, args: list) -> int:
@@ -505,7 +519,13 @@ def verify_release_state() -> bool:
         manifest = json.loads(manifest_bytes.decode("utf-8"))
         files = manifest.get("files", [])
         hashes = manifest.get("sha256", {})
-        forbidden = {"version.json", "version.json.sig", "checksums.txt"}
+        forbidden = {
+            "version.json",
+            "version.json.sig",
+            "json/version.json",
+            "json/version.json.sig",
+            "checksums.txt",
+        }
         overlap = forbidden.intersection(files)
         if overlap:
             raise RuntimeError(f"self-generated files попали в payload: {sorted(overlap)}")
@@ -982,7 +1002,13 @@ def do_push_single_file() -> None:
         input("\nНажмите Enter для продолжения...")
         return
 
-    release_only = {"version.json", "version.json.sig", "checksums.txt"}
+    release_only = {
+        "version.json",
+        "version.json.sig",
+        "json/version.json",
+        "json/version.json.sig",
+        "checksums.txt",
+    }
     if target.replace("\\", "/") in release_only:
         print("  [БЛОКИРОВКА] Release metadata нельзя отправлять по одному.")
         print("  Используйте [1] Обновление для атомарного manifest/signature/checksums.")

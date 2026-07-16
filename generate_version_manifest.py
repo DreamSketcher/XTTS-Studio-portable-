@@ -38,13 +38,19 @@ BUNDLED_SITE_PACKAGES = os.path.join(BASE_DIR, "python", "xtts_env", "Lib", "sit
 if os.path.isdir(BUNDLED_SITE_PACKAGES) and BUNDLED_SITE_PACKAGES not in sys.path:
     sys.path.insert(0, BUNDLED_SITE_PACKAGES)
 
-VERSION_PATH = os.path.join(BASE_DIR, "version.json")
+VERSION_PATH = os.path.join(BASE_DIR, "json", "version.json")
 CHECKSUMS_PATH = os.path.join(BASE_DIR, "checksums.txt")
-SIGNATURE_PATH = os.path.join(BASE_DIR, "version.json.sig")
+SIGNATURE_PATH = os.path.join(BASE_DIR, "json", "version.json.sig")
 # These files describe/sign the payload and must never be members of that same
 # payload. In particular, including version.json.sig creates an impossible
 # self-referential checksum that becomes stale immediately after signing.
-SELF_GENERATED_FILES = {"version.json", "version.json.sig", "checksums.txt"}
+SELF_GENERATED_FILES = {
+    "version.json",
+    "version.json.sig",
+    "json/version.json",
+    "json/version.json.sig",
+    "checksums.txt",
+}
 
 
 _TEXT_SUFFIXES = {
@@ -94,11 +100,18 @@ def _get_previous_files_list() -> list:
     """
     try:
         result = subprocess.run(
-            ["git", "show", "HEAD:version.json"],
+            ["git", "show", "HEAD:json/version.json"],
             cwd=BASE_DIR,
             capture_output=True,
             timeout=15,
         )
+        if result.returncode != 0:
+            result = subprocess.run(
+                ["git", "show", "HEAD:version.json"],
+                cwd=BASE_DIR,
+                capture_output=True,
+                timeout=15,
+            )
         if result.returncode != 0:
             return []
         # version.json — UTF-8 (там кириллица в changelog). Декодируем явно,
@@ -131,13 +144,22 @@ def main():
     )
     args = parser.parse_args()
 
+    default_key = os.path.join(BASE_DIR, "keys", "XTTS-Studio-signing-private.pem")
+    win_key = r"C:\XTTS Signing Keys\XTTS-Studio-signing-private.pem"
+    signing_key = args.signing_key or os.environ.get("XTTS_UPDATE_SIGNING_KEY")
+    if not signing_key:
+        if os.path.isfile(default_key):
+            signing_key = default_key
+        elif os.path.isfile(win_key):
+            signing_key = win_key
+
     if not os.path.exists(VERSION_PATH):
         print(f"Не найден {VERSION_PATH}")
         sys.exit(1)
-    if os.path.exists(SIGNATURE_PATH) and not args.signing_key:
+    if os.path.exists(SIGNATURE_PATH) and not signing_key:
         print(
             "[!] version.json.sig существует: изменение manifest без новой подписи запрещено. "
-            "Передайте --signing-key или XTTS_UPDATE_SIGNING_KEY."
+            "Передайте --signing-key, задайте XTTS_UPDATE_SIGNING_KEY или поместите ключ в keys/XTTS-Studio-signing-private.pem."
         )
         sys.exit(2)
 
@@ -205,14 +227,14 @@ def main():
     with open(VERSION_PATH, "w", encoding="utf-8") as f:
         json.dump(manifest, f, ensure_ascii=False, indent=2)
 
-    if args.signing_key:
+    if signing_key:
         from cryptography.hazmat.primitives import serialization
         from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
         from engine.update_signing import canonical_manifest_bytes
 
         # --signing-key may be a path to a PEM file OR inline key material
         # (PEM text / base64 DER). Inline form is used by CI secrets.
-        key_arg = args.signing_key
+        key_arg = signing_key
         if os.path.isfile(key_arg):
             key_bytes = Path(key_arg).read_bytes()
         else:

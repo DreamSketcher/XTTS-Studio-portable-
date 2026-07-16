@@ -47,7 +47,7 @@ def build(source_root: Path, manifest_path: Path, signature_path: Path, output: 
     output.parent.mkdir(parents=True, exist_ok=True)
     with zipfile.ZipFile(output, "w", compression=zipfile.ZIP_DEFLATED, compresslevel=9) as archive:
         payload = [(relative, source_root / Path(*relative.split("/"))) for relative in files]
-        payload += [("version.json", manifest_path), ("version.json.sig", signature_path)]
+        payload += [("json/version.json", manifest_path), ("json/version.json.sig", signature_path)]
         seen = set()
         for relative, path in sorted(payload, key=lambda item: item[0]):
             if relative in seen:
@@ -65,8 +65,8 @@ def build(source_root: Path, manifest_path: Path, signature_path: Path, output: 
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--source-root", type=Path, default=Path("."))
-    parser.add_argument("--manifest", type=Path, default=Path("version.json"))
-    parser.add_argument("--signature", type=Path, default=Path("version.json.sig"))
+    parser.add_argument("--manifest", type=Path, default=Path("json/version.json"))
+    parser.add_argument("--signature", type=Path, default=Path("json/version.json.sig"))
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
     print(build(args.source_root, args.manifest, args.signature, args.output))

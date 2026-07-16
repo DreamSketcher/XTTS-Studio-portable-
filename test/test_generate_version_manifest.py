@@ -77,7 +77,8 @@ def git_repo(tmp_path):
 
 
 def _write_version_json(repo: Path, data: dict):
-    (repo / "version.json").write_text(
+    (repo / "json").mkdir(exist_ok=True)
+    (repo / "json" / "version.json").write_text(
         json.dumps(data, ensure_ascii=False, indent=2),
         encoding="utf-8",
     )
@@ -108,7 +109,7 @@ def test_sha256_matches_real_file_content(git_repo):
     r = _run_generator(git_repo, "--version", "1.0.1")
     assert r.returncode == 0, r.stdout + r.stderr
 
-    manifest = json.loads((git_repo / "version.json").read_text(encoding="utf-8"))
+    manifest = json.loads((git_repo / "json" / "version.json").read_text(encoding="utf-8"))
     import hashlib
 
     expected = hashlib.sha256(b"print('hello')").hexdigest()
@@ -132,7 +133,7 @@ def test_missing_file_is_skipped_without_crashing(git_repo):
     r = _run_generator(git_repo, "--version", "1.0.1")
     assert r.returncode == 0, r.stdout + r.stderr
 
-    manifest = json.loads((git_repo / "version.json").read_text(encoding="utf-8"))
+    manifest = json.loads((git_repo / "json" / "version.json").read_text(encoding="utf-8"))
     assert "a.py" in manifest["sha256"]
     assert "does_not_exist.py" not in manifest["sha256"]
 
@@ -157,14 +158,14 @@ def test_removed_files_detects_file_missing_from_new_release(git_repo):
     # Симулируем рефакторинг: old.py убран из проекта и из списка files
     # (как это сделал бы generate_version_files.py перед этим скриптом)
     (git_repo / "old.py").unlink()
-    manifest = json.loads((git_repo / "version.json").read_text(encoding="utf-8"))
+    manifest = json.loads((git_repo / "json" / "version.json").read_text(encoding="utf-8"))
     manifest["files"] = ["keep.py"]
     _write_version_json(git_repo, manifest)
 
     r = _run_generator(git_repo, "--version", "1.0.1")
     assert r.returncode == 0, r.stdout + r.stderr
 
-    manifest = json.loads((git_repo / "version.json").read_text(encoding="utf-8"))
+    manifest = json.loads((git_repo / "json" / "version.json").read_text(encoding="utf-8"))
     assert manifest["removed_files"] == ["old.py"]
 
 
@@ -184,7 +185,7 @@ def test_removed_files_empty_when_nothing_removed(git_repo):
     r = _run_generator(git_repo, "--version", "1.0.1")
     assert r.returncode == 0, r.stdout + r.stderr
 
-    manifest = json.loads((git_repo / "version.json").read_text(encoding="utf-8"))
+    manifest = json.loads((git_repo / "json" / "version.json").read_text(encoding="utf-8"))
     assert manifest["removed_files"] == []
 
 
@@ -206,7 +207,7 @@ def test_removed_files_empty_on_first_ever_release(git_repo):
     r = _run_generator(git_repo, "--version", "1.0.0")
     assert r.returncode == 0, r.stdout + r.stderr
 
-    manifest = json.loads((git_repo / "version.json").read_text(encoding="utf-8"))
+    manifest = json.loads((git_repo / "json" / "version.json").read_text(encoding="utf-8"))
     assert manifest["removed_files"] == []
 
 
@@ -230,14 +231,14 @@ def test_removed_files_accumulate_across_multiple_releases(git_repo):
 
     # Релиз 1.0.1: убираем a.py
     (git_repo / "a.py").unlink()
-    manifest = json.loads((git_repo / "version.json").read_text(encoding="utf-8"))
+    manifest = json.loads((git_repo / "json" / "version.json").read_text(encoding="utf-8"))
     manifest["files"] = ["b.py", "c.py"]
     _write_version_json(git_repo, manifest)
     r = _run_generator(git_repo, "--version", "1.0.1")
     assert r.returncode == 0, r.stdout + r.stderr
     _commit(git_repo, "release 1.0.1")
 
-    manifest = json.loads((git_repo / "version.json").read_text(encoding="utf-8"))
+    manifest = json.loads((git_repo / "json" / "version.json").read_text(encoding="utf-8"))
     assert manifest["removed_files"] == ["a.py"]
 
     # Релиз 1.0.2: убираем ещё и b.py — a.py должен остаться в списке
@@ -247,7 +248,7 @@ def test_removed_files_accumulate_across_multiple_releases(git_repo):
     r = _run_generator(git_repo, "--version", "1.0.2")
     assert r.returncode == 0, r.stdout + r.stderr
 
-    manifest = json.loads((git_repo / "version.json").read_text(encoding="utf-8"))
+    manifest = json.loads((git_repo / "json" / "version.json").read_text(encoding="utf-8"))
     assert sorted(manifest["removed_files"]) == [
         "a.py",
         "b.py",
@@ -273,14 +274,14 @@ def test_removed_files_self_heals_when_file_reappears(git_repo):
 
     # 1.0.1: убрали a.py
     (git_repo / "a.py").unlink()
-    manifest = json.loads((git_repo / "version.json").read_text(encoding="utf-8"))
+    manifest = json.loads((git_repo / "json" / "version.json").read_text(encoding="utf-8"))
     manifest["files"] = ["b.py"]
     _write_version_json(git_repo, manifest)
     r = _run_generator(git_repo, "--version", "1.0.1")
     assert r.returncode == 0, r.stdout + r.stderr
     _commit(git_repo, "release 1.0.1")
 
-    manifest = json.loads((git_repo / "version.json").read_text(encoding="utf-8"))
+    manifest = json.loads((git_repo / "json" / "version.json").read_text(encoding="utf-8"))
     assert manifest["removed_files"] == ["a.py"]
 
     # 1.0.2: a.py вернули обратно в проект
@@ -290,7 +291,7 @@ def test_removed_files_self_heals_when_file_reappears(git_repo):
     r = _run_generator(git_repo, "--version", "1.0.2")
     assert r.returncode == 0, r.stdout + r.stderr
 
-    manifest = json.loads((git_repo / "version.json").read_text(encoding="utf-8"))
+    manifest = json.loads((git_repo / "json" / "version.json").read_text(encoding="utf-8"))
     assert (
         manifest["removed_files"] == []
     ), "файл, вернувшийся в files, не должен оставаться в removed_files"
@@ -320,7 +321,7 @@ def test_handles_cyrillic_changelog_without_crashing(git_repo):
     _commit(git_repo, "release 1.0.0")
 
     (git_repo / "old.py").unlink()
-    manifest = json.loads((git_repo / "version.json").read_text(encoding="utf-8"))
+    manifest = json.loads((git_repo / "json" / "version.json").read_text(encoding="utf-8"))
     manifest["files"] = ["a.py"]
     _write_version_json(git_repo, manifest)
 
@@ -331,7 +332,7 @@ def test_handles_cyrillic_changelog_without_crashing(git_repo):
     assert "UnicodeDecodeError" not in r.stdout
     assert "UnicodeDecodeError" not in r.stderr
 
-    manifest = json.loads((git_repo / "version.json").read_text(encoding="utf-8"))
+    manifest = json.loads((git_repo / "json" / "version.json").read_text(encoding="utf-8"))
     assert manifest["removed_files"] == [
         "old.py"
     ], "removed_files должен посчитаться корректно даже при кириллице в предыдущем коммите"

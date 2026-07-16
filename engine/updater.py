@@ -56,7 +56,7 @@ def _raw_base_for(commit_sha: str = None) -> str:
 
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-LOCAL_VERSION_PATH = os.path.join(BASE_DIR, "version.json")
+LOCAL_VERSION_PATH = os.path.join(BASE_DIR, "json", "version.json")
 
 # Обновление больше не пишет сразу в рабочие файлы.
 # Сначала всё скачивается и проверяется в STAGING_DIR, и только если
@@ -476,7 +476,12 @@ def _verify_staged_files(files: list, sha256_map: dict) -> list:
         if not expected:
             # version.json / version.json.sig may be inside the archive without
             # being members of the payload hash map — skip only those two.
-            if rel in ("version.json", "version.json.sig"):
+            if rel in (
+                "version.json",
+                "version.json.sig",
+                "json/version.json",
+                "json/version.json.sig",
+            ):
                 continue
             print(f"[Updater] В манифесте нет SHA256 для {rel} — файл отклонён")
             failed.append(rel)
@@ -539,7 +544,9 @@ def _backup_current_files(files: list):
             os.makedirs(os.path.dirname(dst), exist_ok=True)
             shutil.copy2(src, dst)
     if os.path.exists(LOCAL_VERSION_PATH):
-        shutil.copy2(LOCAL_VERSION_PATH, os.path.join(BACKUP_DIR, "version.json"))
+        dst_ver = os.path.join(BACKUP_DIR, "json", "version.json")
+        os.makedirs(os.path.dirname(dst_ver), exist_ok=True)
+        shutil.copy2(LOCAL_VERSION_PATH, dst_ver)
 
 
 def _move_staged_to_live(files: list):
@@ -683,12 +690,20 @@ def _apply_update_from_archive(
     # whatever the archive actually contained (minus self-describing metadata
     # that is handled separately).
     payload_files = [
-        p for p in (files or extracted) if p not in ("version.json", "version.json.sig")
+        p
+        for p in (files or extracted)
+        if p
+        not in ("version.json", "version.json.sig", "json/version.json", "json/version.json.sig")
     ]
     # Always include any extra payload members that the archive brought in so
     # newly-added files are installed even if the caller's list is stale.
     for rel in extracted:
-        if rel not in payload_files and rel not in ("version.json", "version.json.sig"):
+        if rel not in payload_files and rel not in (
+            "version.json",
+            "version.json.sig",
+            "json/version.json",
+            "json/version.json.sig",
+        ):
             payload_files.append(rel)
 
     try:
@@ -717,7 +732,9 @@ def _apply_update_from_archive(
         try:
             remote_info = get_remote_version_info()
         except Exception:
-            staged_manifest = os.path.join(STAGING_DIR, "version.json")
+            staged_manifest = os.path.join(STAGING_DIR, "json", "version.json")
+            if not os.path.isfile(staged_manifest):
+                staged_manifest = os.path.join(STAGING_DIR, "version.json")
             if os.path.isfile(staged_manifest):
                 try:
                     with open(staged_manifest, "r", encoding="utf-8") as fp:
@@ -727,9 +744,12 @@ def _apply_update_from_archive(
 
     # version.json is written by _apply_from_staging from remote_info; do not
     # also move a staged copy as a regular payload file (would race).
-    move_files = [p for p in payload_files if p != "version.json"]
+    move_files = [p for p in payload_files if p not in ("version.json", "json/version.json")]
     # But still move version.json.sig if present.
-    if os.path.isfile(os.path.join(STAGING_DIR, "version.json.sig")):
+    if os.path.isfile(os.path.join(STAGING_DIR, "json", "version.json.sig")):
+        if "json/version.json.sig" not in move_files:
+            move_files.append("json/version.json.sig")
+    elif os.path.isfile(os.path.join(STAGING_DIR, "version.json.sig")):
         if "version.json.sig" not in move_files:
             move_files.append("version.json.sig")
 
@@ -966,8 +986,11 @@ def rollback_update() -> bool:
                 live = _safe_path_under(BASE_DIR, rel)
                 os.makedirs(os.path.dirname(live), exist_ok=True)
                 shutil.copy2(backup_src, live)
-        backup_version = os.path.join(BACKUP_DIR, "version.json")
+        backup_version = os.path.join(BACKUP_DIR, "json", "version.json")
+        if not os.path.exists(backup_version):
+            backup_version = os.path.join(BACKUP_DIR, "version.json")
         if os.path.exists(backup_version):
+            os.makedirs(os.path.dirname(LOCAL_VERSION_PATH), exist_ok=True)
             shutil.copy2(backup_version, LOCAL_VERSION_PATH)
         print(f"[Updater] Откат выполнен, версия восстановлена: {marker.get('old_version', '?')}")
         return True

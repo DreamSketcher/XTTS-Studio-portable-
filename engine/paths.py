@@ -6,6 +6,7 @@
 - для неизвестных имён — fallback через __getattr__ (PEP 562),
   чтобы не падать с ImportError при расхождении версий модулей
 """
+
 import os
 
 # Базовая директория проекта: <repo_root>
@@ -13,6 +14,7 @@ import os
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 # --- Основные директории (классические имена из проекта) ---
+JSON_DIR = os.path.join(BASE_DIR, "json")
 OUTPUT_DIR = os.path.join(BASE_DIR, "outputs")
 BACKUP_DIR = os.path.join(BASE_DIR, "reference", "backup")  # совместимо с VoiceManager
 REF_DIR = os.path.join(BASE_DIR, "reference")
@@ -24,11 +26,14 @@ CACHE_DIR = os.path.join(BASE_DIR, "cache")
 # --- Файлы ---
 ICON_PATH = os.path.join(BASE_DIR, "icon.ico")
 ICON_PNG_PATH = os.path.join(BASE_DIR, "icon.png")
-SETTINGS_PATH = os.path.join(BASE_DIR, "settings.json")
-THEME_SETTINGS_PATH = os.path.join(BASE_DIR, "theme_settings.json")
-CHAT_HISTORY_PATH = os.path.join(BASE_DIR, "chat_history.json")
-HISTORY_PATH = os.path.join(BASE_DIR, "history.json")
-WORD_RULES_PATH = os.path.join(BASE_DIR, "word_rules.json")
+SETTINGS_PATH = os.path.join(JSON_DIR, "settings.json")
+THEME_SETTINGS_PATH = os.path.join(JSON_DIR, "theme_settings.json")
+CHAT_HISTORY_PATH = os.path.join(JSON_DIR, "chat_history.json")
+HISTORY_PATH = os.path.join(JSON_DIR, "history.json")
+WORD_RULES_PATH = os.path.join(JSON_DIR, "word_rules.json")
+GPT_SETTINGS_PATH = os.path.join(JSON_DIR, "gpt_settings.json")
+VERSION_PATH = os.path.join(JSON_DIR, "version.json")
+VERSION_SIG_PATH = os.path.join(JSON_DIR, "version.json.sig")
 
 # Для обратной совместимости — старые алиасы
 VOICE_DIR = REF_DIR
@@ -38,10 +43,9 @@ AUDIO_OUTPUT_DIR = OUTPUT_DIR
 # --- Динамический fallback ---
 # Если какой-то модуль делает: from engine.paths import SOMETHING_UNKNOWN
 # мы не падаем с ImportError, а отдаём разумный путь по умолчанию.
-# Это решает рассинхрон версий (например logging_utils → LOG_DIR),
-# о котором сообщил пользователь 2026-07-09.
 _FALLBACK_MAP = {
     # явные маппинги, если имя неочевидно
+    "JSON_DIR": JSON_DIR,
     "LOG_DIR": LOG_DIR,
     "LOGS_DIR": LOG_DIR,
     "OUTPUTS_DIR": OUTPUT_DIR,
@@ -53,6 +57,14 @@ _FALLBACK_MAP = {
     "CACHE_DIR": CACHE_DIR,
     "MODEL_PATH": MODEL_DIR,
     "MODELS_DIR": MODEL_DIR,
+    "SETTINGS_PATH": SETTINGS_PATH,
+    "THEME_SETTINGS_PATH": THEME_SETTINGS_PATH,
+    "CHAT_HISTORY_PATH": CHAT_HISTORY_PATH,
+    "HISTORY_PATH": HISTORY_PATH,
+    "WORD_RULES_PATH": WORD_RULES_PATH,
+    "GPT_SETTINGS_PATH": GPT_SETTINGS_PATH,
+    "VERSION_PATH": VERSION_PATH,
+    "VERSION_SIG_PATH": VERSION_SIG_PATH,
 }
 
 
@@ -66,19 +78,19 @@ def __getattr__(name: str):
     # 2. *_DIR → <BASE_DIR>/<name_lower_without__dir>
     if name.endswith("_DIR"):
         sub = name[:-4].lower()
-        # частые варианты
         guess = os.path.join(BASE_DIR, sub)
         return guess
-    # 3. *_PATH → <BASE_DIR>/<name_lower>.json/.ico ?
+    # 3. *_PATH → <JSON_DIR>/<name_lower>.json или <BASE_DIR>/<name_lower>.* ?
     if name.endswith("_PATH"):
         base = name[:-5].lower()
-        # пробуем несколько расширений
-        for ext in (".json", ".ico", ".png", ".txt", ".log", ""):
+        json_cand = os.path.join(JSON_DIR, base + ".json")
+        if os.path.exists(json_cand):
+            return json_cand
+        for ext in (".ico", ".png", ".txt", ".log", ""):
             cand = os.path.join(BASE_DIR, base + ext)
-            # возвращаем первый вариант, даже если файла нет — вызывающий код
-            # обычно сам проверяет существование
-            return cand
-        return os.path.join(BASE_DIR, base)
+            if os.path.exists(cand):
+                return cand
+        return json_cand
     # 4. общий случай — вложенная папка по имени в нижнем регистре
     return os.path.join(BASE_DIR, name.lower())
 
@@ -88,6 +100,7 @@ def __dir__():
         list(globals().keys())
         + list(_FALLBACK_MAP.keys())
         + [
+            "JSON_DIR",
             "LOG_DIR",
             "REF_DIR",
             "MODEL_DIR",
@@ -95,6 +108,12 @@ def __dir__():
             "CACHE_DIR",
             "SETTINGS_PATH",
             "THEME_SETTINGS_PATH",
+            "CHAT_HISTORY_PATH",
+            "HISTORY_PATH",
+            "WORD_RULES_PATH",
+            "GPT_SETTINGS_PATH",
+            "VERSION_PATH",
+            "VERSION_SIG_PATH",
             "VOICE_DIR",
             "VOICES_DIR",
             "AUDIO_OUTPUT_DIR",

@@ -13,8 +13,8 @@ if str(PROJECT_ROOT) not in sys.path:
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--manifest", type=Path, default=Path("version.json"))
-    parser.add_argument("--signature", type=Path, default=Path("version.json.sig"))
+    parser.add_argument("--manifest", type=Path, default=Path("json/version.json"))
+    parser.add_argument("--signature", type=Path, default=Path("json/version.json.sig"))
     parser.add_argument("--private-key", type=Path, default=None)
     args = parser.parse_args()
 
@@ -24,7 +24,17 @@ def main():
         else None
     )
     if key_path is None:
-        parser.error("pass --private-key or set XTTS_UPDATE_SIGNING_KEY")
+        default_key = PROJECT_ROOT / "keys" / "XTTS-Studio-signing-private.pem"
+        win_key = Path(r"C:\XTTS Signing Keys\XTTS-Studio-signing-private.pem")
+        if default_key.is_file():
+            key_path = default_key
+        elif win_key.is_file():
+            key_path = win_key
+
+    if key_path is None:
+        parser.error(
+            "pass --private-key, set XTTS_UPDATE_SIGNING_KEY or place key in keys/XTTS-Studio-signing-private.pem"
+        )
 
     from cryptography.hazmat.primitives import serialization
     from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
