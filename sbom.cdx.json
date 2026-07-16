@@ -833,10 +833,10 @@
     },
     {
       "type": "library",
-      "bom-ref": "pkg:pypi/safetensors@0.7.0",
+      "bom-ref": "pkg:pypi/safetensors@0.8.0",
       "name": "safetensors",
-      "version": "0.7.0",
-      "purl": "pkg:pypi/safetensors@0.7.0"
+      "version": "0.8.0",
+      "purl": "pkg:pypi/safetensors@0.8.0"
     },
     {
       "type": "library",
@@ -1239,7 +1239,7 @@
         "pkg:pypi/regex@2026.5.9",
         "pkg:pypi/requests@2.34.2",
         "pkg:pypi/rich@15.0.0",
-        "pkg:pypi/safetensors@0.7.0",
+        "pkg:pypi/safetensors@0.8.0",
         "pkg:pypi/scikit-learn@1.9.0",
         "pkg:pypi/scipy@1.17.1",
         "pkg:pypi/shellingham@1.5.4",

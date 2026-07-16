@@ -1,5 +1,5 @@
 {
-  "version": "1.1.302",
+  "version": "1.1.303",
   "files": [
     ".gitattributes",
     ".pre-commit-config.yaml",
@@ -281,8 +281,8 @@
     "i18n.py": "ed1ea5ee65452202303cfe2e14fade4c37313b2e3b863b867732808444b021c8",
     "json/rvc_catalog_seed.json": "bec10a0686e29f80c928aa7bf2ab8b035f461efbd388a41189c15712b3c63235",
     "pyproject.toml": "0d0733a3de8858902a57510c8c6ec463b61db21b767246ed3a65303fd7207a92",
-    "requirements.txt": "ec79079066fea4f034ba7886e59980a9d6cb7b157d9846630b77c5588c273454",
-    "sbom.cdx.json": "f4fcc03a7400404f1e8314c649d5b686ec71369b4b9099794baecd7ff3d8f25f",
+    "requirements.txt": "4984fb232a9e15055f1f788527a41a58603b2fc541a668e42dcac17a4d150e98",
+    "sbom.cdx.json": "1b65d377103400103b7a186e57dd5f5c52714509129b6c2c0457e673eab1801b",
     "update_manifest_public.pem": "051a740b793d2e147217c365a1c0b85e13131cc330904289f43969f17618f587"
   },
   "removed_files": [
