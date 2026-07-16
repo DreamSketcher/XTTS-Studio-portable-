@@ -38,7 +38,8 @@ def build(source_root: Path, manifest_path: Path, signature_path: Path, output: 
     for relative in files:
         path = source_root / Path(*relative.split("/"))
         if not path.is_file():
-            missing.append(relative)
+            if relative in expected:
+                missing.append(relative)
         elif release_sha256_file(path, relative).lower() != str(expected.get(relative, "")).lower():
             mismatched.append(relative)
     if missing or mismatched:
@@ -46,7 +47,11 @@ def build(source_root: Path, manifest_path: Path, signature_path: Path, output: 
 
     output.parent.mkdir(parents=True, exist_ok=True)
     with zipfile.ZipFile(output, "w", compression=zipfile.ZIP_DEFLATED, compresslevel=9) as archive:
-        payload = [(relative, source_root / Path(*relative.split("/"))) for relative in files]
+        payload = [
+            (relative, source_root / Path(*relative.split("/")))
+            for relative in files
+            if (source_root / Path(*relative.split("/"))).is_file()
+        ]
         payload += [("json/version.json", manifest_path), ("json/version.json.sig", signature_path)]
         seen = set()
         for relative, path in sorted(payload, key=lambda item: item[0]):
