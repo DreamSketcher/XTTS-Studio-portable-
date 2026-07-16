@@ -10,6 +10,7 @@
 
 PATCH 2026-07-15: плавный slide боковой панели через AnimationManager.
 """
+
 import json
 from engine.atomic_write import atomic_write_json
 import os

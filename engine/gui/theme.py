@@ -6,6 +6,7 @@
 сохраняют выбор в settings.json, apply_theme() настраивает customtkinter
 и палитру Colors под текущую тему.
 """
+
 import ctypes
 import json
 from engine.atomic_write import atomic_write_json

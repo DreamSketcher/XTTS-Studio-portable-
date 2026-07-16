@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 """engine/history_store.py — хранилище истории генераций (перенесено из gui.py: HISTORY_PATH, _save_history)."""
+
 import json
 import os
 from datetime import datetime
