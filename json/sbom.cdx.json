@@ -315,13 +315,6 @@
     },
     {
       "type": "library",
-      "bom-ref": "pkg:pypi/fairseq@0.12.3.1",
-      "name": "fairseq",
-      "version": "0.12.3.1",
-      "purl": "pkg:pypi/fairseq@0.12.3.1"
-    },
-    {
-      "type": "library",
       "bom-ref": "pkg:pypi/faiss-cpu@1.14.3",
       "name": "faiss-cpu",
       "version": "1.14.3",
@@ -1340,7 +1333,6 @@
         "pkg:pypi/docopt@0.6.2",
         "pkg:pypi/einops@0.8.2",
         "pkg:pypi/encodec@0.1.1",
-        "pkg:pypi/fairseq@0.12.3.1",
         "pkg:pypi/faiss-cpu@1.14.3",
         "pkg:pypi/fastapi@0.139.0",
         "pkg:pypi/ffmpeg-python@0.2.0",
