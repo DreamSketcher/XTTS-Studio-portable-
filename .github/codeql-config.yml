@@ -4,13 +4,11 @@
 # срабатываний на сторонних библиотеках/моделях.
 name: "XTTS Studio CodeQL config"
 
-paths:
-  - engine
-  - tools
-  - test
-  - gui.py
-  - i18n.py
-  - generate_version_manifest.py
+# paths: намеренно не задан. Баг в CodeQL Python-экстракторе (walk_dir /
+# exclude_pip_21_3_build_dir_options) падает с NotADirectoryError, если в paths:
+# попадает одиночный файл (не директория) — а нам нужно включить gui.py, i18n.py
+# и generate_version_manifest.py наравне с engine/tools/test. Без явного paths:
+# сканируется всё, что НЕ попало в paths-ignore ниже — этого достаточно.
 
 paths-ignore:
   - python
