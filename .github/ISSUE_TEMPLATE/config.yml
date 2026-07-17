@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Security vulnerability (private)
+    url: https://github.com/DreamSketcher/XTTS-Studio-AI/security/advisories/new
+    about: Для security-уязвимостей используйте Private Vulnerability Reporting, а не публичный issue.
+  - name: Документация / Documentation
+    url: https://github.com/DreamSketcher/XTTS-Studio-AI/tree/main/docs
+    about: README и DOCUMENTATION (RU/EN) перед открытием issue.

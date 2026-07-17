@@ -32,6 +32,18 @@ XTTS Studio processes voice references, generated audio and local models with th
 - Cloud AI providers receive the text sent to them. Local XTTS/RVC generation does not require sending voice or text to a cloud provider.
 - Never attach `gpt_settings.json`, histories, voice references or generated private material to a public issue.
 
+## Dependency vulnerability gate (pip-audit)
+
+CI runs `tools/pip_audit_gate.py` over `requirements.txt`. `pip-audit` reports known advisories but not their severity, so the gate resolves each advisory's severity from OSV and applies this policy:
+
+- **Critical / High** → fail the build, **unless** the advisory is listed in `.security/pip-audit-allowlist.yml`;
+- **Medium / Low** → warning (does not fail);
+- any **expired** allowlist entry → fail the build.
+
+`.security/pip-audit-allowlist.yml` is the registry of documented exceptions. Every entry **must** carry `id`, `package`, `reason`, `expires_at` (and `issue_link`). `expires_at` is a quarterly re-evaluation trigger: on expiry CI turns red again until each entry is renewed or the advisory is resolved.
+
+**Deviation from "Critical always fails".** The frozen ML stack that XTTS v2 and RVC depend on (`torch==2.2.2`, `transformers==4.38.2`) carries Critical CVEs with no compatible fix in the near term — bumping torch/transformers breaks the stack. Therefore a Critical advisory **is** suppressible via the allowlist, but **only** as an explicit, dated, justified exception, never silently. A new Critical CVE that is not in the allowlist still fails the build. The exceptions are recorded per-advisory with the specific reason the vulnerable code path is unreachable or mitigated in this project (e.g. `torch.load` trust model, unused model classes, eager-inference-only), and are mirrored in [SECURITY_BASELINE.md](./SECURITY_BASELINE.md).
+
 ## Release security requirements
 
 A production release is expected to have:
@@ -40,7 +52,7 @@ A production release is expected to have:
 2. path-confined updater operations;
 3. a signed Windows artifact and published SHA-256 checksums;
 4. a generated SBOM;
-5. dependency vulnerability review;
+5. a `pip-audit` blocking gate for High/Critical CVE with an explicit allowlist (see "Dependency vulnerability gate");
 6. Windows smoke tests;
 7. no plaintext API credentials;
 8. an explicit trust decision before loading unsigned pickle/PyTorch checkpoints.

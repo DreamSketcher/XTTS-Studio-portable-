@@ -477,6 +477,10 @@ LANGUAGES = {
         "local_select_model_file_title": "Выберите файл модели",
         "local_move_model_title": "Перемещение модели",
         "local_move_model_msg": "Выбранный файл модели будет перемещен в папку проекта /models/. Продолжить?",
+        "local_unverified_warn_title": "Модель не проверена",
+        "local_unverified_warn_msg": "Эта модель добавлена вручную и не прошла проверку целостности каталога (SHA-256/размер). Запускайте только модели из доверенных источников. Всё равно продолжить?",
+        "license_notice_title": "Лицензионное уведомление",
+        "license_notice_msg": "Сторонние RVC- и GGUF-модели могут иметь лицензии, ограничивающие коммерческое использование. Возможность скачать модель не означает разрешения на коммерческое использование — проверьте лицензию у автора модели. Продолжить загрузку?",
         "local_model_added_title": "Модель добавлена",
         "local_model_added_msg": "«{}» перенесена в /models/ и активирована.",
         # ── Вкладка «Общие» (заглушка) ──
@@ -1243,6 +1247,10 @@ LANGUAGES = {
         "local_select_model_file_title": "Select a model file",
         "local_move_model_title": "Move model",
         "local_move_model_msg": "The selected model file will be moved into the project's /models/ folder. Continue?",
+        "local_unverified_warn_title": "Unverified model",
+        "local_unverified_warn_msg": "This model was added manually and did not pass the catalog integrity check (SHA-256/size). Only run models from trusted sources. Continue anyway?",
+        "license_notice_title": "License notice",
+        "license_notice_msg": "Third-party RVC and GGUF models may carry licenses that restrict commercial use. The ability to download a model does not imply permission for commercial use — check the model's license with its author. Continue the download?",
         "local_model_added_title": "Model added",
         "local_model_added_msg": "\u00ab{}\u00bb has been moved to /models/ and activated.",
         # ── "General" tab (placeholder) ──

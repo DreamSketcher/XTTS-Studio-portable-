@@ -1,0 +1,62 @@
+# Dependabot (TASK-016).
+#
+# Политика:
+#   • security updates: еженедельно — критично, откладывать нельзя;
+#   • version updates: ежемесячно — меньше шума (pip/pip-audit/codeQL меняются быстро);
+#   • ML-стек (torch/torchaudio/torchvision) — сгруппирован в один PR: они должны
+#     двигаться вместе (ABI-совместимость, см. SECURITY_BASELINE). TTS/transformers
+#     и rvc-python намеренно НЕ здесь — они ставятся отдельно (см. requirements.txt
+#     комментарии про fairseq/rvc-python --no-deps).
+
+version: 2
+
+updates:
+  # pip security updates (еженедельно)
+  - package-ecosystem: pip
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+      timezone: Europe/Moscow
+    open-pull-requests-limit: 5
+    allow:
+      # только security-updates (version-updates идут отдельным monthly-экземпляром)
+      - dependency-type: all
+    labels:
+      - security
+      - dependencies
+    commit-message:
+      prefix: "security(deps)"
+
+  # pip version updates (ежемесячно — меньше шума)
+  - package-ecosystem: pip
+    directory: /
+    schedule:
+      interval: monthly
+    open-pull-requests-limit: 10
+    labels:
+      - dependencies
+    groups:
+      # ML-стек движется одним PR (ABI-совместимость)
+      pytorch-ml-stack:
+        patterns:
+          - "torch"
+          - "torchaudio"
+          - "torchvision"
+        update-types:
+          - minor
+          - patch
+    commit-message:
+      prefix: "deps"
+
+  # GitHub Actions
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
+    labels:
+      - dependencies
+      - github-actions
+    commit-message:
+      prefix: "ci(deps)"

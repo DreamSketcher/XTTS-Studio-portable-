@@ -1,0 +1,21 @@
+# Конфигурация CodeQL (TASK-016).
+# Bundled-окружение (python/, library/) и пользовательские данные (models/, outputs/,
+# library/) — не наш код: не отдавать их на анализ, чтобы не было шума и ложных
+# срабатываний на сторонних библиотеках/моделях.
+name: "XTTS Studio CodeQL config"
+
+paths:
+  - engine
+  - tools
+  - test
+  - gui.py
+  - i18n.py
+  - generate_version_manifest.py
+
+paths-ignore:
+  - python
+  - library
+  - models
+  - outputs
+  - reference
+  - node_modules

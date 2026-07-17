@@ -6,6 +6,7 @@ engine/local_llm_client.py — локальные GGUF-модели через l
 import http.client
 import json
 import os
+import hashlib
 import shutil
 import socket
 import ssl
@@ -65,6 +66,8 @@ LOCAL_MODEL_CATALOG = [
         "description": "Очень компактная модель для слабых CPU. Подходит для тестов и простых задач.",
         "download_link": "https://huggingface.co/TheBloke/TinyLlama-1.1B-Chat-v1.0-GGUF/resolve/main/tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf",
         "filename": "tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf",
+        "sha256": "9fecc3b3cd76bba89d504f29b616eedf7da85b96540e490ca5824d3f7d2776a0",
+        "size_bytes": 668788096,
     },
     {
         "id": "phi-3-mini-3.8b-q4",
@@ -75,6 +78,8 @@ LOCAL_MODEL_CATALOG = [
         "description": "Хороший баланс качества и скорости. Работает на CPU и средних GPU.",
         "download_link": "https://huggingface.co/bartowski/Phi-3-mini-4k-instruct-GGUF/resolve/main/Phi-3-mini-4k-instruct-Q4_K_M.gguf",
         "filename": "Phi-3-mini-4k-instruct-Q4_K_M.gguf",
+        "sha256": "28a89b4ddb5766355f24e362ae4078b4c35b9ca9568df5fc9e6d9aeee4dee834",
+        "size_bytes": 2393231360,
     },
     {
         "id": "qwen2.5-7b-q4",
@@ -85,6 +90,8 @@ LOCAL_MODEL_CATALOG = [
         "description": "Сильная многоязычная модель. Требует ~4.5 GB RAM/VRAM.",
         "download_link": "https://huggingface.co/bartowski/Qwen2.5-7B-Instruct-GGUF/resolve/main/Qwen2.5-7B-Instruct-Q4_K_M.gguf",
         "filename": "Qwen2.5-7B-Instruct-Q4_K_M.gguf",
+        "sha256": "65b8fcd92af6b4fefa935c625d1ac27ea29dcb6ee14589c55a8f115ceaaa1423",
+        "size_bytes": 4683074240,
     },
     {
         "id": "llama-3.1-8b-q4",
@@ -95,6 +102,8 @@ LOCAL_MODEL_CATALOG = [
         "description": "Популярная универсальная модель. Требует ~5 GB RAM/VRAM.",
         "download_link": "https://huggingface.co/bartowski/Meta-Llama-3.1-8B-Instruct-GGUF/resolve/main/Meta-Llama-3.1-8B-Instruct-Q4_K_M.gguf",
         "filename": "Meta-Llama-3.1-8B-Instruct-Q4_K_M.gguf",
+        "sha256": "7b064f5842bf9532c91456deda288a1b672397a54fa729aa665952863033557c",
+        "size_bytes": 4920739232,
     },
     {
         "id": "mistral-7b-q4",
@@ -105,8 +114,114 @@ LOCAL_MODEL_CATALOG = [
         "description": "Быстрая и качественная модель для диалогов. Требует ~4.5 GB RAM/VRAM.",
         "download_link": "https://huggingface.co/TheBloke/Mistral-7B-Instruct-v0.2-GGUF/resolve/main/mistral-7b-instruct-v0.2.Q4_K_M.gguf",
         "filename": "mistral-7b-instruct-v0.2.Q4_K_M.gguf",
+        "sha256": "3e0039fd0273fcbebb49228943b17831aadd55cbcbf56f0af00499be2040ccf9",
+        "size_bytes": 4368439584,
     },
 ]
+
+
+# ── Валидация имени файла и целостности (TASK-004, TASK-007) ─────────────────────
+# Запрет «опасных» имён до построения пути, чтобы нельзя было записать .gguf за
+# пределами MODELS_DIR (traversal/absolute/reserved-Windows-имена/control-chars).
+_WIN_RESERVED_NAMES = (
+    {"CON", "PRN", "AUX", "NUL"}
+    | {f"COM{i}" for i in range(1, 10)}
+    | {f"LPT{i}" for i in range(1, 10)}
+)
+
+
+def safe_filename(name: str) -> str:
+    """Приводит имя файла к безопасному виду ИЛИ бросает ValueError.
+
+    Запрещает: пустое имя, ``.``/``..``, разделители путей ``/`` и ``\\``,
+    двоеточие (отбрасывает Windows drive-буквы и alternate streams), NUL и
+    управляющие символы \\x01-\\x1f, а также Windows-reserved имена
+    (CON/PRN/AUX/NUL/COM1-9/LPT1-9) — с учётом или без расширения.
+    """
+    raw = "" if name is None else str(name)
+    stripped = raw.strip()
+    if not stripped:
+        raise ValueError("Имя файла пустое")
+    if stripped in (".", ".."):
+        raise ValueError(f"Имя файла недопустимо: {stripped!r}")
+    if any(ch in raw for ch in ("/", "\\", ":")):
+        raise ValueError("Имя файла содержит разделитель пути или двоеточие")
+    for ch in raw:
+        if ch == "\x00" or "\x01" <= ch <= "\x1f":
+            raise ValueError("Имя файла содержит управляющий символ")
+    base = stripped.split(".", 1)[0]
+    if base.upper() in _WIN_RESERVED_NAMES:
+        raise ValueError(f"Имя файла совпадает с зарезервированным именем Windows: {base}")
+    return stripped
+
+
+def _assert_within_models_dir(path: str) -> None:
+    """Гарантирует, что realpath(path) лежит внутри realpath(MODELS_DIR)."""
+    root = os.path.realpath(MODELS_DIR)
+    real = os.path.realpath(path)
+    try:
+        if os.path.commonpath([root, real]) != root:
+            raise ValueError("Путь назначения выходит за пределы каталога моделей")
+    except ValueError as exc:
+        # commonpath поднимает ValueError при разных drive на Windows — это тоже отказ
+        raise ValueError(f"Некорректный путь назначения модели: {exc}") from exc
+
+
+def _sha256_of_file(path: str) -> str:
+    digest = hashlib.sha256()
+    with open(path, "rb") as f:
+        for chunk in iter(lambda: f.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _verify_downloaded_file(path: str, expected_sha256: str, expected_size_bytes) -> None:
+    """Сверяет размер и SHA-256. При несовпадении удаляет файл и бросает RuntimeError."""
+    if expected_size_bytes is not None:
+        actual_size = os.path.getsize(path)
+        if actual_size != int(expected_size_bytes):
+            _safe_remove(path)
+            raise RuntimeError(
+                f"Размер скачанного файла ({actual_size}) не совпадает с ожидаемым "
+                f"({expected_size_bytes}) — файл удалён как повреждённый."
+            )
+    if expected_sha256:
+        actual_hash = _sha256_of_file(path)
+        if actual_hash.lower() != str(expected_sha256).lower():
+            _safe_remove(path)
+            raise RuntimeError(
+                f"SHA-256 не совпадает: ожидался {expected_sha256}, получен {actual_hash}. "
+                "Файл удалён как повреждённый/подменённый."
+            )
+
+
+def _safe_remove(path: str) -> None:
+    try:
+        if os.path.exists(path):
+            os.remove(path)
+    except OSError:
+        pass
+
+
+def get_catalog_model(model_id: str):
+    """Запись каталога по id или None."""
+    return next((m for m in LOCAL_MODEL_CATALOG if m.get("id") == model_id), None)
+
+
+def _require_catalog_integrity(model: dict) -> tuple:
+    """TASK-007: каталогная модель обязана иметь sha256 и size_bytes.
+
+    Возвращает (sha256, size_bytes); бросает ValueError, если их нет — так нельзя
+    автоматически загрузить GGUF из каталога без hash.
+    """
+    sha256 = model.get("sha256")
+    size_bytes = model.get("size_bytes")
+    if not sha256 or size_bytes is None:
+        raise ValueError(
+            f"Каталог-модель {model.get('id')} не содержит обязательных "
+            "sha256/size_bytes — автоматическая загрузка без проверки целостности запрещена."
+        )
+    return sha256, size_bytes
 
 
 def _read_settings() -> dict:
@@ -231,19 +346,30 @@ def get_compatible_models(ram_gb: float = None, vram_gb: float = None) -> list:
 
 
 def download_model(
-    url: str, filename: str, progress_cb=None, cancelled_flag=None, resume: bool = False
+    url: str,
+    filename: str,
+    progress_cb=None,
+    cancelled_flag=None,
+    resume: bool = False,
+    expected_sha256: str = None,
+    expected_size_bytes=None,
 ) -> str:
     """
     Скачивает .gguf по url в MODELS_DIR с поддержкой resume и отмены.
     progress_cb(line: str) — вызывается на каждом блоке.
     cancelled_flag — dict/list с ключом/индексом 'cancelled' для остановки.
     resume=True — продолжить скачивание с места остановки.
-    Возвращает путь к сохранённому файлу.
+    expected_sha256/expected_size_bytes (TASK-007) — если заданы, после скачивания
+    файл проверяется по hash и размеру; при несовпадении удаляется и поднимается
+    RuntimeError. Возвращает путь к сохранённому файлу.
     """
     if not url:
         raise ValueError("URL модели не указан")
 
+    # TASK-004: безопасное имя файла + containment-check ДО построения пути.
+    filename = safe_filename(filename)
     dest_path = os.path.join(MODELS_DIR, filename)
+    _assert_within_models_dir(dest_path)
     temp_path = dest_path + ".tmp"
 
     def emit(line):
@@ -308,6 +434,10 @@ def download_model(
                             emit(f"\rСкачано: {downloaded / (1024 ** 2):.1f} MB")
             os.replace(temp_path, dest_path)
             _clear_download_checkpoint(filename)
+            # TASK-007: проверка целостности (hash + размер), если ожидаемые значения заданы.
+            if expected_sha256 or expected_size_bytes is not None:
+                _verify_downloaded_file(dest_path, expected_sha256 or "", expected_size_bytes)
+                emit("✅ Целостность (SHA-256/размер) подтверждена.")
             emit(f"✅ Сохранено: {dest_path}")
             return dest_path
         except InterruptedError:
@@ -362,17 +492,27 @@ def install_catalog_model(
     Скачивает модель из каталога и регистрирует как установленную.
     Возвращает entry установленной модели.
     """
-    model = next((m for m in LOCAL_MODEL_CATALOG if m.get("id") == model_id), None)
+    model = get_catalog_model(model_id)
     if not model:
         raise ValueError(f"Модель {model_id} не найдена в каталоге")
 
+    # TASK-007: каталогная модель обязана иметь sha256/size_bytes; без них загрузка запрещена.
+    sha256, size_bytes = _require_catalog_integrity(model)
     filename = model.get("filename")
     url = model.get("download_link")
     path = download_model(
-        url, filename, progress_cb=progress_cb, cancelled_flag=cancelled_flag, resume=resume
+        url,
+        filename,
+        progress_cb=progress_cb,
+        cancelled_flag=cancelled_flag,
+        resume=resume,
+        expected_sha256=sha256,
+        expected_size_bytes=size_bytes,
     )
     _clear_download_checkpoint(filename)
-    return register_model(path, label=model.get("label"), n_gpu_layers=_default_n_gpu_layers())
+    return register_model(
+        path, label=model.get("label"), n_gpu_layers=_default_n_gpu_layers(), verified=True
+    )
 
 
 def list_installed_models() -> list:
@@ -423,8 +563,14 @@ def _default_n_gpu_layers() -> int:
     return 0
 
 
-def register_model(path: str, label: str = None, n_gpu_layers: int = None) -> dict:
-    """Регистрирует уже лежащий по path .gguf как установленную модель."""
+def register_model(
+    path: str, label: str = None, n_gpu_layers: int = None, verified: bool = False
+) -> dict:
+    """Регистрирует уже лежащий по path .gguf как установленную модель.
+
+    verified=False для моделей, добавленных вручную вне каталога (TASK-007:
+    такая модель считается «непроверенной» и требует подтверждения пользователя).
+    """
     import uuid as _uuid
 
     filename = os.path.basename(path)
@@ -434,11 +580,17 @@ def register_model(path: str, label: str = None, n_gpu_layers: int = None) -> di
         "path": path,
         "label": label or filename,
         "n_gpu_layers": n_gpu_layers if n_gpu_layers is not None else _default_n_gpu_layers(),
+        "verified": bool(verified),
     }
     items = list_installed_models()
     items.append(entry)
     _save_installed_models(items)
     return entry
+
+
+def is_model_verified(entry: dict) -> bool:
+    """True, если модель прошла проверку целостности каталога (sha256/size)."""
+    return bool(entry and entry.get("verified"))
 
 
 def remove_model(model_id: str):
@@ -457,8 +609,9 @@ def move_model_file(source_path: str, label: str = None) -> dict:
     if not source_path:
         raise ValueError("Путь к файлу не указан")
 
-    filename = os.path.basename(source_path)
+    filename = safe_filename(os.path.basename(source_path))
     dest_path = os.path.join(MODELS_DIR, filename)
+    _assert_within_models_dir(dest_path)
 
     try:
         if os.path.abspath(source_path) != os.path.abspath(dest_path):

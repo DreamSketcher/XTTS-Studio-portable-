@@ -1,0 +1,76 @@
+name: Bug report
+description: Сообщить о проблеме в работе XTTS Studio AI
+title: "[Bug]: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Спасибо за отчёт! Пожалуйста, заполните обязательные поля — это ускорит разбор.
+        **Для security-уязвимостей НЕ открывайте публичный issue** — используйте
+        GitHub Private Vulnerability Reporting (Security → Advisories).
+  - type: input
+    id: version
+    attributes:
+      label: Версия
+      description: Из json/version.json (или окно «О программе» / заголовок релиза)
+    validations:
+      required: true
+  - type: input
+    id: os
+    attributes:
+      label: ОС
+      placeholder: "Windows 11 23H2 x64"
+    validations:
+      required: true
+  - type: input
+    id: cpu
+    attributes:
+      label: CPU
+      placeholder: "Intel i7-12700K / AMD Ryzen 5 5600"
+    validations:
+      required: true
+  - type: input
+    id: gpu
+    attributes:
+      label: GPU (и режим Torch — CPU/CUDA)
+      placeholder: "NVIDIA RTX 3060 12GB, CUDA 12.8 (cu128) / нет GPU, CPU"
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Шаги воспроизведения
+      description: Минимальная последовательность действий.
+      placeholder: "1. ...\n2. ...\n3. ..."
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Ожидаемое поведение
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Фактическое поведение (включая текст ошибки)
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Логи и диагностика
+      description: |
+        Содержимое `logs/recovery_pip_output.log`, `logs/startup_recovery_error.log`
+        и вывод окна «Диагностика» (⚙ → Системные настройки → Диагностика).
+        **Удалите API-ключи, личный текст, пути к голосам и приватное аудио перед публикацией.**
+  - type: checkboxes
+    id: terms
+    attributes:
+      label: Подтверждения
+      options:
+        - label: Я удалил API-ключи и приватные данные из логов
+          required: true
+        - label: Это не security-уязвимость (для неё — Private Vulnerability Reporting)
+          required: true

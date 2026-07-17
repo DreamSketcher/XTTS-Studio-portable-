@@ -117,6 +117,33 @@ PROVIDERS = {
 
 DEFAULT_PROVIDER = "groq"
 
+# TASK-005: sensitive-заголовки, которые кастомный провайдер НЕ может переопределить
+# через extra_headers (case-insensitive). Попытка override — warning в лог, заголовок
+# игнорируется (приложение не падает); реальные Authorization/Content-Type и т.п.
+# выставляются кодом и остаются неприкосновенными.
+_SENSITIVE_HEADERS = frozenset(
+    {
+        "authorization",
+        "host",
+        "content-length",
+        "content-type",
+        "transfer-encoding",
+        "cookie",
+        "set-cookie",
+        "proxy-authorization",
+    }
+)
+
+
+def _apply_extra_headers(headers: dict, extra: dict) -> None:
+    """Применяет extra-заголовки провайдера, блокируя sensitive override (TASK-005)."""
+    for key, value in (extra or {}).items():
+        if str(key).lower() in _SENSITIVE_HEADERS:
+            print(f"[GPT] Игнорирую попытку переопределить sensitive-заголовок: {key}")
+            continue
+        headers[key] = value
+
+
 # ── i18n refresh ────────────────────────────────────────────────────────────────
 # Подписи провайдеров вычисляются при импорте. При живом переключении языка
 # в приложении вызывается refresh_i18n_labels(), чтобы обновить их без
@@ -693,7 +720,7 @@ def _call_api(
 
     extra = info.get("extra_headers", {})
     if extra and isinstance(extra, dict):
-        headers.update(extra)
+        _apply_extra_headers(headers, extra)
 
     endpoint_url = _validate_api_url(info["url"])
     req = urllib.request.Request(

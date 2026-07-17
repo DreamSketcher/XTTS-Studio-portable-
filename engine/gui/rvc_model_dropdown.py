@@ -1800,6 +1800,13 @@ class RVCModelDropdown:
     # ------------------------------------------------------------
 
     def _start_download(self, entry):
+        # TASK-010: лицензионное уведомление перед первой загрузкой RVC-модели.
+        if not messagebox.askyesno(
+            self.t("license_notice_title"),
+            self.t("license_notice_msg"),
+            parent=self._top_win,
+        ):
+            return
         confirmed = messagebox.askyesno(
             "Скачать неподписанную RVC-модель?",
             (

@@ -1,0 +1,249 @@
+# .security/pip-audit-allowlist.yml
+#
+# Allowlist для блокирующего security-gate (tools/pip_audit_gate.py, TASK-001).
+#
+# Политика gate:
+#   Critical/High → fail, КРОМЕ уязвимостей, перечисленных здесь;
+#   Medium/Low    → warning (не fail).
+# Кроме того, CI падает, если хотя бы одна запись здесь просрочена (expires_at).
+#
+# ВАЖНО (отклонение от буквального «Critical → fail всегда», зафиксировано в
+# docs/SECURITY.md): замороженный ML-стек (torch==2.2.2, transformers==4.38.2 —
+# источник правды из TASK-002) физически несёт Critical CVE без совместимого
+# фикса в ближайшем квартале (бамп torch/transformers ломает XTTS v2 + RVC).
+# Поэтому Critical ПОДАВЛЯЕТСЯ allowlist'ом — но ТОЛЬКО как явно задокументированное,
+# датированное исключение с указанием reason и issue_link, а не молчаливо.
+# expires_at (~квартал) — это триггер повторной оценки, не формальность:
+# через квартал CI снова покраснеет на этих записях, пока их не продлят/не разберут.
+#
+# Обязательные поля записи: id, package, reason, expires_at. Необязательное: issue_link.
+# id — идентификатор уязвимости из отчёта pip-audit (PYSEC-.../CVE-.../GHSA-...);
+#       совпадение проверяется также по aliases уязвимости.
+#
+# Обоснования ниже — per-CVE: для каждой указано, ПОЧЕМУ уязвимый code path
+# недостижим/смягчён именно в XTTS Studio (локальный TTS на XTTS v2 + RVC + GGUF LLM):
+#   • torch.load/untrusted-checkpoint RCE — смягчены моделью доверия проекта:
+#     XTTS-модели собственные/пиннутые; RVC .pth требует подтверждённого пользователем
+#     доверия, привязанного к SHA-256 байтов (engine/rvc_pipeline.py); embedding cache
+#     грузится через weights_only=True; произвольных attacker-чекпоинтов нет.
+#   • torch distributed/jit/Inductor/quant/RNN-ops — не используются: только eager
+#     inference XTTS/RVC; нет torch.compile, torch.jit, distributed RPC, квантования.
+#   • transformers RCE — в НЕиспользуемых классах моделей (MobileViT2/MaskFormer/Trax/
+#     Perceiver/Transformer-XL/megatron_gpt2/SEW/SEW-D/HuBERT/X-CLIP/GLM4/LightGlue);
+#     грузится только пиннутый локальный XTTS v2, без trust_remote_code на remote-репо.
+#   • transformers ReDoS/testing_utils/Trainer — в тестовых/тренировочных/неиспользуемых
+#     токенайзерах и процессорах; проект — inference-only, входной текст свой.
+#   • pillow — crafted font/image DoS/OOB; приложение НЕ декодирует attacker-контролируемые
+#     изображения/шрифты (PIL работает только со штатными UI-ассетами).
+#   • msgpack/nltk — нет unpack/resource-loading из attacker-контролируемых источников.
+
+allowlist:
+  # ── torch == 2.2.2 (frozen; бамп ломает XTTS v2/RVC-стек) ──────────────────────
+  - id: PYSEC-2025-41
+    package: torch
+    reason: "torch.load RCE (CVE-2025-32434) даже c weights_only=True; смягчено моделью доверия — грузятся только собственные/пиннутые XTTS-модели, RVC .pth под SHA-256-доверием пользователя, embedding cache через weights_only=True; attacker-чекпоинтов нет."
+    expires_at: 2026-10-17
+    issue_link: https://github.com/advisories/GHSA-53q9-r3pm-6pq6
+  - id: PYSEC-2024-259
+    package: torch
+    reason: "RemoteModule (torch.distributed.rpc) deser RCE (CVE-2024-48063, disputed); distributed RPC не используется — только локальный single-process inference."
+    expires_at: 2026-10-17
+    issue_link: https://nvd.nist.gov/vuln/detail/CVE-2024-48063
+  - id: PYSEC-2026-2286
+    package: torch
+    reason: "weights_only unpickler RCE через вредоносный .pth + torch.load (CVE-2026-24747); та же модель доверия, что и PYSEC-2025-41 — untrusted-чекпоинты не грузятся."
+    expires_at: 2026-10-17
+    issue_link: https://github.com/advisories/GHSA-63cw-57p8-fm3p
+  - id: PYSEC-2026-139
+    package: torch
+    reason: "Локальная десериализация в pt2 loading handler (CVE-2026-4538); local-only, pt2-экспорт/загрузка не используются, untrusted-чекпоинтов нет."
+    expires_at: 2026-10-17
+    issue_link: https://nvd.nist.gov/vuln/detail/CVE-2026-4538
+  - id: PYSEC-2025-203
+    package: torch
+    reason: "DoS в torch.linalg.lu (slice op, CVE-2025-55551); lu не вызывается в XTTS/RVC inference; local DoS only."
+    expires_at: 2026-10-17
+    issue_link: https://nvd.nist.gov/vuln/detail/CVE-2025-55551
+  - id: PYSEC-2025-204
+    package: torch
+    reason: "Некорректное поведение torch.rot90+torch.randn_like (CVE-2025-55552); данные ops не используются."
+    expires_at: 2026-10-17
+    issue_link: https://nvd.nist.gov/vuln/detail/CVE-2025-55552
+  - id: PYSEC-2025-205
+    package: torch
+    reason: "DoS в proxy_tensor.py (CVE-2025-55553) — внутренности torch.compile/Inductor; проект не использует torch.compile."
+    expires_at: 2026-10-17
+    issue_link: https://nvd.nist.gov/vuln/detail/CVE-2025-55553
+  - id: PYSEC-2025-207
+    package: torch
+    reason: "DoS cummin+Inductor NameError (CVE-2025-55557); Inductor/torch.compile не используются, inference eager."
+    expires_at: 2026-10-17
+    issue_link: https://nvd.nist.gov/vuln/detail/CVE-2025-55557
+  - id: PYSEC-2025-208
+    package: torch
+    reason: "DoS Conv2d+hardshrink+Inductor buffer overflow (CVE-2025-55558); Inductor не используется."
+    expires_at: 2026-10-17
+    issue_link: https://nvd.nist.gov/vuln/detail/CVE-2025-55558
+  - id: PYSEC-2025-209
+    package: torch
+    reason: "DoS to_sparse/to_dense+Inductor (CVE-2025-55560); Inductor не используется."
+    expires_at: 2026-10-17
+    issue_link: https://nvd.nist.gov/vuln/detail/CVE-2025-55560
+  - id: CVE-2025-2148
+    package: torch
+    reason: "Memory corruption в profiler._call_end_callbacks_on_jit_fut (critical, local); torch profiler/JIT не используются приложением."
+    expires_at: 2026-10-17
+    issue_link: https://github.com/advisories/GHSA-c678-jfcj-6jmf
+  - id: CVE-2025-2149
+    package: torch
+    reason: "Memory corruption в quantized nnq_Sigmoid (local); квантованное inferencing/sigmoid не используются."
+    expires_at: 2026-10-17
+    issue_link: https://github.com/advisories/GHSA-x3gm-94wq-g975
+  - id: CVE-2025-2998
+    package: torch
+    reason: "Memory corruption в torch.nn.utils.rnn.pad_packed_sequence (critical, local); RNN pack/pad не используется в XTTS/RVC."
+    expires_at: 2026-10-17
+    issue_link: https://github.com/advisories/GHSA-f4hp-rmr7-r7v8
+  - id: CVE-2025-2999
+    package: torch
+    reason: "Memory corruption в torch.nn.utils.rnn.unpack_sequence (critical, local); RNN unpack не используется."
+    expires_at: 2026-10-17
+    issue_link: https://github.com/advisories/GHSA-vgrw-7cvw-pwgx
+  - id: CVE-2025-3000
+    package: torch
+    reason: "Memory corruption в torch.jit.script (critical, local); torch.jit.script не используется."
+    expires_at: 2026-10-17
+    issue_link: https://github.com/advisories/GHSA-rrmf-rvhw-rf47
+  - id: CVE-2025-3001
+    package: torch
+    reason: "Memory corruption в torch.lstm_cell (critical, local); lstm_cell не используется в XTTS/RVC inference."
+    expires_at: 2026-10-17
+    issue_link: https://github.com/advisories/GHSA-qfhq-4f3w-5fph
+
+  # ── transformers == 4.38.2 (frozen; транзитивно от TTS 0.22.0) ─────────────────
+  - id: PYSEC-2024-227
+    package: transformers
+    reason: "Deser RCE в MobileViTV2 (CVE-2024-11392); класс модели не используется — грузится только XTTS v2."
+    expires_at: 2026-10-17
+    issue_link: https://github.com/advisories/GHSA-qxrp-vhvm-j765
+  - id: PYSEC-2024-228
+    package: transformers
+    reason: "Deser RCE в MaskFormer (CVE-2024-11393); класс не используется."
+    expires_at: 2026-10-17
+    issue_link: https://github.com/advisories/GHSA-wrfc-pvp9-mr9g
+  - id: PYSEC-2024-229
+    package: transformers
+    reason: "Deser RCE в Trax (CVE-2024-11394); класс не используется."
+    expires_at: 2026-10-17
+    issue_link: https://github.com/advisories/GHSA-hxxf-235m-72v3
+  - id: PYSEC-2025-40
+    package: transformers
+    reason: "ReDoS в transformers.testing_utils.preprocess_string (CVE-2025-2099); testing_utils — тестовый модуль, не импортируется в рантайме."
+    expires_at: 2026-10-17
+    issue_link: https://github.com/advisories/GHSA-qq3j-4f4f-9583
+  - id: PYSEC-2025-211
+    package: transformers
+    reason: "Deser RCE в Perceiver (CVE-2025-14920); класс не используется."
+    expires_at: 2026-10-17
+    issue_link: https://nvd.nist.gov/vuln/detail/CVE-2025-14920
+  - id: PYSEC-2025-212
+    package: transformers
+    reason: "Deser RCE в Transformer-XL (CVE-2025-14921); класс не используется."
+    expires_at: 2026-10-17
+    issue_link: https://nvd.nist.gov/vuln/detail/CVE-2025-14921
+  - id: PYSEC-2025-213
+    package: transformers
+    reason: "Deser RCE в megatron_gpt2 (CVE-2025-14924); класс не используется."
+    expires_at: 2026-10-17
+    issue_link: https://nvd.nist.gov/vuln/detail/CVE-2025-14924
+  - id: PYSEC-2025-214
+    package: transformers
+    reason: "Code-injection RCE в SEW convert_config (CVE-2025-14926); SEW не используется."
+    expires_at: 2026-10-17
+    issue_link: https://nvd.nist.gov/vuln/detail/CVE-2025-14926
+  - id: PYSEC-2025-215
+    package: transformers
+    reason: "Code-injection RCE в SEW-D convert_config (CVE-2025-14927); SEW-D не используется."
+    expires_at: 2026-10-17
+    issue_link: https://nvd.nist.gov/vuln/detail/CVE-2025-14927
+  - id: PYSEC-2025-216
+    package: transformers
+    reason: "Code-injection RCE в HuBERT convert_config (CVE-2025-14928); HuBERT не используется."
+    expires_at: 2026-10-17
+    issue_link: https://nvd.nist.gov/vuln/detail/CVE-2025-14928
+  - id: PYSEC-2025-217
+    package: transformers
+    reason: "Deser RCE в X-CLIP checkpoint conversion (CVE-2025-14929); класс не используется."
+    expires_at: 2026-10-17
+    issue_link: https://nvd.nist.gov/vuln/detail/CVE-2025-14929
+  - id: PYSEC-2025-218
+    package: transformers
+    reason: "Deser RCE в GLM4 (CVE-2025-14930); класс не используется."
+    expires_at: 2026-10-17
+    issue_link: https://nvd.nist.gov/vuln/detail/CVE-2025-14930
+  - id: PYSEC-2026-2288
+    package: transformers
+    reason: "Trainer._load_rng_state torch.load RCE (CVE-2026-1839); Trainer/тренировка не используются — проект inference-only."
+    expires_at: 2026-10-17
+    issue_link: https://github.com/advisories/GHSA-69w3-r845-3855
+  - id: PYSEC-2026-2289
+    package: transformers
+    reason: "config.json _attn_implementation RCE через вредоносный config (CVE-2026-4372); грузится пиннутый локальный XTTS v2, не attacker-репозитории; trust_remote_code не выставляется."
+    expires_at: 2026-10-17
+    issue_link: https://github.com/advisories/GHSA-29pf-2h5f-8g72
+  - id: PYSEC-2026-2290
+    package: transformers
+    reason: "LightGlue trust_remote_code RCE (CVE-2026-5241); LightGlue не используется, trust_remote_code на remote-репо не выставляется."
+    expires_at: 2026-10-17
+    issue_link: https://github.com/advisories/GHSA-fgcw-684q-jj6r
+
+  # ── pillow == 12.2.0 (транзитивно; только штатные UI-ассеты) ───────────────────
+  - id: PYSEC-2026-2253
+    package: pillow
+    reason: "PCF-шрифт decompression bomb (CVE-2026-54059); приложение не декодирует attacker-контролируемые шрифты/изображения — PIL работает только со штатными UI-ассетами."
+    expires_at: 2026-10-17
+    issue_link: https://github.com/advisories/GHSA-8v84-f9pq-wr9x
+  - id: PYSEC-2026-2254
+    package: pillow
+    reason: "FontFile.compile decompression bomb (CVE-2026-54060); attacker-шрифты не обрабатываются."
+    expires_at: 2026-10-17
+    issue_link: https://github.com/advisories/GHSA-5x94-69rx-g8h2
+  - id: PYSEC-2026-2255
+    package: pillow
+    reason: "BDF-шрифт decompression bomb (CVE-2026-55379); attacker-шрифты не обрабатываются."
+    expires_at: 2026-10-17
+    issue_link: https://github.com/advisories/GHSA-45hq-cxwh-f6vc
+  - id: PYSEC-2026-2256
+    package: pillow
+    reason: "GD-image decompression bomb (CVE-2026-55380); attacker-изображения не обрабатываются."
+    expires_at: 2026-10-17
+    issue_link: https://github.com/advisories/GHSA-phj9-mv4w-65pm
+  - id: PYSEC-2026-3451
+    package: pillow
+    reason: "OOB-write в Image.paste/crop/alpha по координатам (CVE-2026-59199); attacker-контролируемых координат/изображений нет."
+    expires_at: 2026-10-17
+    issue_link: https://github.com/advisories/GHSA-6r8x-57c9-28j4
+  - id: PYSEC-2026-3452
+    package: pillow
+    reason: "EPS-parser negative byte count (CVE-2026-59203); EPS-файлы не обрабатываются."
+    expires_at: 2026-10-17
+    issue_link: https://github.com/advisories/GHSA-pg7v-jwj7-p798
+  - id: PYSEC-2026-3453
+    package: pillow
+    reason: "ImageCms mode-mismatch heap corruption (CVE-2026-59205); color-management API с mismatched output не вызывается."
+    expires_at: 2026-10-17
+    issue_link: https://github.com/advisories/GHSA-9hw9-ch79-4vh6
+
+  # ── msgpack == 1.1.2 (транзитивно; нет unpack из attacker-источников) ──────────
+  - id: GHSA-6v7p-g79w-8964
+    package: msgpack
+    reason: "Unpacker DoS на untrusted input после ошибки; проект не unpack'ает attacker-контролируемый msgpack (транзитивная зависимость)."
+    expires_at: 2026-10-17
+    issue_link: https://github.com/advisories/GHSA-6v7p-g79w-8964
+
+  # ── nltk == 3.9.4 (нормализация текста; стандартные/локальные ресурсы) ─────────
+  - id: PYSEC-2026-597
+    package: nltk
+    reason: "Path traversal в nltk/data.py при загрузке ресурса (CVE-2026-12243, percent-encoded ../); nltk-данные грузятся из стандартных/локальных путей, не из attacker-контролируемых URL/путей."
+    expires_at: 2026-10-17
+    issue_link: https://nvd.nist.gov/vuln/detail/CVE-2026-12243

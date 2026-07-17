@@ -284,6 +284,6 @@ CPU работает сразу, но XTTS, RVC и local LLM могут быть
 
 **XTTS Studio** · by EXIZ10TION · Made with ❤️
 
-[Скачать](https://github.com/DreamSketcher/XTTS-Studio-AI/releases) · [Документация](./docs/DOCUMENTATION.RU.md) · [License](./LICENSE.md)
+[Скачать](https://github.com/DreamSketcher/XTTS-Studio-AI/releases) · [Документация](./docs/DOCUMENTATION.RU.md) · [Контрибьюшн](./CONTRIBUTING.md) · [License](./LICENSE.md)
 
 </div>

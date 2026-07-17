@@ -476,7 +476,7 @@ def build_local_page(ctx):
                 None,
             )
             if not entry:
-                entry = local_llm_client.register_model(path, label=m.get("label"))
+                entry = local_llm_client.register_model(path, label=m.get("label"), verified=True)
             local_llm_client.set_active_model_id(entry["id"])
             gpt_client.set_model(entry["id"], "local")
             gpt_client.set_provider("local")
@@ -488,7 +488,12 @@ def build_local_page(ctx):
         if not m.get("compatible"):
             return
 
+        # TASK-010: лицензионное уведомление перед первой загрузкой GGUF-модели.
         resume = _has_incomplete_download(m.get("filename", ""))
+        if not resume and not messagebox.askyesno(
+            t("license_notice_title"), t("license_notice_msg"), parent=win
+        ):
+            return
         download_cancelled[0] = False
         download_in_progress[0] = True
         downloading_model_id[0] = m.get("id")
@@ -681,6 +686,12 @@ def build_local_page(ctx):
 
         # Обычный полный файл модели — как раньше: перенос в /models/
         if messagebox.askyesno(t("local_move_model_title"), t("local_move_model_msg"), parent=win):
+            # TASK-007: модель, добавленная вручную вне каталога, не проверена по hash.
+            # Явное предупреждение с подтверждением до переноса/активации.
+            if not messagebox.askyesno(
+                t("local_unverified_warn_title"), t("local_unverified_warn_msg"), parent=win
+            ):
+                return
             try:
                 entry = local_llm_client.move_model_file(file_path)
                 local_llm_client.set_active_model_id(entry["id"])

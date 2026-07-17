@@ -284,6 +284,6 @@ If XTTS Studio saves you time or money:
 
 **XTTS Studio** · by EXIZ10TION · Made with ❤️
 
-[Download](https://github.com/DreamSketcher/XTTS-Studio-AI/releases) · [Documentation](./docs/DOCUMENTATION.EN.md) · [License](./LICENSE.md)
+[Download](https://github.com/DreamSketcher/XTTS-Studio-AI/releases) · [Documentation](./docs/DOCUMENTATION.EN.md) · [Contributing](./CONTRIBUTING.md) · [License](./LICENSE.md)
 
 </div>

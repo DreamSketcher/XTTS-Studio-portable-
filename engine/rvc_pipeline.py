@@ -4,7 +4,6 @@ import json
 import logging
 import os
 import subprocess
-import shutil
 import sys
 import time
 from typing import Optional, Dict, Any
@@ -209,6 +208,17 @@ class RVCPipelineError(Exception):
     pass
 
 
+class RVCNotAvailableError(Exception):
+    """TASK-006: RVC-окружение недоступно (нет CLI-скрипта / нет bundled Python).
+
+    Отдельный класс от RVCPipelineError: это условие «компонент отсутствует», а не
+    ошибка выполнения конвейера — вызывающий код может реагировать иначе (предложить
+    установить RVC, а не показывать traceback конвертации).
+    """
+
+    pass
+
+
 class RVCPostProcessor:
     """
     Retrieval-based Voice Conversion (RVC) post-processor for XTTS Studio.
@@ -337,19 +347,25 @@ class RVCPostProcessor:
             f"pitch: {int(pitch_shift):+d} | f0: {f0_method or 'rmvpe'}"
         )
 
-        # Build command based on RVC CLI layout
-        # (Standard layout uses a python launcher or shell script)
+        # TASK-006: никакого PATH-fallback («rvc», «python») — только абсолютный путь
+        # к bundled Python (PYTHON_EXE из engine.env_core) и обязательный CLI-скрипт.
         cli_script = os.path.join(rvc_cli_dir, "rvc.py")
         if not os.path.exists(cli_script):
-            cli_script = "rvc"  # fallback to global command if path not set
+            raise RVCNotAvailableError(
+                "RVC CLI не найден: отсутствует tools/RVC_CLI/rvc.py. "
+                "Установите/восстановите RVC-окружение."
+            )
 
-        # Check if RVC script/command is available
-        if not shutil.which("python") and not shutil.which("python3"):
-            raise RVCPipelineError("Python is not found in PATH to call RVC CLI.")
+        try:
+            from engine import env_core
+
+            python_exe = getattr(env_core, "PYTHON_EXE", None) or sys.executable
+        except Exception:
+            python_exe = sys.executable
 
         cmd = [
-            "python",
-            cli_script,
+            os.path.abspath(python_exe),
+            os.path.abspath(cli_script),
             "infer",
             "--input_path",
             input_path,
@@ -379,6 +395,9 @@ class RVCPostProcessor:
             raise RVCPipelineError(f"CLI завершился с кодом {e.returncode}: {details}") from e
         except RVCPipelineError:
             raise
+        except FileNotFoundError as e:
+            # bundled Python отсутствует — это «компонент недоступен», а не ошибка RVC
+            raise RVCNotAvailableError(f"не удалось запустить bundled Python: {e}") from e
         except Exception as e:
             raise RVCPipelineError(f"не удалось запустить RVC CLI: {e}") from e
 

@@ -5,6 +5,7 @@
 This guide explains how to use XTTS Studio, what actually affects the result, and where to look when something goes wrong.
 
 > Quick overview: **[README.EN.md](./README.md)** · **[README.RU.md](./README.ru.md)**  
+> Glossary: **[GLOSSARY.md](./GLOSSARY.md)**  
 > Source code: **[github.com/DreamSketcher/XTTS-Studio-AI](https://github.com/DreamSketcher/XTTS-Studio-AI)**
 
 ---
@@ -57,6 +58,8 @@ The application does not always need an internet connection. Internet access is 
 ---
 
 ## Quick start
+
+![Main window and generation](./screenshots/01_main_generation.png)
 
 1. Unpack XTTS Studio into a path without Cyrillic characters.
 2. Run `XTTS Studio.exe`.
@@ -267,11 +270,28 @@ Preset values are stored under `quality_params` in `settings.json`. Saving uses 
 
 ### A controlled way to tune parameters
 
+![Quality settings](./screenshots/04_quality_settings.png)
+
 1. Start with the preset defaults.
 2. Change one parameter at a time.
 3. Compare on the same short text.
 4. Test a question, a statement, and a longer sentence before judging a voice.
 5. Theme/layout presets are for UI appearance; voice-generation values belong to quality presets.
+
+### Default values for the "High Quality" preset
+
+Factory defaults (source: `engine/gui/presets.py`). Helps you understand the scale of each parameter without launching the app.
+
+| Parameter | Default | Range |
+|-----------|---------|-------|
+| Temperature | 0.70 | 0.10–1.00 (higher — more varied, lower — more stable) |
+| Top P | 0.30 | 0.10–1.00 (nucleus sampling) |
+| Top K | 80 | 10–100 (how many top variants the model considers) |
+| Repetition Penalty | 13.0 | 1.0–20.0 (penalty for repeats) |
+| Speed | 1.0 | 0.75–2.25 (1.0 — normal speech rate) |
+| Prosody | 0.0 | 0.0–2.0 (expressiveness/intonation) |
+
+Other presets ("Narrative", "Dynamic", "Expressive") have their own values in `engine/gui/presets.py` (the `build_quality_params`/`reset` function).
 
 ---
 
@@ -328,6 +348,8 @@ The **parameter preview** beside the model selector performs a real local RVC pa
 This is the most useful way to compare parameters on your own source voice.
 
 ### Practical tuning
+
+![RVC browser with preview](./screenshots/02_rvc_browser.png)
 
 - **Pitch shift**: change it one semitone at a time until the result sounds natural. `+12` and `−12` are octave shifts, not universal “gender” presets.
 - **Index**: start around the middle of the range. Excessive values may strengthen artifacts; without `.index` it will not help.
@@ -386,6 +408,8 @@ When the application closes, the manager:
 - waits for the worker with a timeout.
 
 ### History
+
+![History with waveform](./screenshots/03_history_waveform.png)
 
 `history.json` stores the last **100** generations: date, text, voice, preset, output path, duration, and chunk count.
 
@@ -457,6 +481,8 @@ Practical advice:
 
 ## System environment and recovery
 
+![Startup recovery / diagnostics](./screenshots/05_startup_recovery.png)
+
 XTTS Studio does not use system Python. Managed packages are installed into:
 
 ```text
@@ -500,9 +526,9 @@ An AMD/Intel GPU does not provide CUDA. In this project Torch GPU acceleration m
 `engine/env_core/torch_setup.py` manages a matching package set:
 
 ```text
-torch       2.11.0
-torchaudio  2.11.0
-torchvision 0.26.0
+torch       2.2.2
+torchaudio  2.2.2
+torchvision 0.17.2
 ```
 
 Available variants:
@@ -952,9 +978,9 @@ Set `XTTS_UI_PERF=1` to show a developer overlay with last/avg/p95 frame time, d
 - RVC `.pth` checkpoints require explicit user trust bound to the exact SHA-256;
 - embedding cache uses `weights_only=True` and strict schema validation;
 - cloud AI endpoints require HTTPS; HTTP is allowed only for loopback;
-- CI enforces the runtime dependency baseline with `pip-audit`;
+- `pip-audit` runs in CI as a blocking gate for High/Critical CVE with an explicit allowlist;
 - the CycloneDX SBOM is published as `sbom.cdx.json`;
-- the release workflow requires valid EXE Authenticode and byte-identical double archive builds.
+- the release workflow checks for the presence of an Authenticode signature on the EXE. Until a real code-signing certificate is applied, release integrity is ensured by the Ed25519 signature of the update manifest; the release archive is built twice and verified byte-identical.
 
 See [SECURITY.md](./SECURITY.md), [PRIVACY.md](./PRIVACY.md), and [SECURITY_BASELINE.md](./SECURITY_BASELINE.md). The current EXE must not be described as Authenticode-signed until the owner's real code-signing certificate is applied.
 
@@ -1001,9 +1027,36 @@ When refactoring GUI code, keep public facades stable. For example, `chat_settin
 
 ## Licenses
 
-- **XTTS v2** is used under the [Coqui Public Model License (CPML)](https://coqui.ai/cpml).
-- Project code is covered by [LICENSE.md](./LICENSE.md).
-- RVC and GGUF models may have their own licenses. Availability in a catalogue does not imply permission for commercial use.
+Check the license of each component before use — especially for commercial work.
+
+| Component | License | Commercial use |
+|-----------|---------|----------------|
+| XTTS Studio (project code) | [LICENSE.md](./LICENSE.md) | permitted under license terms |
+| XTTS v2 (model) | [Coqui Public Model License (CPML)](https://coqui.ai/cpml) | restricted by CPML |
+| PyTorch | BSD-3-Clause | OK |
+| RVC models | depends on the model author | not implied |
+| GGUF models | depends on the model author | not implied |
+
+The full list of runtime dependencies is in [THIRD_PARTY_NOTICES.md](./THIRD_PARTY_NOTICES.md), auto-generated from the SBOM (`tools/generate_third_party_notices.py`). An RVC/GGUF entry in the catalogue or the ability to download a model **does not** imply permission for commercial use — check the specific model's license with its author.
+
+**License notice on first download.** Before an RVC or GGUF model download starts, the application shows a modal license notice: the model may carry restrictions on commercial use; confirmation is required before the download begins.
+
+---
+
+## How to report a problem
+
+Before opening an issue, gather the minimum set of data — it speeds up triage.
+
+**Bug report checklist:**
+
+1. **Version** — from `json/version.json` (or the "About" window).
+2. **OS, CPU, GPU** — and the Torch mode (CPU/CUDA, CUDA version).
+3. **Logs** — `logs/recovery_pip_output.log`, `logs/startup_recovery_error.log`.
+4. **Diagnostics output** — ⚙ → System Settings → Diagnostics.
+5. **Steps to reproduce** — a minimal sequence.
+6. **GitHub Issues link** with the template: [Issues](https://github.com/DreamSketcher/XTTS-Studio-AI/issues) (use the Bug report template; required fields: version, OS, CPU, GPU, steps).
+
+⚠️ **Remove** API keys, personal text, voice paths and private audio from logs before posting. **Do not** report security vulnerabilities publicly — use [Private Vulnerability Reporting](https://github.com/DreamSketcher/XTTS-Studio-AI/security/advisories/new).
 
 ---
 

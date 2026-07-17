@@ -189,12 +189,60 @@ class TestRunInferenceViaCli:
         with pytest.raises(RVCPipelineError, match="не найдена"):
             proc.run_inference_via_cli("/tmp/in.wav", "/tmp/out.wav", "nonexistent")
 
+    def test_cli_missing_script_raises_not_available(self, tmp_path, monkeypatch):
+        """TASK-006: отсутствие tools/RVC_CLI/rvc.py → RVCNotAvailableError
+        (а не попытка system python / fallback на «rvc»)."""
+        from engine.rvc_pipeline import RVCNotAvailableError
+
+        proc = RVCPostProcessor(models_dir=str(tmp_path))
+        _write_trusted(tmp_path / "model.pth")
+        # rvc_cli_dir по умолчанию tools/RVC_CLI — относительно cwd теста его нет
+        with pytest.raises(RVCNotAvailableError, match="rvc.py"):
+            proc.run_inference_via_cli("/tmp/in.wav", "/tmp/out.wav", "model")
+
+    def test_cli_uses_absolute_python_path(self, tmp_path, monkeypatch):
+        """TASK-006: cmd[0] — абсолютный PYTHON_EXE, cmd[1] — абсолютный rvc.py."""
+        proc = RVCPostProcessor(models_dir=str(tmp_path))
+        _write_trusted(tmp_path / "model.pth")
+
+        # создаём фейковый rvc.py, чтобы пройти проверку существования скрипта
+        rvc_dir = tmp_path / "tools" / "RVC_CLI"
+        rvc_dir.mkdir(parents=True)
+        (rvc_dir / "rvc.py").write_text("# stub")
+
+        captured = {}
+
+        def fake_run(cmd, **kwargs):
+            captured["cmd"] = cmd
+            (Path(kwargs.get("capture_output") and "n/a" or "")).exists() if False else None
+            return MagicMock(returncode=0, stdout="", stderr="")
+
+        # создаём выходной файл, чтобы CLI «успешно завершился»
+        out = tmp_path / "out.wav"
+
+        def fake_run_creates(cmd, **kwargs):
+            captured["cmd"] = cmd
+            out.write_text("output data")
+            return MagicMock(returncode=0, stdout="", stderr="")
+
+        monkeypatch.setattr("subprocess.run", fake_run_creates)
+
+        result = proc.run_inference_via_cli(
+            "/tmp/in.wav", str(out), "model", rvc_cli_dir=str(rvc_dir)
+        )
+        assert result == str(out)
+        # оба ключевых пути — абсолютные
+        assert os.path.isabs(captured["cmd"][0])
+        assert os.path.isabs(captured["cmd"][1])
+        assert captured["cmd"][1].endswith("rvc.py")
+
     def test_cli_success_mocked(self, tmp_path, monkeypatch):
         proc = RVCPostProcessor(models_dir=str(tmp_path))
         _write_trusted(tmp_path / "model.pth")
 
-        mock_which = MagicMock(return_value="/usr/bin/python")
-        monkeypatch.setattr("shutil.which", mock_which)
+        rvc_dir = tmp_path / "tools" / "RVC_CLI"
+        rvc_dir.mkdir(parents=True)
+        (rvc_dir / "rvc.py").write_text("# stub")
 
         output_wav = tmp_path / "out.wav"
 
@@ -207,14 +255,19 @@ class TestRunInferenceViaCli:
 
         monkeypatch.setattr("subprocess.run", fake_run)
 
-        result = proc.run_inference_via_cli("/tmp/in.wav", str(output_wav), "model")
+        result = proc.run_inference_via_cli(
+            "/tmp/in.wav", str(output_wav), "model", rvc_cli_dir=str(rvc_dir)
+        )
         assert result == str(output_wav)
 
     def test_cli_failure(self, tmp_path, monkeypatch):
         proc = RVCPostProcessor(models_dir=str(tmp_path))
         _write_trusted(tmp_path / "model.pth")
 
-        monkeypatch.setattr("shutil.which", lambda x: "/usr/bin/python")
+        rvc_dir = tmp_path / "tools" / "RVC_CLI"
+        rvc_dir.mkdir(parents=True)
+        (rvc_dir / "rvc.py").write_text("# stub")
+
         import subprocess
 
         def fake_run(*a, **kw):
@@ -225,7 +278,9 @@ class TestRunInferenceViaCli:
         monkeypatch.setattr("subprocess.run", fake_run)
 
         with pytest.raises(RVCPipelineError, match="CLI завершился с кодом"):
-            proc.run_inference_via_cli("/tmp/in.wav", "/tmp/out.wav", "model")
+            proc.run_inference_via_cli(
+                "/tmp/in.wav", "/tmp/out.wav", "model", rvc_cli_dir=str(rvc_dir)
+            )
 
 
 class TestXTTSWithRVCPipeline:

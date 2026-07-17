@@ -301,3 +301,92 @@ class TestChainDiagnostics:
         diag = get_chain_diagnostics()
         openrouter_entry = next(p for p in diag["providers"] if p["id"] == "openrouter")
         assert openrouter_entry["status"] == "hidden"
+
+
+class TestSensitiveHeaderDenylist:
+    """TASK-005: кастомный провайдер не может переопределить sensitive-заголовки."""
+
+    def test_apply_blocks_sensitive_keeps_custom(self):
+        headers = {"Authorization": "Bearer real", "Content-Type": "application/json"}
+        gpt_client._apply_extra_headers(
+            headers,
+            {
+                "Authorization": "Bearer evil",
+                "Content-Type": "text/plain",
+                "Host": "evil.com",
+                "Cookie": "session=hijack",
+                "Set-Cookie": "x=1",
+                "Proxy-Authorization": "Basic x",
+                "Transfer-Encoding": "chunked",
+                "Content-Length": "0",
+                "X-Custom-Foo": "bar",
+                "HTTP-Referer": "https://xtts-studio.local",
+            },
+        )
+        assert headers["Authorization"] == "Bearer real"
+        assert headers["Content-Type"] == "application/json"
+        for blocked in (
+            "Host",
+            "Cookie",
+            "Set-Cookie",
+            "Proxy-Authorization",
+            "Transfer-Encoding",
+            "Content-Length",
+        ):
+            assert blocked not in headers
+        assert headers["X-Custom-Foo"] == "bar"
+        assert headers["HTTP-Referer"] == "https://xtts-studio.local"
+
+    def test_apply_is_case_insensitive(self):
+        headers = {"Authorization": "Bearer real"}
+        gpt_client._apply_extra_headers(
+            headers, {"AUTHORIZATION": "Bearer evil", "content-LENGTH": "0", "hOsT": "evil"}
+        )
+        assert headers["Authorization"] == "Bearer real"
+        assert "content-LENGTH" not in headers
+        assert "hOsT" not in headers
+
+    def test_custom_provider_authorization_does_not_override_real(
+        self, clean_gpt_settings, monkeypatch
+    ):
+        gpt_client.add_custom_provider(
+            "evil",
+            "Evil",
+            "https://example.com/v1/chat/completions",
+            ["m"],
+            "m",
+            headers={"Authorization": "Bearer evil", "X-Test": "1"},
+        )
+        gpt_client.set_api_key("real-key", "evil")
+        gpt_client.set_provider("evil")
+
+        captured = {}
+
+        class FakeResp:
+            def __init__(self):
+                self.headers = {}
+                self.status = 200
+
+            def read(self):
+                return b'{"choices":[{"message":{"content":"ok"}}]}'
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *a):
+                return False
+
+        def fake_urlopen(req, timeout=60):
+            captured["lower"] = {k.lower(): v for k, v in req.header_items()}
+            return FakeResp()
+
+        monkeypatch.setattr(gpt_client.urllib.request, "urlopen", fake_urlopen)
+
+        result = gpt_client._call_api(
+            [{"role": "user", "content": "hi"}], model="m", provider="evil"
+        )
+        assert result == "ok"
+        # реальный Authorization (от ключа) preserved; подмена игнорирована
+        assert captured["lower"]["authorization"] == "Bearer real-key"
+        # кастомный не-sensitive заголовок прошёл
+        assert captured["lower"]["x-test"] == "1"

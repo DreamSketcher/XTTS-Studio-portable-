@@ -19,23 +19,28 @@
 ## Audit command
 
 ```bash
-pip-audit -r requirements.txt --no-deps --disable-pip \
-  --ignore-vuln CVE-2025-3000
+python tools/pip_audit_gate.py \
+  --requirements requirements.txt \
+  --allowlist .security/pip-audit-allowlist.yml
 ```
 
-The command must report no unignored vulnerabilities. CI runs this exact gate. New findings fail the build.
+The gate runs `pip-audit`, resolves each finding's severity from OSV, and applies the policy from TASK-001: Critical/High fail unless listed in `.security/pip-audit-allowlist.yml`; Medium/Low warn; expired allowlist entries fail. CI runs this exact gate. New High/Critical CVEs not present in the allowlist fail the build.
 
-## Temporary accepted advisory
+## Documented exceptions
 
-### CVE-2025-3000 — PyTorch `torch.jit.script`
+The frozen ML stack (`torch==2.2.2`, `transformers==4.38.2`, plus `pillow`, `msgpack`, `nltk`) carries known advisories that cannot be removed without breaking the XTTS v2 + RVC stack. Each is a narrow, dated, documented exception recorded in `.security/pip-audit-allowlist.yml` with `reason`, `expires_at` and `issue_link`, and explained in [SECURITY.md](./SECURITY.md). Two representative classes:
 
-- **Package:** `torch==2.11.0`
-- **Upstream fixed version:** none identified by the advisory database on the baseline date.
-- **Reason a newer aligned release is not used:** the newest mutually published and tested Windows family is `torch==2.11.0`, `torchaudio==2.11.0`, `torchvision==0.26.0`. Moving only torch forward breaks the binary ABI alignment with torchaudio used by XTTS.
-- **Exposure:** the reported issue concerns attacker-controlled use of `torch.jit.script` leading to memory corruption. XTTS Studio does not expose a service/API that accepts Python functions or TorchScript source for compilation.
-- **Compensating controls:** community RVC `.pth` files require explicit trust bound to SHA-256; embedding caches use `weights_only=True` and a strict schema; network model downloads do not automatically execute TorchScript supplied by a remote caller.
-- **Residual risk:** a malicious model or local attacker already able to modify runtime/model files may still target native ML parsing paths. Users must only trust known model sources.
-- **Review deadline:** 2026-08-15, or immediately when a matching torch/torchaudio/torchvision family with an upstream fix is published.
-- **Removal condition:** upgrade the aligned family and remove the CI ignore as soon as the advisory publishes a fixed compatible version.
+- **`torch` load/`weights_only` RCE (e.g. CVE-2025-32434, CVE-2026-24747):** mitigated by the trust model — only project-owned/pinned XTTS models and RVC `.pth` under user-confirmed SHA-256 trust are loaded; embedding caches use `weights_only=True`; no attacker-controlled checkpoint is loaded.
+- **`torch` JIT/Inductor/distributed/quant/RNN-ops and unused `transformers` model classes:** the vulnerable code paths are not exercised (eager inference only; only XTTS v2 loaded, no `trust_remote_code` on remote repos).
 
-This is a narrow, documented exception. It must not be expanded to additional advisory IDs without a separate threat analysis and expiry date.
+`expires_at` (quarterly) is a re-evaluation trigger, not a formality: on expiry CI turns red again until each entry is renewed or resolved. The list must not be expanded to additional advisory IDs without a separate per-CVE threat analysis and a new expiry date.
+
+## Hash-locked runtime graph (TASK-017)
+
+For reproducible installs, `requirements.lock` exists: the full resolved dependency
+graph with SHA-256 hashes. `requirements.txt` remains the **source of truth for versions**;
+`requirements.lock` is for reproducibility (`pip install --require-hashes -r requirements.lock`).
+The lock is generated via `python tools/generate_requirements_lock.py` (uv or pip-tools) and
+checked in CI (`tools/check_requirements_lock.py`): if `requirements.txt` changed but the
+lock did not, CI reminds you to regenerate. `fairseq`/`rvc-python` are absent from the lock
+(they are installed separately via `--no-deps`, see requirements.txt).
