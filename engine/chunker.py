@@ -84,10 +84,19 @@ class TextChunker:
         почти без других знаков разрыва) — статистически проблемная для XTTS
         структура: авторегрессивный декодер склонен "рваться"/повторяться на
         длинной монотонной последовательности "слово, слово, слово...".
+
+        Отличаем от обычного сложного предложения с придаточными (там тоже
+        может быть 5+ запятых) по средней длине сегмента между запятыми:
+        в перечислении элементы короткие и однородные ("яблоки, груши, бананы"),
+        в придаточных — сегменты длиннее и содержат подлежащее+сказуемое.
         """
         commas = text.count(",")
         strong = len(re.findall(r"[.!?;:—]", text))
-        return commas >= 5 and commas > strong * 2
+        if not (commas >= 5 and commas > strong * 2):
+            return False
+        segments = [s for s in text.split(",") if s.strip()]
+        avg_words = sum(len(re.findall(r"\w+", s)) for s in segments) / len(segments)
+        return avg_words <= 3.0
 
     # =========================
     # SCORE CUT POSITION
