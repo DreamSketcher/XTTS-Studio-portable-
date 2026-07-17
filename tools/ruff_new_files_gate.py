@@ -67,7 +67,15 @@ def main(argv=None):
     # 1. Полный строгий набор на новых файлах.
     # sys.executable -m ruff вместо голого "ruff": не зависим от PATH,
     # берём ruff из того же интерпретатора/venv, что и сам gate.
-    ruff_cmd = [sys.executable, "-m", "ruff", "check", "--select", ",".join(STRICT_SELECT), *map(str, new_files)]
+    ruff_cmd = [
+        sys.executable,
+        "-m",
+        "ruff",
+        "check",
+        "--select",
+        ",".join(STRICT_SELECT),
+        *map(str, new_files),
+    ]
     ruff = _run(ruff_cmd, cwd=root)
     if ruff.returncode != 0:
         print("❌ RUFF NEW-FILES GATE: новые файлы не проходят строгий набор E,F,W,B,SIM,UP:")
