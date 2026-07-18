@@ -1,4 +1,4 @@
-# 📖 XTTS Studio — документация
+# 📖 XTTS Studio AI — документация
 
 **[English](./DOCUMENTATION.EN.md)** · **[Русский](./DOCUMENTATION.RU.md)**
 
